@@ -1,0 +1,198 @@
+version: '3.9'
+
+# ================================================================
+# Single-tenant deployment — Growth Finance Services Ltd.
+#
+# This deployment runs ONE backend process, ONE database, and ONE
+# frontend, all dedicated to Growth Finance Services Ltd. There is no
+# tenant picker, no shared infrastructure with any other institution,
+# and no other organization's data ever exists in this stack. The
+# domain(s) in CORS_ORIGINS below and in docker/nginx/conf.d/loansaas.conf
+# should be this bank's domain only.
+#
+# To stand up a deployment for a different institution, copy this repo,
+# change SEED_ORG / NEXT_PUBLIC_TENANT_SLUG, the DB name, and the domain —
+# do not add a second org into this same stack.
+# ================================================================
+
+services:
+
+  # ================================================================
+  # PostgreSQL — single database for this institution
+  # ================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: loansaas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: loansaas_growthfinance
+      POSTGRES_USER: loansaas
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loansaas -d loansaas_growthfinance"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - loansaas-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ================================================================
+  # Backend — Growth Finance Services Ltd (the only backend in this stack)
+  # ================================================================
+  backend:
+    build:
+      context: ./backend/loan-management-api/loan-backend
+      dockerfile: Dockerfile
+    container_name: loansaas-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-default}
+      DB_URL: jdbc:postgresql://postgres:5432/loansaas_growthfinance
+      DB_USERNAME: loansaas
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      SEED_ORG: growthfinance
+      # PRODUCTION GO-LIVE: set these three to skip demo-data seeding entirely and get one real
+      # organization + one real admin account instead (see DataSeeder.bootstrapProductionOrg).
+      # Leaving BOOTSTRAP_ADMIN_EMAIL blank means this deploys with published demo credentials
+      # (admin@growthfinance.rw / Admin@1234) — never acceptable for a real launch.
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
+      BOOTSTRAP_ORG_NAME: ${BOOTSTRAP_ORG_NAME:-}
+      BOOTSTRAP_ORG_COUNTRY: ${BOOTSTRAP_ORG_COUNTRY:-}
+      BOOTSTRAP_ORG_CURRENCY: ${BOOTSTRAP_ORG_CURRENCY:-}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-noreply@growthfinance.rw}
+      FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY:-}
+      FLUTTERWAVE_PUBLIC_KEY: ${FLUTTERWAVE_PUBLIC_KEY:-}
+      FLUTTERWAVE_WEBHOOK_SECRET: ${FLUTTERWAVE_WEBHOOK_SECRET:-}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required}
+      APP_INDEX_KEY: ${APP_INDEX_KEY:?APP_INDEX_KEY is required}
+      OXR_APP_ID: ${OXR_APP_ID:-}
+      LOG_FILE: /var/log/loansaas/growthfinance.log
+    volumes:
+      - backend_logs:/var/log/loansaas
+    networks:
+      - loansaas-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health/liveness"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+        reservations:
+          memory: 768M
+
+  # ================================================================
+  # Next.js Frontend — serves the bank's public site at the root URL
+  # and the staff dashboard at /dashboard. No tenant picker.
+  # ================================================================
+  frontend:
+    build:
+      context: ./frontend/loan-management-ui
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    container_name: loansaas-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      NEXT_PUBLIC_TENANT_SLUG: growthfinance
+      NODE_ENV: production
+    networks:
+      - loansaas-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ================================================================
+  # Nginx — single domain, single upstream, SSL termination
+  # ================================================================
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: loansaas-nginx
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+      - certbot_www:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    networks:
+      - loansaas-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ================================================================
+  # Certbot for Let's Encrypt SSL (optional)
+  # ================================================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: loansaas-certbot
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    command: echo "Certbot ready — run deploy/scripts/ssl-init.sh to obtain certificate"
+    profiles:
+      - ssl
+
+volumes:
+  postgres_data:
+    driver: local
+  backend_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+  certbot_www:
+    driver: local
+  certbot_certs:
+    driver: local
+
+networks:
+  loansaas-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

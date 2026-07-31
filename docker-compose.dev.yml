@@ -1,0 +1,23 @@
+version: '3.9'
+
+# Local dev override — run with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_USER: loansaas
+      POSTGRES_DB: loansaas
+
+  backend:
+    environment:
+      SPRING_PROFILES_ACTIVE: default
+      DB_PASSWORD: devpassword
+      JWT_SECRET: dev-secret-key-at-least-32-characters-long
+    volumes:
+      - ./backend/loan-management-api/loan-backend/src:/app/src
+
+  nginx:
+    profiles:
+      - disabled  # skip nginx in dev — access backend:8080 and frontend:3000 directly

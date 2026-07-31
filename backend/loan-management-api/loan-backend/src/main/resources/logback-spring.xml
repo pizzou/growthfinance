@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Closes the "no centralized logging/alerting" gap from BANK_READINESS.md. This alone doesn't
+  give you a log aggregator — you still need to ship these logs somewhere (Filebeat/Fluent Bit
+  reading the JSON file below and forwarding to ELK/Loki/CloudWatch/Datadog/etc.) and set up
+  alerting rules on top of it. What this DOES do: make every log line a single structured JSON
+  record instead of free-form text, with the request ID (see RequestIdFilter) attached to every
+  line logged during that request — the piece every aggregator and alerting rule actually needs
+  to be useful, and the piece that's easy to forget until you're debugging an incident at 2am
+  wishing you had it.
+
+  Local dev (`dev` profile) keeps the original human-readable console pattern — nobody wants to
+  read raw JSON in a terminal while coding.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProfile name="dev">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [%X{requestId}] - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!dev">
+        <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>requestId</includeMdcKeyName>
+                <customFields>{"service":"loansaas-backend"}</customFields>
+            </encoder>
+        </appender>
+
+        <appender name="FILE_JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_FILE:-/var/log/loansaas/app.log}</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_FILE:-/var/log/loansaas/app}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>3GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>requestId</includeMdcKeyName>
+                <customFields>{"service":"loansaas-backend"}</customFields>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_JSON"/>
+            <appender-ref ref="FILE_JSON"/>
+        </root>
+    </springProfile>
+
+    <logger name="com.patrick.fintech" level="INFO"/>
+    <logger name="org.springframework.security" level="WARN"/>
+    <logger name="org.flywaydb" level="INFO"/>
+</configuration>
