@@ -14,7 +14,8 @@ import java.util.*;
 
 /**
  * Double-entry general ledger. Every transaction that moves real money —
- * disbursing a loan, receiving a payment, writing off a bad debt — posts a
+ * disbursing a loan, receiving a payment, writing off a bad debt, recording
+ * an operating expense, bringing a migrated loan onto the books — posts a
  * balanced journal entry here automatically, so the platform's numbers can
  * actually be reconciled by a finance team the way a bank expects, not just
  * read off a list of loan/payment rows.
@@ -39,16 +40,17 @@ public class AccountingService {
         // code, name, type, normalBalance
         {"1000", "Cash and Bank",              "ASSET",     "DEBIT"},
         {"1100", "Loans Receivable",           "ASSET",     "DEBIT"},
-        {"1150", "Interest Receivable",        "ASSET",     "DEBIT"},
-        {"1200", "Loan Loss Reserve",          "ASSET",     "CREDIT"},
+        {"1150", "Interest Receivable",        "ASSET",     "DEBIT"}, // accrued, uncollected interest
+        {"1200", "Loan Loss Reserve",          "ASSET",     "CREDIT"}, // contra-asset
         {"2000", "Customer Deposits Payable",  "LIABILITY", "CREDIT"},
         {"3000", "Owner's Equity",             "EQUITY",    "CREDIT"},
+        {"3100", "Opening Balance Equity",     "EQUITY",    "CREDIT"}, // offsets migrated loans' opening balances
         {"4000", "Interest Income",            "INCOME",    "CREDIT"},
         {"4100", "Fee and Penalty Income",     "INCOME",    "CREDIT"},
         {"5000", "Loan Loss Expense",          "EXPENSE",   "DEBIT"},
         {"5100", "Operating Expenses",         "EXPENSE",   "DEBIT"},
-        // Expense module (Phase 11) — granular operating expense lines, additive only;
-        // existing 5100 is left untouched for any pre-existing manual entries.
+        // Expense module — granular operating expense lines, additive only; existing 5100
+        // is left untouched for any pre-existing manual entries.
         {"5200", "Salaries and Wages",         "EXPENSE",   "DEBIT"},
         {"5201", "Rent",                       "EXPENSE",   "DEBIT"},
         {"5202", "Utilities",                  "EXPENSE",   "DEBIT"},
@@ -195,6 +197,7 @@ public class AccountingService {
         result.put("closingBalance", running);
         return result;
     }
+
     @Transactional
     public JournalEntry post(Organization org, String sourceType, String sourceId, String reference,
                               String description, List<JournalLine> lines) {
@@ -205,6 +208,15 @@ public class AccountingService {
     @Transactional
     public JournalEntry post(Organization org, Branch branch, String sourceType, String sourceId, String reference,
                               String description, List<JournalLine> lines) {
+        return post(org, branch, LocalDate.now(), sourceType, sourceId, reference, description, lines);
+    }
+
+    /** Same as above, but lets the caller backdate the entry — used for opening balances on
+     *  migrated loans, which happened before this system existed and shouldn't land in the
+     *  current period's P&L/cash flow just because that's when someone clicked "import". */
+    @Transactional
+    public JournalEntry post(Organization org, Branch branch, LocalDate entryDate, String sourceType, String sourceId,
+                              String reference, String description, List<JournalLine> lines) {
         double totalDebit  = lines.stream().mapToDouble(l -> l.getDebit()  != null ? l.getDebit()  : 0).sum();
         double totalCredit = lines.stream().mapToDouble(l -> l.getCredit() != null ? l.getCredit() : 0).sum();
         if (Math.abs(totalDebit - totalCredit) > 0.01) {
@@ -213,7 +225,7 @@ public class AccountingService {
         }
 
         JournalEntry entry = JournalEntry.builder()
-            .organization(org).branch(branch).entryDate(LocalDate.now())
+            .organization(org).branch(branch).entryDate(entryDate != null ? entryDate : LocalDate.now())
             .sourceType(sourceType).sourceId(sourceId).reference(reference)
             .description(description).createdBy("SYSTEM").reversed(false)
             .build();
@@ -361,11 +373,28 @@ public class AccountingService {
         }
     }
 
-    /** DR the expense's specific category account, CR the bank/cash account it was paid from.
-     *  Unlike the loan postings above, failures here are NOT swallowed — recording the expense
-     *  IS the ledger entry, so if it can't be posted (e.g. missing account), the whole
-     *  expense creation must roll back rather than silently leaving a POSTED expense with no
-     *  matching journal entry. */
+    
+    @Transactional
+    public JournalEntry postOpeningBalance(Loan loan) {
+        Organization org = loan.getOrganization();
+        ensureChartOfAccounts(org);
+
+        double outstanding = loan.getOutstandingBalance() != null ? loan.getOutstandingBalance() : 0;
+        if (outstanding <= 0) return null;
+
+        LocalDate asOf = loan.getStartDate() != null ? loan.getStartDate() : LocalDate.now();
+
+        return post(org, loan.getBranch(), asOf, "OPENING_BALANCE", String.valueOf(loan.getId()), loan.getReferenceNumber(),
+            "Opening balance — migrated loan " + loan.getReferenceNumber(),
+            List.of(
+                JournalLine.builder().account(account(org, "1100")).debit(outstanding).credit(0.0)
+                    .description("Opening balance — " + loan.getReferenceNumber()).build(),
+                JournalLine.builder().account(account(org, "3100")).debit(0.0).credit(outstanding)
+                    .description("Opening balance equity — " + loan.getReferenceNumber()).build()
+            ));
+    }
+
+   
     @Transactional
     public JournalEntry postExpense(Expense expense) {
         Organization org = expense.getOrganization();
@@ -392,6 +421,7 @@ public class AccountingService {
     public JournalEntry reverseExpense(Long orgId, Long journalEntryId, String reversedBy, String reason) {
         return reverseEntry(orgId, journalEntryId, reversedBy, reason);
     }
+
     // ---- Reporting ----
 
     /** Trial balance as of now — every account's net debit/credit position. Total debits must equal total credits. */
@@ -502,10 +532,7 @@ public class AccountingService {
         return result;
     }
 
-    /** Simplified direct-method Cash Flow Statement: every journal line touching the Cash and
-     *  Bank account (1000) in the period, grouped by why the cash moved. This is cash-basis by
-     *  construction (it only looks at the cash account), which is exactly what a cash flow
-     *  statement is supposed to be — separate from the accrual-basis P&L above. */
+    
     public Map<String,Object> getCashFlow(Long orgId, LocalDate from, LocalDate to) {
         List<JournalEntry> entries = journalRepo.findByOrganization_IdAndEntryDateBetweenOrderByEntryDateAsc(orgId, from, to);
         double lending = 0, collections = 0, feesAndPenalties = 0, other = 0;

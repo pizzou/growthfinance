@@ -71,6 +71,44 @@ export const loanApi = {
     post(`/loans/${id}/comments`, { message, visibleToApplicant }),
 };
 
+
+export const branchApi = {
+  list: () => get('/branches'),
+};
+
+export const expenseApi = {
+  list: (params: { page?: number; size?: number; category?: string; branchId?: number; from?: string; to?: string } = {}) => {
+    const q = new URLSearchParams();
+    q.set('page', String(params.page ?? 0));
+    q.set('size', String(params.size ?? 20));
+    if (params.category) q.set('category', params.category);
+    if (params.branchId) q.set('branchId', String(params.branchId));
+    if (params.from) q.set('from', params.from);
+    if (params.to) q.set('to', params.to);
+    return get(`/expenses?${q.toString()}`);
+  },
+  get: (id: number) => get(`/expenses/${id}`),
+  summary: (from?: string, to?: string) =>
+    get(`/expenses/summary${from && to ? `?from=${from}&to=${to}` : ''}`),
+  void: (id: number, reason?: string) => post(`/expenses/${id}/void`, { reason }),
+  receiptUrl: (id: number) =>
+    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'}/expenses/${id}/receipt`,
+  create: (data: {
+    expenseDate: string; category: string; amount: number;
+    paymentAccountId: number; branchId?: number; description?: string; receipt?: File | null;
+  }) => {
+    const form = new FormData();
+    form.append('expenseDate', data.expenseDate);
+    form.append('category', data.category);
+    form.append('amount', String(data.amount));
+    form.append('paymentAccountId', String(data.paymentAccountId));
+    if (data.branchId) form.append('branchId', String(data.branchId));
+    if (data.description) form.append('description', data.description);
+    if (data.receipt) form.append('receipt', data.receipt);
+    return API.post('/expenses', form,
+      { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => (r.data as any)?.data ?? r.data);
+  },
+};
 export const paymentApi = {
   record:   (loanId: number, data: unknown, idempotencyKey?: string) =>
     API.post(`/loans/${loanId}/payments`, data, {
