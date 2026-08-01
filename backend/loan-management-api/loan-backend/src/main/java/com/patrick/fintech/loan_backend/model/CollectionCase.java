@@ -4,8 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
-
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -52,8 +50,8 @@ public class CollectionCase {
     private Priority priority;
 
     private Integer daysPastDue;
-    private BigDecimal  overdueAmount;
-    private BigDecimal  totalOutstanding;
+    private Double  overdueAmount;
+    private Double  totalOutstanding;
 
     private LocalDate lastContactDate;
     private LocalDate nextActionDate;

@@ -1,12 +1,7 @@
 package com.patrick.fintech.loan_backend.dto.publicportal;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -14,52 +9,46 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public class BorrowerDashboardResponse {
 
     private Long loanId;
-
     private String referenceNumber;
 
     private String borrowerName;
 
-    private String loanOfficer;
-
     private String status;
-
     private String loanType;
 
-    private BigDecimal principal;
+    private Double principal;
+    private Double outstandingBalance;
+    private Double totalPaid;
+    private Double totalRepayable;
 
-    private BigDecimal outstandingBalance;
-
-    private BigDecimal totalPaid;
-
-    private BigDecimal totalRepayable;
-
-    private BigDecimal nextInstallmentAmount;
+    private Double nextInstallmentAmount;
 
     private LocalDate nextPaymentDate;
-    private Integer daysUntilDue;
-
+    private LocalDate nextDueDate;
     private LocalDate maturityDate;
 
     private Integer missedInstallments;
-
     private Integer daysOverdue;
+
+    private Double interestRate;
 
     private String currency;
 
-    /*
-     * IMPORTANT:
-     * Loan.interestRate is BigDecimal,
-     * so this must also be BigDecimal.
-     */
-    private BigDecimal interestRate;
+    private String loanOfficer;
 
-    private String interestRateType;
+    private Integer activeLoans;
+    private Integer overdueLoans;
+    private Integer completedLoans;
 
-    private List<PaymentHistoryResponse> recentPayments;
+    private Integer daysUntilDue;
+    private Double repaymentProgress;
 
-    private List<UpcomingInstallmentResponse> upcomingInstallments;
+private List<PaymentHistoryResponse> recentPayments;
+
+private List<UpcomingInstallmentResponse> upcomingInstallments;
+
+private List<String> availablePaymentMethods;
 }

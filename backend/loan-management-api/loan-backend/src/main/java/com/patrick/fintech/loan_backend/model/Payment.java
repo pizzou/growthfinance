@@ -2,11 +2,9 @@ package com.patrick.fintech.loan_backend.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.patrick.fintech.loan_backend.util.MoneyMath;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -17,188 +15,180 @@ import java.time.LocalDateTime;
     indexes = {
         @Index(name = "idx_payment_loan", columnList = "loan_id"),
         @Index(name = "idx_payment_due", columnList = "due_date"),
-        @Index(name = "idx_payment_org", columnList = "organization_id")
+        @Index(name = "idx_payment_paid_date", columnList = "paid_date"),
+        @Index(name = "idx_payment_status", columnList = "status"),
+        @Index(name = "idx_payment_org", columnList = "organization_id"),
+        @Index(name = "idx_payment_transaction", columnList = "transaction_id")
     }
 )
-@Getter
-@Setter
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class Payment {
 
-    // ============================================================
-    // ID
-    // ============================================================
-
+   
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-
-    // ============================================================
-    // PAYMENT REFERENCE
-    // ============================================================
-
-    @Column(unique = true)
+    @Column(
+        name = "payment_reference",
+        unique = true,
+        length = 100
+    )
     private String paymentReference;
 
 
-    // ============================================================
-    // RELATIONSHIPS
-    // ============================================================
-
+   
     @JsonIgnore
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "loan_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(
+        name = "loan_id",
+        nullable = false
+    )
     private Loan loan;
 
+   
     @JsonIgnore
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "organization_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(
+        name = "organization_id",
+        nullable = false
+    )
     private Organization organization;
 
+   
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "recorded_by")
     private User recordedBy;
 
-
-    // ============================================================
-    // INSTALLMENT INFORMATION
-    // ============================================================
-
+  
+    
+    @Column(name = "installment_number")
     private Integer installmentNumber;
 
+    /**
+     * Scheduled installment amount.
+     */
+    @Column(name = "amount")
+    private Double amount;
 
-    // ============================================================
-    // FINANCIAL FIELDS
-    //
-    // All monetary values use BigDecimal.
-    // ============================================================
+  
+    @Column(name = "principal_component")
+    private Double principalComponent;
 
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal amount;
+  
+    @Column(name = "interest_component")
+    private Double interestComponent;
 
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal principalComponent;
+    
+    @Column(name = "amount_paid")
+    private Double amountPaid;
 
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal interestComponent;
-
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal amountPaid;
-
+   
+    @Column(name = "penalty")
     @Builder.Default
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal penalty = MoneyMath.ZERO;
+    private Double penalty = 0.0;
 
+   
+    @Column(name = "waived_amount")
     @Builder.Default
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal waivedAmount = MoneyMath.ZERO;
+    private Double waivedAmount = 0.0;
 
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal outstandingAfter;
+   
+    @Column(name = "outstanding_after")
+    private Double outstandingAfter;
 
-
-    // ============================================================
-    // PAYMENT STATUS
-    // ============================================================
-
+  
+    
+    @Column(name = "paid")
     @Builder.Default
     private Boolean paid = false;
 
-    private LocalDate dueDate;
-
-    private LocalDate paidDate;
-
-
-    // ============================================================
-    // PAYMENT DETAILS
-    // ============================================================
-
-    private String paymentMethod;
-
-    private String transactionId;
-
-    private String externalReference;
-
-    private String gatewayResponse;
-
-    private String channel;
-
-    private String notes;
-
-
-    // ============================================================
-    // LATE PAYMENT INFORMATION
-    // ============================================================
-
-    @Builder.Default
-    private boolean isLate = false;
-
-    @Builder.Default
-    private Integer daysLate = 0;
-
-
-    // ============================================================
-    // STATUS
-    // ============================================================
-
     @Enumerated(EnumType.STRING)
+    @Column(
+        name = "status",
+        length = 30
+    )
     @Builder.Default
     private PaymentStatus status = PaymentStatus.PENDING;
 
+    
+    @Column(name = "due_date")
+    private LocalDate dueDate;
 
-    // ============================================================
-    // AUDIT DATES
-    // ============================================================
+    
+    @Column(name = "paid_date")
+    private LocalDate paidDate;
 
+    
+    @Column(name = "days_late")
+    @Builder.Default
+    private Integer daysLate = 0;
+
+   
+    @Column(name = "is_late")
+    @Builder.Default
+    private boolean isLate = false;
+
+    
+    @Column(name = "payment_method", length = 50)
+    private String paymentMethod;
+
+   
+    @Column(name = "transaction_id", length = 150)
+    private String transactionId;
+
+   
+    @Column(name = "external_reference", length = 150)
+    private String externalReference;
+
+    
+    @Column(
+        name = "gateway_response",
+        columnDefinition = "TEXT"
+    )
+    private String gatewayResponse;
+
+   
+    @Column(name = "channel", length = 50)
+    private String channel;
+
+    
+    @Column(
+        name = "notes",
+        columnDefinition = "TEXT"
+    )
+    private String notes;
+
+    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+   
+    @Column(name = "verified_at")
     private LocalDateTime verifiedAt;
 
-
-    // ============================================================
-    // JPA LIFECYCLE
-    // ============================================================
+    
 
     @PrePersist
     protected void onCreate() {
 
-        createdAt = LocalDateTime.now();
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
 
         if (paid == null) {
             paid = false;
         }
 
         if (penalty == null) {
-            penalty = MoneyMath.ZERO;
+            penalty = 0.0;
         }
 
         if (waivedAmount == null) {
-            waivedAmount = MoneyMath.ZERO;
+            waivedAmount = 0.0;
         }
 
         if (daysLate == null) {
@@ -208,183 +198,38 @@ public class Payment {
         if (status == null) {
             status = PaymentStatus.PENDING;
         }
-    }
 
+        
+        if (daysLate > 0) {
+            isLate = true;
+        }
+    }
 
     @PreUpdate
     protected void onUpdate() {
-        // Reserved for future payment update auditing.
-    }
 
-
-    // ============================================================
-    // BIGDECIMAL SETTERS
-    //
-    // These are the authoritative financial setters.
-    // PaymentService can safely pass BigDecimal values.
-    // ============================================================
-
-    public void setAmount(BigDecimal value) {
-        this.amount = normalize(value);
-    }
-
-    public void setPrincipalComponent(BigDecimal value) {
-        this.principalComponent = normalize(value);
-    }
-
-    public void setInterestComponent(BigDecimal value) {
-        this.interestComponent = normalize(value);
-    }
-
-    public void setAmountPaid(BigDecimal value) {
-        this.amountPaid = normalize(value);
-    }
-
-    public void setPenalty(BigDecimal value) {
-        this.penalty = normalize(value);
-    }
-
-    public void setWaivedAmount(BigDecimal value) {
-        this.waivedAmount = normalize(value);
-    }
-
-    public void setOutstandingAfter(BigDecimal value) {
-        this.outstandingAfter = normalize(value);
-    }
-
-
-    // ============================================================
-    // DOUBLE COMPATIBILITY SETTERS
-    //
-    // Keep these only for old controllers/integrations that still
-    // send Double values.
-    //
-    // New financial code should always use BigDecimal.
-    // ============================================================
-
-    public void setAmount(Double value) {
-        this.amount = value == null
-            ? null
-            : BigDecimal.valueOf(value);
-    }
-
-    public void setPrincipalComponent(Double value) {
-        this.principalComponent = value == null
-            ? null
-            : BigDecimal.valueOf(value);
-    }
-
-    public void setInterestComponent(Double value) {
-        this.interestComponent = value == null
-            ? null
-            : BigDecimal.valueOf(value);
-    }
-
-    public void setAmountPaid(Double value) {
-        this.amountPaid = value == null
-            ? null
-            : BigDecimal.valueOf(value);
-    }
-
-    public void setPenalty(Double value) {
-        this.penalty = value == null
-            ? null
-            : BigDecimal.valueOf(value);
-    }
-
-    public void setWaivedAmount(Double value) {
-        this.waivedAmount = value == null
-            ? null
-            : BigDecimal.valueOf(value);
-    }
-
-    public void setOutstandingAfter(Double value) {
-        this.outstandingAfter = value == null
-            ? null
-            : BigDecimal.valueOf(value);
-    }
-
-
-    // ============================================================
-    // DOUBLE READ-ONLY COMPATIBILITY ACCESSORS
-    //
-    // These do not affect persistence.
-    // ============================================================
-
-    public Double getAmountDouble() {
-        return amount == null
-            ? null
-            : amount.doubleValue();
-    }
-
-    public Double getPrincipalComponentDouble() {
-        return principalComponent == null
-            ? null
-            : principalComponent.doubleValue();
-    }
-
-    public Double getInterestComponentDouble() {
-        return interestComponent == null
-            ? null
-            : interestComponent.doubleValue();
-    }
-
-    public Double getAmountPaidDouble() {
-        return amountPaid == null
-            ? null
-            : amountPaid.doubleValue();
-    }
-
-    public Double getPenaltyDouble() {
-        return penalty == null
-            ? null
-            : penalty.doubleValue();
-    }
-
-    public Double getWaivedAmountDouble() {
-        return waivedAmount == null
-            ? null
-            : waivedAmount.doubleValue();
-    }
-
-    public Double getOutstandingAfterDouble() {
-        return outstandingAfter == null
-            ? null
-            : outstandingAfter.doubleValue();
-    }
-
-
-    // ============================================================
-    // MONEY NORMALIZATION
-    // ============================================================
-
-    private BigDecimal normalize(BigDecimal value) {
-
-        if (value == null) {
-            return null;
+       
+        if (daysLate != null && daysLate > 0) {
+            isLate = true;
         }
-
-        return value.setScale(
-            MoneyMath.SCALE,
-            MoneyMath.ROUNDING
-        );
     }
 
-
-    // ============================================================
-    // ENUM
-    // ============================================================
+   
 
     public enum PaymentStatus {
 
+       
         PENDING,
 
         COMPLETED,
 
+        
         FAILED,
 
+       
         REVERSED,
 
+        
         PARTIALLY_PAID
     }
 }

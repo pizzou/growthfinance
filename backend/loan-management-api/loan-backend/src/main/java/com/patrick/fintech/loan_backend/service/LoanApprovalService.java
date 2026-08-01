@@ -5,12 +5,18 @@ import com.patrick.fintech.loan_backend.repository.LoanApprovalRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
-
+/**
+ * Maker-checker approval chain. Larger loans require more than one distinct
+ * person, in distinct roles, to sign off — and the person who requested the
+ * loan (the "maker") can never also be a "checker" on their own request.
+ * This is what makes a bank's approval workflow different from a single
+ * "click approve" button: no one person can push money out the door alone
+ * once a loan crosses the org's size thresholds.
+ */
 @Service
 @RequiredArgsConstructor
 public class LoanApprovalService {
@@ -19,13 +25,17 @@ public class LoanApprovalService {
     private final LoanService            loanService;
     private final AuditService           auditService;
 
-    
+    /**
+     * Decides how many steps, and which roles, a loan needs based on its size
+     * relative to the org's configured maximum. Larger exposure = more eyes.
+     * Adjust these ratios (or make them org-configurable) as your risk policy demands.
+     */
     private List<String> requiredRolesFor(Loan loan) {
         Double orgMax = loan.getOrganization().getMaxLoanAmount();
-        BigDecimal ratio = (orgMax != null && orgMax > 0) ? loan.getAmount().divide(new BigDecimal(orgMax), 2, RoundingMode.HALF_UP) : new BigDecimal(1.0);
+        double ratio = (orgMax != null && orgMax > 0) ? loan.getAmount() / orgMax : 1.0;
 
-        if (ratio.compareTo(new BigDecimal(0.20)) <= 0) return List.of("LOAN_OFFICER");
-        if (ratio.compareTo(new BigDecimal(0.60)) <= 0) return List.of("LOAN_OFFICER", "MANAGER");
+        if (ratio <= 0.20) return List.of("LOAN_OFFICER");
+        if (ratio <= 0.60) return List.of("LOAN_OFFICER", "MANAGER");
         return List.of("LOAN_OFFICER", "MANAGER", "ADMIN"); // ADMIN stands in for "credit committee" sign-off
     }
 
@@ -62,7 +72,12 @@ public class LoanApprovalService {
         return approvalRepo.findByLoan_IdOrderByStepOrderAsc(loanId);
     }
 
-   
+    /**
+     * Decides the next pending step in the chain for the given loan. The
+     * decider must hold the role that step requires (ADMIN can always act,
+     * standing above the chain), and can never be the loan's own loan officer
+     * — that's the actual maker-checker rule, not just a role check.
+     */
     @Transactional
     public LoanApproval decide(Long loanId, User decider, String decision, String comments) {
         return decide(loanId, decider, decision, comments, null);

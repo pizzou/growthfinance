@@ -2,13 +2,12 @@ package com.patrick.fintech.loan_backend.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.patrick.fintech.loan_backend.util.MoneyMath;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
@@ -17,10 +16,14 @@ import java.util.List;
     name = "loans",
     indexes = {
         @Index(name = "idx_loans_org", columnList = "organization_id"),
+        @Index(name = "idx_loans_branch", columnList = "branch_id"),
         @Index(name = "idx_loans_borrower", columnList = "borrower_id"),
         @Index(name = "idx_loans_status", columnList = "status"),
-        @Index(name = "idx_loans_credit_quality", columnList = "credit_quality"),
-        @Index(name = "idx_loans_arrears_status", columnList = "arrears_status")
+        @Index(name = "idx_loans_type", columnList = "loan_type"),
+        @Index(name = "idx_loans_created_at", columnList = "created_at"),
+        @Index(name = "idx_loans_disbursed_at", columnList = "disbursed_at"),
+        @Index(name = "idx_loans_days_overdue", columnList = "days_overdue"),
+        @Index(name = "idx_loans_maturity_date", columnList = "maturity_date")
     }
 )
 @Getter
@@ -38,260 +41,382 @@ public class Loan {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
+    /**
+     * Unique loan reference visible to staff, borrowers and regulators.
+     *
+     * Example:
+     * KCB-2024-000123
+     */
+    @Column(
+        name = "reference_number",
+        unique = true,
+        nullable = false,
+        length = 100
+    )
     private String referenceNumber;
 
 
-    // ============================================================
-    // ORGANIZATION / RELATIONSHIPS
-    // ============================================================
-
+    
     @JsonIgnore
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "organization_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(
+        name = "organization_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_loan_organization")
+    )
     private Organization organization;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "branch_id")
+
+    // ============================================================
+    // BRANCH
+    // ============================================================
+
+    /**
+     * Branch responsible for the loan.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "branch_id",
+        foreignKey = @ForeignKey(name = "fk_loan_branch")
+    )
+    @JsonIgnoreProperties({
+        "hibernateLazyInitializer",
+        "handler"
+    })
     private Branch branch;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "borrower_id", nullable = false)
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(
+        name = "borrower_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_loan_borrower")
+    )
+    @JsonIgnoreProperties({
+        "hibernateLazyInitializer",
+        "handler"
+    })
     private Borrower borrower;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "approved_by")
+
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "approved_by",
+        foreignKey = @ForeignKey(name = "fk_loan_approved_by")
+    )
+    @JsonIgnore
     private User approvedBy;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "loan_officer_id")
+    /**
+     * Loan officer responsible for the facility.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "loan_officer_id",
+        foreignKey = @ForeignKey(name = "fk_loan_officer")
+    )
+    @JsonIgnore
     private User loanOfficer;
 
 
     // ============================================================
-    // LOAN TYPE / STATUS
+    // LOAN CLASSIFICATION
     // ============================================================
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(
+        name = "loan_type",
+        nullable = false,
+        length = 50
+    )
     private LoanType loanType;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private LoanStatus status;
-
-
-    // ============================================================
-    // CREDIT CLASSIFICATION
-    // ============================================================
-
-    @Enumerated(EnumType.STRING)
-    @Builder.Default
     @Column(
-        name = "credit_quality",
+        name = "status",
         nullable = false,
-        length = 20
+        length = 50
     )
-    private CreditQuality creditQuality = CreditQuality.CURRENT;
+    @Builder.Default
+    private LoanStatus status = LoanStatus.PENDING;
 
     @Enumerated(EnumType.STRING)
-    @Builder.Default
-    @Column(
-        name = "arrears_status",
-        nullable = false,
-        length = 20
-    )
-    private ArrearsStatus arrearsStatus = ArrearsStatus.NOT_DUE;
-
-    @Enumerated(EnumType.STRING)
-    @Builder.Default
-    @Column(
-        name = "collections_stage",
-        nullable = false,
-        length = 20
-    )
-    private CollectionsStage collectionsStage = CollectionsStage.NORMAL;
-
-    @Column(name = "classified_at")
-    private LocalDateTime classifiedAt;
-
-
-    // ============================================================
-    // REPAYMENT CONFIGURATION
-    // ============================================================
-
-    @Enumerated(EnumType.STRING)
-    @Builder.Default
     @Column(
         name = "repayment_frequency",
-        nullable = false
+        length = 30
     )
-    private RepaymentFrequency repaymentFrequency =
-        RepaymentFrequency.MONTHLY;
+    private RepaymentFrequency repaymentFrequency;
 
-    @Column(nullable = false, precision = 19, scale = 2)
-    private BigDecimal amount;
 
-    @Column(
-        name = "next_installment_amount",
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal nextInstallmentAmount;
+    // ============================================================
+    // LOAN AMOUNTS
+    // ============================================================
+
+    /**
+     * Original requested / approved principal.
+     */
+    @Column(name = "amount")
+    private Double amount;
+
+    /**
+     * Amount actually disbursed.
+     *
+     * Regulatory reports should normally use this for
+     * actual disbursement statistics.
+     */
+    @Column(name = "disbursed_amount")
+    private Double disbursedAmount;
+
+    /**
+     * Total amount scheduled to be repaid.
+     */
+    @Column(name = "total_repayable")
+    private Double totalRepayable;
+
+    /**
+     * Total amount actually paid by borrower.
+     */
+    @Column(name = "total_paid")
+    @Builder.Default
+    private Double totalPaid = 0.0;
+
+    /**
+     * Current outstanding loan balance.
+     */
+    @Column(name = "outstanding_balance")
+    @Builder.Default
+    private Double outstandingBalance = 0.0;
+
+
+    // ============================================================
+    // REPAYMENT / INSTALLMENT INFORMATION
+    // ============================================================
+
+    @Column(name = "next_installment_amount")
+    private Double nextInstallmentAmount;
 
     @Column(name = "next_payment_date")
     private LocalDate nextPaymentDate;
 
-    /**
-     * Interest rate percentage.
-     *
-     * Example:
-     * 12.00 = 12%
-     */
-    @Column(precision = 10, scale = 4)
-    private BigDecimal interestRate;
-
-    /**
-     * MONTHLY or ANNUAL.
-     */
-    @Builder.Default
-    @Column(name = "interest_rate_type")
-    private String interestRateType = "MONTHLY";
-
-    private Integer durationMonths;
-
-    /**
-     * ISO-4217 currency code.
-     */
-    private String currency;
-
-
-    // ============================================================
-    // FEES
-    // ============================================================
-
-    /**
-     * Processing fee percentage.
-     */
-    @Column(precision = 10, scale = 4)
-    private BigDecimal processingFeeRate;
-
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal processingFee;
-
-
-    // ============================================================
-    // FINANCIAL AMOUNTS
-    // ============================================================
-
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal disbursedAmount;
-
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal totalRepayable;
-
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal totalPaid;
-
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal outstandingBalance;
-
-
-    // ============================================================
-    // LOAN INFORMATION
-    // ============================================================
-
-    private String notes;
-
-    private String purpose;
-
-    private String collateralDescription;
-
-    @Column(
-        precision = 19,
-        scale = 2
-    )
-    private BigDecimal collateralValue;
-
-    private String rejectionReason;
-
-    private String internalNotes;
-
-
-    // ============================================================
-    // IMPORT
-    // ============================================================
-
-    @Builder.Default
-    private Boolean imported = false;
-
-    private Long importBatchId;
-
-
-    // ============================================================
-    // RISK
-    // ============================================================
-
-    private Double riskScore;
-
-    private String riskCategory;
-
-    private Double debtToIncomeRatio;
-
-    private Integer creditScoreSnapshot;
-
-
-    // ============================================================
-    // IMPORTANT DATES
-    // ============================================================
-
-    private LocalDate startDate;
-
-    private LocalDate approvedAt;
-
-    private LocalDate disbursedAt;
-
-    private LocalDate maturityDate;
-
+    @Column(name = "next_due_date")
     private LocalDate nextDueDate;
 
+    @Column(name = "last_payment_date")
     private LocalDate lastPaymentDate;
 
-
-    // ============================================================
-    // REPAYMENT TRACKING
-    // ============================================================
-
+    /**
+     * Number of installments missed.
+     */
+    @Column(name = "missed_installments")
     @Builder.Default
     private Integer missedInstallments = 0;
 
+    /**
+     * Number of days currently overdue.
+     */
+    @Column(name = "days_overdue")
     @Builder.Default
     private Integer daysOverdue = 0;
 
 
     // ============================================================
-    // AUDIT DATES
+    // INTEREST
     // ============================================================
 
+    @Column(name = "interest_rate")
+    private Double interestRate;
+
+    /**
+     * MONTHLY or ANNUAL.
+     *
+     * This should be copied from the loan product when the
+     * loan is created so historical reports remain consistent
+     * even if the product changes later.
+     */
+    @Column(
+        name = "interest_rate_type",
+        length = 20
+    )
+    @Builder.Default
+    private String interestRateType = "MONTHLY";
+
+    @Column(name = "duration_months")
+    private Integer durationMonths;
+
+
+    // ============================================================
+    // CURRENCY
+    // ============================================================
+
+    /**
+     * ISO-4217 currency code.
+     *
+     * Example:
+     * RWF
+     * USD
+     * EUR
+     */
+    @Column(
+        name = "currency",
+        length = 3
+    )
+    @Builder.Default
+    private String currency = "RWF";
+
+
+    // ============================================================
+    // PROCESSING FEES
+    // ============================================================
+
+    /**
+     * Processing fee rate as percentage.
+     */
+    @Column(name = "processing_fee_rate")
+    @Builder.Default
+    private Double processingFeeRate = 2.0;
+
+    /**
+     * Actual processing fee amount.
+     */
+    @Column(name = "processing_fee")
+    @Builder.Default
+    private Double processingFee = 0.0;
+
+
+    // ============================================================
+    // PURPOSE / SECURITY
+    // ============================================================
+
+    @Column(columnDefinition = "TEXT")
+    private String notes;
+
+    @Column(length = 255)
+    private String purpose;
+
+    @Column(
+        name = "collateral_description",
+        columnDefinition = "TEXT"
+    )
+    private String collateralDescription;
+
+    @Column(name = "collateral_value")
+    private Double collateralValue;
+
+    @Column(
+        name = "rejection_reason",
+        columnDefinition = "TEXT"
+    )
+    private String rejectionReason;
+
+    @Column(
+        name = "internal_notes",
+        columnDefinition = "TEXT"
+    )
+    private String internalNotes;
+
+
+    // ============================================================
+    // IMPORT INFORMATION
+    // ============================================================
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean imported = false;
+
+    @Column(name = "import_batch_id")
+    private Long importBatchId;
+
+
+    // ============================================================
+    // CREDIT / RISK
+    // ============================================================
+
+    @Column(name = "risk_score")
+    private Double riskScore;
+
+    /**
+     * LOW
+     * MEDIUM
+     * HIGH
+     * CRITICAL
+     */
+    @Column(
+        name = "risk_category",
+        length = 30
+    )
+    private String riskCategory;
+
+    @Column(name = "debt_to_income_ratio")
+    private Double debtToIncomeRatio;
+
+    /**
+     * Credit score captured when the loan was evaluated.
+     *
+     * Important for historical reporting because the borrower's
+     * current credit score may be different.
+     */
+    @Column(name = "credit_score_snapshot")
+    private Integer creditScoreSnapshot;
+
+
+    // ============================================================
+    // IMPORTANT REGULATORY DATES
+    // ============================================================
+
+    /**
+     * Loan start date.
+     */
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
+    /**
+     * Date loan was approved.
+     */
+    @Column(name = "approved_at")
+    private LocalDate approvedAt;
+
+    /**
+     * Actual date loan was disbursed.
+     */
+    @Column(name = "disbursed_at")
+    private LocalDate disbursedAt;
+
+    /**
+     * Contractual maturity date.
+     */
+    @Column(name = "maturity_date")
+    private LocalDate maturityDate;
+
+
+    // ============================================================
+    // AUDIT / SYSTEM DATES
+    // ============================================================
+
+    @Column(
+        name = "created_at",
+        nullable = false,
+        updatable = false
+    )
     private LocalDateTime createdAt;
 
+    @Column(
+        name = "updated_at",
+        nullable = false
+    )
     private LocalDateTime updatedAt;
 
+
+    // ============================================================
+    // TERMS & CONDITIONS
+    // ============================================================
+
+    /**
+     * Timestamp proving that the applicant accepted the terms.
+     *
+     * Useful for compliance, dispute resolution and audit.
+     */
+    @Column(name = "terms_accepted_at")
     private LocalDateTime termsAcceptedAt;
 
 
@@ -299,23 +424,39 @@ public class Loan {
     // PAYMENTS
     // ============================================================
 
+    /**
+     * Payment history.
+     *
+     * LAZY is important here because loading every payment whenever
+     * a loan is displayed can become very expensive.
+     */
     @JsonIgnore
     @OneToMany(
         mappedBy = "loan",
-        cascade = CascadeType.ALL
+        cascade = CascadeType.ALL,
+        orphanRemoval = false,
+        fetch = FetchType.LAZY
     )
-    private List<Payment> payments;
+    @Builder.Default
+    private List<Payment> payments = new ArrayList<>();
 
 
-
+    // ============================================================
+    // JPA LIFECYCLE
+    // ============================================================
 
     @PrePersist
     protected void onCreate() {
 
         LocalDateTime now = LocalDateTime.now();
 
-        createdAt = now;
-        updatedAt = now;
+        if (createdAt == null) {
+            createdAt = now;
+        }
+
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
 
         if (status == null) {
             status = LoanStatus.PENDING;
@@ -327,8 +468,10 @@ public class Loan {
             interestRateType = "MONTHLY";
         }
 
-        if (repaymentFrequency == null) {
-            repaymentFrequency = RepaymentFrequency.MONTHLY;
+        if (currency == null ||
+            currency.isBlank()) {
+
+            currency = "RWF";
         }
 
         if (missedInstallments == null) {
@@ -340,33 +483,23 @@ public class Loan {
         }
 
         if (totalPaid == null) {
-            totalPaid = MoneyMath.ZERO;
+            totalPaid = 0.0;
+        }
+
+        if (outstandingBalance == null) {
+            outstandingBalance = 0.0;
         }
 
         if (processingFeeRate == null) {
-            processingFeeRate =
-                BigDecimal.valueOf(2)
-                    .setScale(
-                        MoneyMath.SCALE,
-                        MoneyMath.ROUNDING
-                    );
+            processingFeeRate = 2.0;
         }
 
-        if (creditQuality == null) {
-            creditQuality = CreditQuality.CURRENT;
+        if (processingFee == null) {
+            processingFee = 0.0;
         }
 
-        if (arrearsStatus == null) {
-            arrearsStatus = ArrearsStatus.NOT_DUE;
-        }
-
-        if (collectionsStage == null) {
-            collectionsStage = CollectionsStage.NORMAL;
-        }
-
-        
-        if (outstandingBalance == null && amount != null) {
-            outstandingBalance = amount;
+        if (imported == null) {
+            imported = false;
         }
     }
 
@@ -377,69 +510,6 @@ public class Loan {
     }
 
 
-   
-
-    public Double getAmountDouble() {
-        return amount == null
-            ? null
-            : amount.doubleValue();
-    }
-
-    public Double getInterestRateDouble() {
-        return interestRate == null
-            ? null
-            : interestRate.doubleValue();
-    }
-
-    public Double getProcessingFeeRateDouble() {
-        return processingFeeRate == null
-            ? null
-            : processingFeeRate.doubleValue();
-    }
-
-    public Double getProcessingFeeDouble() {
-        return processingFee == null
-            ? null
-            : processingFee.doubleValue();
-    }
-
-    public Double getDisbursedAmountDouble() {
-        return disbursedAmount == null
-            ? null
-            : disbursedAmount.doubleValue();
-    }
-
-    public Double getTotalRepayableDouble() {
-        return totalRepayable == null
-            ? null
-            : totalRepayable.doubleValue();
-    }
-
-    public Double getTotalPaidDouble() {
-        return totalPaid == null
-            ? null
-            : totalPaid.doubleValue();
-    }
-
-    public Double getOutstandingBalanceDouble() {
-        return outstandingBalance == null
-            ? null
-            : outstandingBalance.doubleValue();
-    }
-
-    public Double getCollateralValueDouble() {
-        return collateralValue == null
-            ? null
-            : collateralValue.doubleValue();
-    }
-
-    public Double getNextInstallmentAmountDouble() {
-        return nextInstallmentAmount == null
-            ? null
-            : nextInstallmentAmount.doubleValue();
-    }
-
-
     // ============================================================
     // ENUMS
     // ============================================================
@@ -447,51 +517,41 @@ public class Loan {
     public enum LoanType {
 
         PERSONAL,
+
         MORTGAGE,
+
         AUTO,
+
         BUSINESS,
+
         STUDENT,
+
         EMERGENCY,
+
         ASSET_FINANCE,
+
         SALARY_ADVANCE,
+
         MICROFINANCE,
+
         AGRICULTURAL,
+
         TRADE_FINANCE,
+
         GROUP
     }
 
 
-   
     public enum RepaymentFrequency {
 
-        MONTHLY
+        WEEKLY,
+
+        BIWEEKLY,
+
+        MONTHLY,
+
+        QUARTERLY,
+
+        BULLET
     }
-
-
-    public enum CreditQuality {
-
-        CURRENT,
-        WATCH,
-        SUBSTANDARD,
-        DOUBTFUL,
-        LOSS
-    }
-
-
-    public enum ArrearsStatus {
-
-        NOT_DUE,
-        PAST_DUE
-    }
-
-
-    public enum CollectionsStage {
-
-        NORMAL,
-        REMINDER,
-        COLLECTION,
-        LEGAL,
-        RECOVERY
-    }
-    
 }

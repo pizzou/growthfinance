@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.dto.ImportRowResult;
@@ -11,314 +10,135 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 
+/**
+ * Imports exactly one row of a client's legacy (Excel/CSV) ledger as a loan + its borrower
+ * (matched by National ID if one already exists in this org, created otherwise).
+ *
+ * Each call is its OWN transaction (REQUIRES_NEW) — called from LegacyLoanImportService in a
+ * loop, one row at a time — so a bad row (bad date format, missing field, whatever) fails and
+ * is reported back without rolling back every row already committed before it. A bulk import
+ * of 500 rows where row 217 is malformed should still leave the other 499 in place.
+ *
+ * Imported loans skip this platform's normal origination path entirely (LoanService.createLoan
+ * / the maker-checker approval chain / automatic credit-bureau "loan approved" reporting) —
+ * they're historical fact, not a new application moving through underwriting. Loan.imported
+ * and Borrower.imported are set so reporting/audit can always tell the two apart.
+ */
 @Service
 @RequiredArgsConstructor
 public class LegacyLoanImportRowService {
 
-    private static final int MONEY_SCALE = 2;
-    private static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
-
-    private static final BigDecimal ZERO =
-        BigDecimal.ZERO.setScale(MONEY_SCALE, MONEY_ROUNDING);
-
     private static final List<String> ALLOWED_IMPORT_STATUSES = List.of(
-        "ACTIVE",
-        "OVERDUE",
-        "PAID",
-        "CLOSED",
-        "DEFAULTED",
-        "WRITTEN_OFF",
-        "RESTRUCTURED"
-    );
+        "ACTIVE", "OVERDUE", "PAID", "CLOSED", "DEFAULTED", "WRITTEN_OFF", "RESTRUCTURED");
 
     private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
-        DateTimeFormatter.ISO_LOCAL_DATE,
+        DateTimeFormatter.ISO_LOCAL_DATE,                 // 2024-03-15
         DateTimeFormatter.ofPattern("dd/MM/yyyy"),
         DateTimeFormatter.ofPattern("d/M/yyyy"),
         DateTimeFormatter.ofPattern("MM/dd/yyyy"),
-        DateTimeFormatter.ofPattern("dd-MM-yyyy")
-    );
+        DateTimeFormatter.ofPattern("dd-MM-yyyy"));
 
     private final BorrowerRepository borrowerRepo;
     private final LoanRepository loanRepo;
     private final LoanService loanService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ImportRowResult importRow(
-            Map<String, String> row,
-            int rowNumber,
-            Organization org,
-            Long importBatchId,
-            boolean commit,
-            Map<String, Borrower> sessionBorrowers) {
-
+    public ImportRowResult importRow(Map<String, String> row, int rowNumber, Organization org,
+                                      Long importBatchId, boolean commit,
+                                      Map<String, Borrower> sessionBorrowers) {
         try {
-
-            // ============================================================
-            // 1. BORROWER DATA
-            // ============================================================
-
             String nationalId = req(row, "national_id");
-
             if (!nationalId.matches("\\d{16}")) {
-                return fail(
-                    rowNumber,
-                    "national_id must be exactly 16 digits (got \"" +
-                    nationalId +
-                    "\") — this is the field used to match/create the borrower."
-                );
+                return fail(rowNumber, "national_id must be exactly 16 digits (got \"" + nationalId + "\") — this is the field used to match/create the borrower.");
             }
-
             String firstName = req(row, "first_name");
             String lastName  = req(row, "last_name");
             String phone     = req(row, "phone");
             String gender    = normalizeGender(req(row, "gender"));
-
-            // ============================================================
-            // 2. LOAN INPUT
-            // ============================================================
-
-            BigDecimal amount = reqMoney(row, "amount");
-
-            BigDecimal interestRate = reqMoney(row, "interest_rate");
-
-            int durationMonths = reqInt(row, "duration_months");
-
-            if (durationMonths <= 0) {
-                return fail(
-                    rowNumber,
-                    "duration_months must be greater than zero."
-                );
-            }
-
-            LocalDate startDate = reqDate(row, "start_date");
-
-            // ============================================================
-            // 3. STATUS
-            // ============================================================
+            double amount          = reqDouble(row, "amount");
+            double interestRate    = reqDouble(row, "interest_rate");
+            int    durationMonths  = (int) reqDouble(row, "duration_months");
+            LocalDate startDate    = reqDate(row, "start_date");
 
             String statusRaw = req(row, "status").toUpperCase(Locale.ROOT);
-
             if (!ALLOWED_IMPORT_STATUSES.contains(statusRaw)) {
-                return fail(
-                    rowNumber,
-                    "status must be one of " +
-                    ALLOWED_IMPORT_STATUSES +
-                    " for imported loans (got \"" +
-                    statusRaw +
-                    "\") — in-flight workflow statuses like " +
-                    "PENDING/APPROVED don't apply to historical records."
-                );
+                return fail(rowNumber, "status must be one of " + ALLOWED_IMPORT_STATUSES +
+                    " for imported loans (got \"" + statusRaw + "\") — in-flight workflow statuses like " +
+                    "PENDING/APPROVED don't apply to historical records with no approval trail.");
             }
-
             LoanStatus status = LoanStatus.valueOf(statusRaw);
 
-            // ============================================================
-            // 4. INTEREST RATE TYPE
-            // ============================================================
+            String rateTypeRaw = opt(row, "interest_rate_type", "ANNUAL").toUpperCase(Locale.ROOT);
+            String rateType = "MONTHLY".equals(rateTypeRaw) ? "MONTHLY" : "ANNUAL";
 
-            String rateTypeRaw =
-                opt(row, "interest_rate_type", "ANNUAL")
-                    .toUpperCase(Locale.ROOT);
-
-            String rateType =
-                "MONTHLY".equals(rateTypeRaw)
-                    ? "MONTHLY"
-                    : "ANNUAL";
-
-            // ============================================================
-            // 5. LOAN TYPE
-            // ============================================================
-
-            String loanTypeRaw =
-                opt(row, "loan_type", "PERSONAL")
-                    .toUpperCase(Locale.ROOT)
-                    .replace(' ', '_');
-
+            String loanTypeRaw = opt(row, "loan_type", "PERSONAL").toUpperCase(Locale.ROOT).replace(' ', '_');
             Loan.LoanType loanType;
-
-            try {
-                loanType = Loan.LoanType.valueOf(loanTypeRaw);
-            } catch (Exception e) {
-                return fail(
-                    rowNumber,
-                    "loan_type \"" +
-                    loanTypeRaw +
-                    "\" isn't recognized. Valid values: " +
-                    Arrays.toString(Loan.LoanType.values())
-                );
+            try { loanType = Loan.LoanType.valueOf(loanTypeRaw); }
+            catch (Exception e) {
+                return fail(rowNumber, "loan_type \"" + loanTypeRaw + "\" isn't recognized. Valid values: " +
+                    Arrays.toString(Loan.LoanType.values()));
             }
 
-            // ============================================================
-            // 6. FIND OR CREATE BORROWER
-            // ============================================================
-
+            // ---- borrower: match by National ID within this org, or create ----
+            // Checked against an in-run cache first, not just the DB — a preview hasn't
+            // committed anything yet, so two rows for the same person in one file would
+            // otherwise both look like "new borrower" even though only one should be created.
             String nationalIdHash = HmacIndexer.index(nationalId);
-
             Borrower borrower = sessionBorrowers.get(nationalIdHash);
-
             if (borrower == null) {
-                borrower =
-                    borrowerRepo
-                        .findByNationalIdHashAndOrganization_Id(
-                            nationalIdHash,
-                            org.getId()
-                        )
-                        .orElse(null);
+                borrower = borrowerRepo.findByNationalIdHashAndOrganization_Id(nationalIdHash, org.getId())
+                    .orElse(null);
             }
-
             String borrowerAction;
-
             if (borrower == null) {
-
                 borrower = Borrower.builder()
                     .organization(org)
                     .firstName(firstName)
                     .lastName(lastName)
                     .nationalId(nationalId)
-                    .email(
-                        optOrGenerated(
-                            row,
-                            "email",
-                            nationalId,
-                            org.getId()
-                        )
-                    )
+                    .email(optOrGenerated(row, "email", nationalId, org.getId()))
                     .phone(phone)
                     .gender(gender)
-                    .maritalStatus(
-                        opt(row, "marital_status", "UNKNOWN")
-                    )
-                    .address(
-                        opt(row, "address", null)
-                    )
-                    .monthlyIncome(
-                        optMoney(row, "monthly_income")
-                    )
+                    .maritalStatus(opt(row, "marital_status", "UNKNOWN"))
+                    .address(opt(row, "address", null))
+                    .monthlyIncome(optDouble(row, "monthly_income"))
                     .kycStatus("PENDING")
                     .status(Borrower.BorrowerStatus.ACTIVE)
                     .imported(true)
                     .build();
-
-                if (commit) {
-                    borrower = borrowerRepo.save(borrower);
-                }
-
+                if (commit) borrower = borrowerRepo.save(borrower);
                 borrowerAction = "CREATED_NEW_BORROWER";
-
             } else {
-
                 borrowerAction = "MATCHED_EXISTING_BORROWER";
             }
-
             sessionBorrowers.put(nationalIdHash, borrower);
 
-            // ============================================================
-            // 7. EXISTING PAYMENT / OUTSTANDING BALANCE
-            // ============================================================
-
-            BigDecimal totalPaid =
-                optMoney(row, "total_paid");
-
-            BigDecimal outstandingGiven =
-                optMoney(row, "outstanding_balance");
-
-            BigDecimal totalRepayable;
-            BigDecimal outstandingBalance;
-
+            // ---- loan ----
+            Double totalPaid          = optDouble(row, "total_paid");
+            Double outstandingGiven   = optDouble(row, "outstanding_balance");
+            double totalRepayable;
+            double outstandingBalance;
             if (outstandingGiven != null) {
-
-                /*
-                 * If the legacy ledger already provides an outstanding
-                 * balance, trust it instead of trying to reconstruct
-                 * historical adjustments.
-                 */
-
-                outstandingBalance = money(outstandingGiven);
-
-                BigDecimal paid =
-                    totalPaid != null
-                        ? money(totalPaid)
-                        : ZERO;
-
-                totalRepayable =
-                    money(paid.add(outstandingBalance));
-
+                // Real-world ledgers reflect adjustments/partial payments a formula can't
+                // reconstruct — trust the client's own figure over recomputing from scratch.
+                outstandingBalance = outstandingGiven;
+                totalRepayable = (totalPaid != null ? totalPaid : 0) + outstandingBalance;
             } else {
-
-                /*
-                 * LoanService.amortize() currently works with doubles.
-                 * Convert only at the service boundary and immediately
-                 * convert the result back to BigDecimal.
-                 */
-
-                double[] calc =
-                    loanService.amortize(
-                        amount.doubleValue(),
-                        interestRate.doubleValue(),
-                        durationMonths,
-                        rateType
-                    );
-
-                if (calc == null || calc.length < 2) {
-                    throw new IllegalStateException(
-                        "Loan amortization returned invalid results."
-                    );
-                }
-
-                totalRepayable =
-                    money(BigDecimal.valueOf(calc[1]));
-
-                if (totalPaid != null) {
-
-                    BigDecimal paid =
-                        money(totalPaid);
-
-                    outstandingBalance =
-                        totalRepayable
-                            .subtract(paid)
-                            .max(ZERO)
-                            .setScale(
-                                MONEY_SCALE,
-                                MONEY_ROUNDING
-                            );
-
-                } else {
-
-                    outstandingBalance =
-                        totalRepayable;
-                }
+                double[] calc = loanService.amortize(amount, interestRate, durationMonths, rateType);
+                totalRepayable = round2(calc[1]);
+                outstandingBalance = totalPaid != null ? round2(Math.max(0, totalRepayable - totalPaid)) : totalRepayable;
             }
 
-            // ============================================================
-            // 8. LOAN REFERENCE
-            // ============================================================
+            String refFromFile = opt(row, "loan_reference", null);
+            String referenceNumber = (refFromFile != null && !refFromFile.isBlank())
+                ? refFromFile : loanService.newReferenceNumber(org);
 
-            String refFromFile =
-                opt(row, "loan_reference", null);
-
-            String referenceNumber =
-                (refFromFile != null && !refFromFile.isBlank())
-                    ? refFromFile
-                    : loanService.newReferenceNumber(org);
-
-            // ============================================================
-            // 9. HISTORICAL LOAN FLAGS
-            // ============================================================
-
-            boolean pastApproval =
-                ALLOWED_IMPORT_STATUSES.contains(statusRaw);
-
-            // ============================================================
-            // 10. BUILD LOAN
-            // ============================================================
+            boolean pastApproval = List.of("ACTIVE","OVERDUE","PAID","CLOSED","DEFAULTED","WRITTEN_OFF","RESTRUCTURED").contains(statusRaw);
 
             Loan loan = Loan.builder()
                 .referenceNumber(referenceNumber)
@@ -326,329 +146,95 @@ public class LegacyLoanImportRowService {
                 .borrower(borrower)
                 .loanType(loanType)
                 .status(status)
-
-                // BigDecimal monetary fields
                 .amount(amount)
                 .interestRate(interestRate)
                 .interestRateType(rateType)
                 .durationMonths(durationMonths)
-                .currency(
-                    opt(
-                        row,
-                        "currency",
-                        org.getDefaultCurrency()
-                    )
-                )
+                .currency(opt(row, "currency", org.getDefaultCurrency()))
                 .totalRepayable(totalRepayable)
-                .totalPaid(
-                    totalPaid != null
-                        ? money(totalPaid)
-                        : ZERO
-                )
+                .totalPaid(totalPaid != null ? totalPaid : 0.0)
                 .outstandingBalance(outstandingBalance)
-
                 .startDate(startDate)
-                .approvedAt(
-                    pastApproval
-                        ? startDate
-                        : null
-                )
-                .disbursedAt(
-                    pastApproval
-                        ? startDate
-                        : null
-                )
-                .notes(
-                    opt(row, "notes", null)
-                )
-                .internalNotes(
-                    "Imported from legacy ledger (batch #" +
-                    importBatchId +
-                    ")"
-                )
+                .approvedAt(pastApproval ? startDate : null)
+                .disbursedAt(pastApproval ? startDate : null)
+                .notes(opt(row, "notes", null))
+                .internalNotes("Imported from legacy ledger (batch #" + importBatchId + ")")
                 .imported(true)
                 .importBatchId(importBatchId)
                 .build();
-
-            // ============================================================
-            // 11. SAVE
-            // ============================================================
 
             if (commit) {
                 loan = loanRepo.save(loan);
             }
 
-            // ============================================================
-            // 12. RESULT
-            // ============================================================
-
             return ImportRowResult.builder()
-                .rowNumber(rowNumber)
-                .success(true)
+                .rowNumber(rowNumber).success(true)
                 .borrowerAction(borrowerAction)
-                .borrowerName(
-                    firstName + " " + lastName
-                )
+                .borrowerName(firstName + " " + lastName)
                 .loanReferenceNumber(referenceNumber)
                 .build();
 
         } catch (IllegalArgumentException e) {
-
-            return fail(
-                rowNumber,
-                e.getMessage()
-            );
-
+            return fail(rowNumber, e.getMessage());
         } catch (Exception e) {
-
-            return fail(
-                rowNumber,
-                "Unexpected error: " +
-                (e.getMessage() != null
-                    ? e.getMessage()
-                    : e.getClass().getSimpleName())
-            );
+            return fail(rowNumber, "Unexpected error: " + e.getMessage());
         }
     }
 
-    // ================================================================
-    // MONEY HELPERS
-    // ================================================================
+    // ---------- helpers ----------
 
-    private BigDecimal money(BigDecimal value) {
-        if (value == null) {
-            return ZERO;
-        }
-
-        return value.setScale(
-            MONEY_SCALE,
-            MONEY_ROUNDING
-        );
+    private String normalizeGender(String v) {
+        String g = v.trim().toUpperCase(Locale.ROOT);
+        if (g.equals("M") || g.equals("MALE")) return "Male";
+        if (g.equals("F") || g.equals("FEMALE")) return "Female";
+        return v.trim(); // pass through anything else as given rather than reject it outright
     }
 
-    private BigDecimal reqMoney(
-            Map<String, String> row,
-            String key) {
-
-        String value = req(row, key);
-
-        try {
-
-            return money(
-                new BigDecimal(
-                    value.replace(",", "").trim()
-                )
-            );
-
-        } catch (NumberFormatException e) {
-
-            throw new IllegalArgumentException(
-                "\"" + key +
-                "\" must be a valid monetary amount " +
-                "(got \"" + value + "\")."
-            );
-        }
+    private String req(Map<String, String> row, String key) {
+        String v = row.get(key);
+        if (v == null || v.isBlank()) throw new IllegalArgumentException("\"" + key + "\" is required but was blank.");
+        return v.trim();
     }
 
-    private BigDecimal optMoney(
-            Map<String, String> row,
-            String key) {
-
-        String value = row.get(key);
-
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-
-        try {
-
-            return money(
-                new BigDecimal(
-                    value.replace(",", "").trim()
-                )
-            );
-
-        } catch (NumberFormatException e) {
-
-            throw new IllegalArgumentException(
-                "\"" + key +
-                "\" must be a valid monetary amount if provided " +
-                "(got \"" + value + "\")."
-            );
-        }
+    private double reqDouble(Map<String, String> row, String key) {
+        String v = req(row, key);
+        try { return Double.parseDouble(v.replace(",", "")); }
+        catch (NumberFormatException e) { throw new IllegalArgumentException("\"" + key + "\" must be a number (got \"" + v + "\")."); }
     }
 
-    // ================================================================
-    // INTEGER HELPERS
-    // ================================================================
-
-    private int reqInt(
-            Map<String, String> row,
-            String key) {
-
-        String value = req(row, key);
-
-        try {
-
-            return Integer.parseInt(
-                value.replace(",", "").trim()
-            );
-
-        } catch (NumberFormatException e) {
-
-            /*
-             * Also accept values such as "12.0" from Excel.
-             */
-
-            try {
-
-                double d =
-                    Double.parseDouble(
-                        value.replace(",", "").trim()
-                    );
-
-                if (d != Math.floor(d)) {
-                    throw new NumberFormatException();
-                }
-
-                return (int) d;
-
-            } catch (NumberFormatException ignored) {
-
-                throw new IllegalArgumentException(
-                    "\"" + key +
-                    "\" must be a whole number " +
-                    "(got \"" + value + "\")."
-                );
-            }
-        }
+    private Double optDouble(Map<String, String> row, String key) {
+        String v = row.get(key);
+        if (v == null || v.isBlank()) return null;
+        try { return Double.parseDouble(v.replace(",", "")); }
+        catch (NumberFormatException e) { throw new IllegalArgumentException("\"" + key + "\" must be a number if provided (got \"" + v + "\")."); }
     }
 
-    // ================================================================
-    // STRING HELPERS
-    // ================================================================
-
-    private String normalizeGender(String value) {
-
-        String gender =
-            value.trim().toUpperCase(Locale.ROOT);
-
-        if (gender.equals("M") ||
-            gender.equals("MALE")) {
-
-            return "Male";
-        }
-
-        if (gender.equals("F") ||
-            gender.equals("FEMALE")) {
-
-            return "Female";
-        }
-
-        return value.trim();
+    private String opt(Map<String, String> row, String key, String fallback) {
+        String v = row.get(key);
+        return (v == null || v.isBlank()) ? fallback : v.trim();
     }
 
-    private String req(
-            Map<String, String> row,
-            String key) {
+    private String optOrGenerated(Map<String, String> row, String key, String nationalId, Long orgId) {
+        String v = row.get(key);
+        if (v != null && !v.isBlank()) return v.trim();
+        // No email on file — extremely common for a manual paper/Excel ledger. Email is
+        // required + unique in the schema, so generate a stable, org-scoped placeholder
+        // rather than blocking the import on a field most legacy records won't have.
+        return "member." + nationalId + ".org" + orgId + "@imported.local";
+    }
 
-        String value = row.get(key);
-
-        if (value == null || value.isBlank()) {
-
-            throw new IllegalArgumentException(
-                "\"" + key +
-                "\" is required but was blank."
-            );
+    private LocalDate reqDate(Map<String, String> row, String key) {
+        String v = req(row, key);
+        for (DateTimeFormatter fmt : DATE_FORMATS) {
+            try { return LocalDate.parse(v, fmt); } catch (DateTimeParseException ignored) {}
         }
-
-        return value.trim();
+        throw new IllegalArgumentException("\"" + key + "\" isn't a recognized date (got \"" + v +
+            "\") — use YYYY-MM-DD or DD/MM/YYYY.");
     }
 
-    private String opt(
-            Map<String, String> row,
-            String key,
-            String fallback) {
+    private double round2(double d) { return Math.round(d * 100.0) / 100.0; }
 
-        String value = row.get(key);
-
-        return (value == null || value.isBlank())
-            ? fallback
-            : value.trim();
-    }
-
-    private String optOrGenerated(
-            Map<String, String> row,
-            String key,
-            String nationalId,
-            Long orgId) {
-
-        String value = row.get(key);
-
-        if (value != null && !value.isBlank()) {
-            return value.trim();
-        }
-
-        /*
-         * Legacy records frequently don't have email addresses.
-         * Generate a stable organization-scoped placeholder.
-         */
-
-        return "member." +
-            nationalId +
-            ".org" +
-            orgId +
-            "@imported.local";
-    }
-
-    // ================================================================
-    // DATE
-    // ================================================================
-
-    private LocalDate reqDate(
-            Map<String, String> row,
-            String key) {
-
-        String value = req(row, key);
-
-        for (DateTimeFormatter formatter : DATE_FORMATS) {
-
-            try {
-
-                return LocalDate.parse(
-                    value,
-                    formatter
-                );
-
-            } catch (DateTimeParseException ignored) {
-                // Try next format.
-            }
-        }
-
-        throw new IllegalArgumentException(
-            "\"" + key +
-            "\" isn't a recognized date " +
-            "(got \"" + value +
-            "\") — use YYYY-MM-DD or DD/MM/YYYY."
-        );
-    }
-
-    // ================================================================
-    // RESULT
-    // ================================================================
-
-    private ImportRowResult fail(
-            int rowNumber,
-            String error) {
-
-        return ImportRowResult.builder()
-            .rowNumber(rowNumber)
-            .success(false)
-            .error(
-                error != null
-                    ? error
-                    : "Unknown import error"
-            )
-            .build();
+    private ImportRowResult fail(int rowNumber, String error) {
+        return ImportRowResult.builder().rowNumber(rowNumber).success(false).error(error).build();
     }
 }

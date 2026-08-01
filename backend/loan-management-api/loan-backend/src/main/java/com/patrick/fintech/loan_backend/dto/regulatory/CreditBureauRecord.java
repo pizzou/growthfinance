@@ -3,7 +3,6 @@ package com.patrick.fintech.loan_backend.dto.regulatory;
 import lombok.Builder;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -23,8 +22,8 @@ public class CreditBureauRecord {
     private String loanNumber;
     private String loanType;
     private String loanStatus;
-    private BigDecimal loanAmount;
-    private BigDecimal outstandingBalance;
+    private Double loanAmount;
+    private Double outstandingBalance;
     private Integer daysPastDue;
     private Integer creditScore;
 

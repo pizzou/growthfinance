@@ -1,11 +1,7 @@
 package com.patrick.fintech.loan_backend.dto.publicportal;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Data
@@ -18,9 +14,10 @@ public class PaymentHistoryResponse {
 
     private LocalDate paymentDate;
 
-    private BigDecimal amount;
+    private Double amount;
 
     private String method;
 
     private String status;
+
 }

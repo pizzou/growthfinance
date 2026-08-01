@@ -1,7 +1,5 @@
 package com.patrick.fintech.loan_backend.dto;
 
-import java.math.BigDecimal;
-
 import com.patrick.fintech.loan_backend.model.Loan;
 import jakarta.validation.constraints.*;
 import lombok.*;
@@ -9,7 +7,7 @@ import lombok.*;
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
 public class LoanRequest {
     @NotNull  private Long    borrowerId;
-    @NotNull @Positive private BigDecimal  amount;
+    @NotNull @Positive private Double  amount;
     private Double  interestRate;
     /** "MONTHLY" or "ANNUAL" — how to interpret interestRate above when it's supplied.
      *  Ignored (falls back to the product's own type) when interestRate is null. */
@@ -19,7 +17,7 @@ public class LoanRequest {
     private String  startDate;
     private String  purpose;
     private String  notes;
-    private BigDecimal  collateralValue;
+    private Double  collateralValue;
     private String  collateralDescription;
     private Loan.LoanType         loanType;
     private Loan.RepaymentFrequency repaymentFrequency;

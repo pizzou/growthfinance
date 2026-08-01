@@ -8,8 +8,6 @@ import com.patrick.fintech.loan_backend.util.CurrentUserUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.security.access.prepost.PreAuthorize;
-import com.patrick.fintech.loan_backend.model.PaymentTransaction;
 import java.util.List;
 import java.util.Map;
 
@@ -44,7 +42,7 @@ public class PaymentController {
         }
 
         try {
-            java.math.BigDecimal amount  = new java.math.BigDecimal(body.get("amount").toString());
+            Double amount  = Double.parseDouble(body.get("amount").toString());
             String method  = body.getOrDefault("paymentMethod","BANK_TRANSFER").toString();
             String txnId   = body.getOrDefault("transactionId","").toString();
             String channel = body.getOrDefault("channel","").toString();
@@ -58,29 +56,6 @@ public class PaymentController {
             idempotencyService.recordFailure(idempotencyKey, org);
             throw e;
         }
-    }
-
-    /**
-     * Reverse a posted payment. Reversal is a compensating financial transaction:
-     * the original payment remains immutable, its GL entry is reversed, and the
-     * loan/installment balances are restored. Only privileged accounting/management
-     * roles may perform this operation.
-     */
-    @PostMapping("/transactions/{transactionId}/reverse")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','ACCOUNTANT')")
-    public ResponseEntity<ApiResponse<PaymentTransaction>> reversePayment(
-            @PathVariable Long loanId,
-            @PathVariable Long transactionId,
-            @RequestBody(required = false) Map<String,Object> body) {
-        String reason = body != null && body.get("reason") != null
-            ? body.get("reason").toString().trim() : "";
-        if (reason.isBlank())
-            throw new IllegalArgumentException("A reversal reason is required");
-
-        PaymentTransaction tx = paymentService.reversePayment(
-            loanId, transactionId, reason, currentUserUtil.getCurrentUser());
-
-        return ResponseEntity.ok(ApiResponse.ok("Payment reversed", tx));
     }
 
     /** Get full repayment schedule for a loan */

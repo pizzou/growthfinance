@@ -3,7 +3,6 @@ package com.patrick.fintech.loan_backend.dto.publicportal;
 import lombok.Builder;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Data
@@ -14,13 +13,13 @@ public class DashboardSummaryResponse {
 
     private Integer activeLoans;
 
-    private BigDecimal totalBorrowed;
+    private Double totalBorrowed;
 
-    private BigDecimal outstandingBalance;
+    private Double outstandingBalance;
 
-    private BigDecimal totalPaid;
+    private Double totalPaid;
 
-    private BigDecimal nextPaymentAmount;
+    private Double nextPaymentAmount;
 
     private LocalDate nextPaymentDate;
 
