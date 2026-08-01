@@ -2,6 +2,10 @@ package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
 import com.patrick.fintech.loan_backend.dto.regulatory.CreditBureauRecord;
+import com.patrick.fintech.loan_backend.model.CreditBureauSubmission;
+import com.patrick.fintech.loan_backend.model.CreditBureauSubmissionRecord;
+import com.patrick.fintech.loan_backend.model.Organization;
+import com.patrick.fintech.loan_backend.repository.OrganizationRepository;
 import com.patrick.fintech.loan_backend.service.AuditService;
 import com.patrick.fintech.loan_backend.service.RegulatoryReportingService;
 import com.patrick.fintech.loan_backend.service.ReportExportService;
@@ -19,14 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Staff-facing Credit Bureau export screen. Borrower-level credit data (identity +
- * repayment status) — access is intentionally narrower than BNR reports since this is
- * PII, not aggregate statistics: ADMIN and MANAGER only, no AUDITOR.
- *
- * The feed an actual credit bureau consumes programmatically lives at
- * /api/regulatory/external/credit-bureau/**, protected by API key.
- */
+
 @RestController
 @RequestMapping("/api/regulatory/credit-bureau")
 @RequiredArgsConstructor
@@ -37,6 +34,7 @@ public class CreditBureauExportController {
     private final ReportExportService exportService;
     private final AuditService auditService;
     private final CurrentUserUtil currentUserUtil;
+    private final OrganizationRepository orgRepo;
 
     private static final List<String> COLUMNS = List.of(
         "National ID", "Full Name", "Date of Birth", "Gender", "Phone",
@@ -86,6 +84,44 @@ public class CreditBureauExportController {
             .contentType(contentType)
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "." + ext + "\"")
             .body(bytes);
+    }
+
+    // ---- Persisted submission history (NEW) ----
+
+    @PostMapping("/periods/{period}/submit")
+    public ResponseEntity<ApiResponse<CreditBureauSubmission>> submitPeriod(@PathVariable String period) {
+        Organization org = currentOrg();
+        CreditBureauSubmission submission = reportingService.persistSubmission(
+            org, period, currentUserUtil.getCurrentUser().getName());
+        return ResponseEntity.ok(ApiResponse.ok("Submitted", submission));
+    }
+
+    @GetMapping("/periods/{period}/records")
+    public ResponseEntity<ApiResponse<List<CreditBureauSubmissionRecord>>> periodRecords(@PathVariable String period) {
+        Long orgId = currentUserUtil.getCurrentOrganizationId();
+        return ResponseEntity.ok(ApiResponse.ok(reportingService.getSubmissionRecordsForPeriod(orgId, period)));
+    }
+
+    @GetMapping("/loans/{loanId}/history")
+    public ResponseEntity<ApiResponse<List<CreditBureauSubmissionRecord>>> loanHistory(@PathVariable Long loanId) {
+        return ResponseEntity.ok(ApiResponse.ok(reportingService.getHistoryForLoan(loanId)));
+    }
+
+    @GetMapping("/submissions")
+    public ResponseEntity<ApiResponse<List<CreditBureauSubmission>>> submissions() {
+        Long orgId = currentUserUtil.getCurrentOrganizationId();
+        return ResponseEntity.ok(ApiResponse.ok(reportingService.getSubmissions(orgId)));
+    }
+
+    @GetMapping("/submissions/{id}")
+    public ResponseEntity<ApiResponse<CreditBureauSubmission>> submission(@PathVariable Long id) {
+        Long orgId = currentUserUtil.getCurrentOrganizationId();
+        return ResponseEntity.ok(ApiResponse.ok(reportingService.getSubmission(id, orgId)));
+    }
+
+    private Organization currentOrg() {
+        return orgRepo.findById(currentUserUtil.getCurrentOrganizationId())
+            .orElseThrow(() -> new RuntimeException("Organization not found"));
     }
 
     private Map<String, Object> toRow(CreditBureauRecord r) {
