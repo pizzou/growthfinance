@@ -17,6 +17,7 @@ public class LoanRestructuringService {
     private final WebhookService     webhookService;
     private final MailService        mailService;
     private final SmsService         smsService;
+    private final LoanClassificationService loanClassificationService;
 
     @Transactional
     public Loan restructure(Long loanId,Long orgId,User officer,int newMonths,Double newRate,String reason) {
@@ -27,9 +28,13 @@ public class LoanRestructuringService {
         if(newRate!=null) loan.setInterestRate(newRate);
         loan.setDurationMonths(newMonths);
         loan.setStatus(LoanStatus.RESTRUCTURED);
+       
+        loan.setDaysOverdue(0);
         loan.setInternalNotes("[RESTRUCTURED] "+reason+" | "+prevMonths+"mo@"+prevRate+"% -> "+newMonths+"mo@"+loan.getInterestRate()+"%");
         regenerateSchedule(loan,officer);
         Loan saved=loanRepo.save(loan);
+        try { loanClassificationService.reclassify(saved); }
+        catch (Exception e) { log.warn("Reclassification failed for loan {}: {}", saved.getId(), e.getMessage()); }
         audit(loan.getOrganization(),officer,"LOAN_RESTRUCTURED",loanId,"Restructured: "+reason);
         webhookService.dispatch(loan.getOrganization(),"LOAN_RESTRUCTURED",saved);
         notify(saved, () -> mailService.sendLoanRestructured(saved, reason),
@@ -48,6 +53,8 @@ public class LoanRestructuringService {
         loan.setOutstandingBalance(0.0);
         loan.setInternalNotes("[WRITTEN OFF] "+reason+" | Amount: "+loan.getCurrency()+" "+amt+" | "+LocalDate.now());
         Loan saved=loanRepo.save(loan);
+        try { loanClassificationService.reclassify(saved); }
+        catch (Exception e) { log.warn("Reclassification failed for loan {}: {}", saved.getId(), e.getMessage()); }
         audit(loan.getOrganization(),officer,"LOAN_WRITTEN_OFF",loanId,"Written off "+loan.getCurrency()+" "+amt+" | "+reason);
         webhookService.dispatch(loan.getOrganization(),"LOAN_WRITTEN_OFF",saved);
         notify(saved, () -> mailService.sendLoanWrittenOff(saved, reason),
@@ -67,8 +74,12 @@ public class LoanRestructuringService {
         if(loan.getMaturityDate()!=null) loan.setMaturityDate(loan.getMaturityDate().plusMonths(pauseMonths));
         if(loan.getNextDueDate()!=null)  loan.setNextDueDate(loan.getNextDueDate().plusMonths(pauseMonths));
         loan.setStatus(LoanStatus.ACTIVE);
+        
+        loan.setDaysOverdue(0);
         loan.setInternalNotes((loan.getInternalNotes()!=null?loan.getInternalNotes()+" | ":"")+"[MORATORIUM "+pauseMonths+"mo] "+reason);
         Loan saved=loanRepo.save(loan);
+        try { loanClassificationService.reclassify(saved); }
+        catch (Exception e) { log.warn("Reclassification failed for loan {}: {}", saved.getId(), e.getMessage()); }
         audit(loan.getOrganization(),officer,"MORATORIUM_GRANTED",loanId,pauseMonths+"mo moratorium: "+reason);
         notify(saved, () -> mailService.sendMoratoriumGranted(saved, pauseMonths, reason),
             "Your payments on loan " + saved.getReferenceNumber() + " are paused for " + pauseMonths
@@ -109,8 +120,7 @@ public class LoanRestructuringService {
         auditService.log(org, u, action, "LOAN", id.toString(), desc);
     }
 
-    /** Best-effort email + SMS, same pattern LoanService uses for approve/reject/disburse —
-     *  a notification failure should never roll back the loan action that triggered it. */
+   
     private void notify(Loan loan, Runnable sendEmail, String smsText) {
         if (loan.getBorrower() == null) return; // shouldn't happen; see LoanService's own guard
         try { sendEmail.run(); } catch (Exception e) { log.warn("Notif failed", e); }

@@ -25,6 +25,7 @@ public class PaymentService {
     private final SmsService            smsService;
     private final WebhookService      webhookService;
     private final AccountingService   accountingService;
+    private final LoanClassificationService loanClassificationService;
 
     @Transactional
     public Payment recordPayment(Long loanId, Double amount, String method,
@@ -33,22 +34,14 @@ public class PaymentService {
         Loan loan = loanRepo.findById(loanId)
             .orElseThrow(() -> new RuntimeException("Loan not found: " + loanId));
 
-        // recordedBy is null for system-originated payments (e.g. a Flutterwave webhook
-        // confirming a payment asynchronously, with no staff member "present" for it) —
-        // the loan's organization is already established via other means in that case,
-        // so we only need to enforce the org match when there IS a human actor to check.
+        
         if (recordedBy != null && !loan.getOrganization().getId().equals(recordedBy.getOrganization().getId()))
             throw new RuntimeException("Access denied");
 
         if (loan.getStatus() != LoanStatus.ACTIVE && loan.getStatus() != LoanStatus.OVERDUE)
             throw new RuntimeException("Loan is not active (status: " + loan.getStatus() + ")");
 
-        // The next pending cycle, if the originally-generated schedule still
-        // has one queued up. Flexible-payment loans routinely outlive that
-        // schedule (e.g. months of interest-only payments extend the loan
-        // past however many rows were pre-generated at disbursement) — when
-        // that happens there's no pending row left, so we create one fresh
-        // below. Every payment always gets a ledger entry either way.
+       
         Optional<Payment> nextInstallmentOpt = paymentRepo.findByLoanId(loanId).stream()
             .filter(p -> !p.getPaid())
             .min(java.util.Comparator.comparing(Payment::getDueDate));
@@ -65,13 +58,7 @@ public class PaymentService {
         double netAvailable = Math.max(0, amount - penalty);
         double balance   = loan.getOutstandingBalance() != null ? loan.getOutstandingBalance() : 0;
 
-        // Interest is calculated fresh, every time, on whatever principal is
-        // still outstanding right now — NOT on the original loan amount, and
-        // NOT assumed to already be baked into whatever figure the borrower
-        // decided to pay. This is what makes a flexible payment amount safe:
-        // however much the borrower hands over, interest owed on the current
-        // balance is always taken out first, and only what's left over ever
-        // reduces principal — exactly like a running microfinance ledger.
+        
         double rate = loan.getInterestRate() != null ? loan.getInterestRate() : 0.0;
         String rateType = loan.getInterestRateType() != null ? loan.getInterestRateType() : "MONTHLY";
         double monthlyRate = "MONTHLY".equalsIgnoreCase(rateType) ? rate / 100.0 : rate / 100.0 / 12.0;
@@ -81,10 +68,7 @@ public class PaymentService {
         double principalPaid = Math.min(netAvailable - interestPaid, balance);
         double newBalance    = round(Math.max(0, balance - principalPaid));
 
-        // A cycle counts as settled once its interest is covered — however
-        // much (or little) principal came off on top of that is a bonus,
-        // not a requirement, since a flexible-payment loan has no fixed
-        // installment amount that must be hit every month.
+       
         boolean interestCovered = netAvailable >= interestDue - 0.01;
         boolean fullyPaidOff    = newBalance <= 0.01;
 
@@ -126,26 +110,27 @@ public class PaymentService {
 
         if (fullyPaidOff) {
             loan.setStatus(LoanStatus.PAID);
-            // Any rows still pending from the original projected schedule are
-            // no longer owed — clear them so a fully paid loan doesn't keep
-            // showing future installments as outstanding on the dashboard.
-            // (installmentId, not installment, is captured here: installment
-            // itself is reassigned earlier in this method, so it isn't
-            // "effectively final" and can't be referenced inside a lambda.)
+            
             Long installmentId = installment.getId();
             List<Payment> stillPending = paymentRepo.findByLoanId(loanId).stream()
                 .filter(p -> !p.getPaid() && !p.getId().equals(installmentId))
                 .toList();
             paymentRepo.deleteAll(stillPending);
+           
+            loan.setDaysOverdue(0);
         } else {
             loan.setStatus(LoanStatus.ACTIVE);
-            // Only roll forward to next month once this cycle's interest has
-            // actually been covered — an interest shortfall keeps the same
-            // cycle "next due" so it isn't silently skipped over.
+           
+            if (interestCovered) loan.setDaysOverdue(0);
+            
             if (interestCovered)
                 loan.setNextDueDate(cycleDueDate.plusMonths(1));
         }
         loanRepo.save(loan);
+
+        
+        try { loanClassificationService.reclassify(loan); }
+        catch (Exception e) { log.warn("Reclassification failed for loan {}: {}", loan.getId(), e.getMessage()); }
 
         audit(loan.getOrganization(), recordedBy, "PAYMENT_RECORDED", "PAYMENT",
               installment.getId().toString(),
@@ -153,10 +138,7 @@ public class PaymentService {
 
         try { mailService.sendPaymentConfirmation(loan, amount); } catch (Exception e) { log.warn("Notif failed", e); }
         try { smsService.sendPaymentConfirmed(loan, amount); } catch (Exception e) { log.warn("SMS failed", e); }
-        // recordedBy is null for system-originated payments (webhook-confirmed mobile
-        // money / bank transfer, or a public borrower-initiated payment) — still notify
-        // the loan officer, just without a "by <name>" attribution and without the
-        // no-op-if-self check that only makes sense for a human actor.
+       
         if (loan.getLoanOfficer() != null && (recordedBy == null || !loan.getLoanOfficer().getId().equals(recordedBy.getId()))) {
             try {
                 notifService.notifyUsers(java.util.List.of(loan.getLoanOfficer()), "Payment Received",
@@ -192,6 +174,8 @@ public class PaymentService {
                     .between(p.getDueDate(), LocalDate.now());
                 loan.setDaysOverdue(Math.max(loan.getDaysOverdue() != null ? loan.getDaysOverdue() : 0, days));
                 loanRepo.save(loan);
+                try { loanClassificationService.reclassify(loan); }
+                catch (Exception e) { log.warn("Reclassification failed for loan {}: {}", loan.getId(), e.getMessage()); }
             }
         }
     }

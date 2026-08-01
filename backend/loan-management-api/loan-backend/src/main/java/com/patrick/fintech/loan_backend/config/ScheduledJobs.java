@@ -24,12 +24,9 @@ public class ScheduledJobs {
     private final AccountingService       accountingService;
     private final OrganizationRepository  organizationRepo;
     private final SchedulerLockService    lockService;
+    private final LoanClassificationService loanClassificationService;
 
-    /** End-of-day accrual run — Phase 8. For every ACTIVE/OVERDUE loan, posts one day's worth
-     *  of interest as accrued-but-uncollected (DR Interest Receivable / CR Interest Income). Runs
-     *  after the overdue check so a loan that flipped to OVERDUE today still accrues for today.
-     *  Idempotent per organization per calendar day via IdempotencyKeyRepository — running this
-     *  twice in one day (e.g. after a restart) does not double-post for any org already done. */
+ 
     @Scheduled(cron = "${app.scheduler.eod-cron:0 30 1 * * *}")
     @Transactional
     public void runEndOfDayAccruals() {
@@ -68,7 +65,7 @@ public class ScheduledJobs {
         }
     }
 
-    /** Daily 7 AM UTC — mark overdue loans and send SMS alerts */
+   
     @Scheduled(cron = "${app.scheduler.overdue-check-cron:0 0 7 * * *}")
     @Transactional
     public void checkOverdueLoans() {
@@ -100,6 +97,16 @@ public class ScheduledJobs {
             log.info("[Scheduler] Collections queue synced: {} case(s) touched", cases);
         } catch (Exception e) {
             log.warn("[Scheduler] Collections sync failed: {}", e.getMessage());
+        }
+
+        try {
+            int totalReclassified = 0;
+            for (Organization org : organizationRepo.findAll()) {
+                totalReclassified += loanClassificationService.reclassifyPortfolio(org);
+            }
+            log.info("[Scheduler] Portfolio reclassification done: {} loan(s) changed classification", totalReclassified);
+        } catch (Exception e) {
+            log.warn("[Scheduler] Portfolio reclassification failed: {}", e.getMessage());
         }
         } finally {
             lockService.release("overdue-check");

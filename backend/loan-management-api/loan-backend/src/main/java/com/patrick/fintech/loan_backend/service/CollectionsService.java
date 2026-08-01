@@ -10,12 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.*;
 
-/**
- * Delinquency / collections workflow.
- * Buckets overdue loans by days-past-due, tracks agent assignment, contact
- * attempts, promise-to-pay commitments, and escalation up to write-off —
- * standard practice for microfinance/SACCO collections desks.
- */
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -27,6 +22,7 @@ public class CollectionsService {
     private final UserRepository userRepo;
     private final AuditService auditService;
     private final AccountingService accountingService;
+    private final LoanClassificationService loanClassificationService;
 
     private static final List<LoanStatus> DELINQUENT_STATUSES =
         List.of(LoanStatus.OVERDUE, LoanStatus.DEFAULTED);
@@ -134,6 +130,8 @@ public class CollectionsService {
                 Loan loan = c.getLoan();
                 loan.setStatus(LoanStatus.WRITTEN_OFF);
                 loanRepo.save(loan);
+                try { loanClassificationService.reclassify(loan); }
+                catch (Exception e) { log.warn("Reclassification failed for loan {}: {}", loan.getId(), e.getMessage()); }
                 accountingService.postWriteOff(loan);
             }
             case CASE_CLOSED -> {

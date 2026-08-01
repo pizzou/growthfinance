@@ -14,7 +14,9 @@ import java.util.List;
     indexes = {
         @Index(name = "idx_loans_org", columnList = "organization_id"),
         @Index(name = "idx_loans_borrower", columnList = "borrower_id"),
-        @Index(name = "idx_loans_status", columnList = "status")
+        @Index(name = "idx_loans_status", columnList = "status"),
+        @Index(name = "idx_loans_credit_quality", columnList = "credit_quality"),
+        @Index(name = "idx_loans_arrears_status", columnList = "arrears_status")
     })
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
 public class Loan {
@@ -30,14 +32,7 @@ public class Loan {
     @JoinColumn(name = "organization_id", nullable = false)
     private Organization organization;
 
-    // Previously @JsonIgnore with fetch = LAZY and no flattened getter to compensate — meaning
-    // loan.borrower (and branch/loanOfficer/approvedBy below) were invisible in every API
-    // response for every loan, not just ones from the public website. The frontend has always
-    // expected these populated (see the Loan TS type and every page that reads
-    // loan.borrower.firstName). EAGER here avoids a LazyInitializationException the moment
-    // Jackson tries to serialize them — with spring.jpa.open-in-view=false, the Hibernate
-    // session is already closed by the time the controller's response gets serialized, so a
-    // LAZY, not-yet-initialized proxy would fail at that point rather than during the request.
+  
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "branch_id")
     private Branch branch;
@@ -58,9 +53,32 @@ public class Loan {
     @Column(nullable = false)
     private LoanType loanType;
 
+  
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private LoanStatus status;
+
+ 
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "credit_quality", nullable = false, length = 20)
+    private CreditQuality creditQuality = CreditQuality.CURRENT;
+
+ 
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "arrears_status", nullable = false, length = 20)
+    private ArrearsStatus arrearsStatus = ArrearsStatus.NOT_DUE;
+
+    
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "collections_stage", nullable = false, length = 20)
+    private CollectionsStage collectionsStage = CollectionsStage.NORMAL;
+
+   
+    @Column(name = "classified_at")
+    private LocalDateTime classifiedAt;
 
     @Enumerated(EnumType.STRING)
     private RepaymentFrequency repaymentFrequency;
@@ -116,9 +134,7 @@ private LocalDate nextPaymentDate;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    /** When the applicant checked "I agree to the Terms & Conditions" on the public application
-     *  form. Null for loans created by staff directly (no separate applicant consent step there).
-     *  This is the evidence a regulator or dispute would ask for — not just a UI checkbox. */
+    
     private LocalDateTime termsAcceptedAt;
 
     @JsonIgnore
@@ -133,6 +149,9 @@ private LocalDate nextPaymentDate;
         if (daysOverdue == null) daysOverdue = 0;
         if (totalPaid == null) totalPaid = 0.0;
         if (processingFeeRate == null) processingFeeRate = 2.0;
+        if (creditQuality == null) creditQuality = CreditQuality.CURRENT;
+        if (arrearsStatus == null) arrearsStatus = ArrearsStatus.NOT_DUE;
+        if (collectionsStage == null) collectionsStage = CollectionsStage.NORMAL;
     }
 
     @PreUpdate protected void onUpdate() { updatedAt = LocalDateTime.now(); }
@@ -143,4 +162,11 @@ private LocalDate nextPaymentDate;
     }
 
     public enum RepaymentFrequency { WEEKLY, BIWEEKLY, MONTHLY, QUARTERLY, BULLET }
+
+   
+    public enum CreditQuality { CURRENT, WATCH, SUBSTANDARD, DOUBTFUL, LOSS }
+
+    public enum ArrearsStatus { NOT_DUE, PAST_DUE }
+
+    public enum CollectionsStage { NORMAL, REMINDER, COLLECTION, LEGAL, RECOVERY }
 }
