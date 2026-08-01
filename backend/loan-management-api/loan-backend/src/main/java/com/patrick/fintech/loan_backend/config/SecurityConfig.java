@@ -25,7 +25,7 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtFilter;
     private final RegulatoryApiKeyAuthFilter regulatoryApiKeyAuthFilter;
 
-    @Value("${app.cors.allowed-origins:https://growthfinance-six.vercel.app/}")
+    @Value("${app.cors.allowed-origins:https://growthfinance-six.vercel.app}")
     private String allowedOrigins;
 
     @Bean
@@ -47,7 +47,7 @@ public class SecurityConfig {
                     "/swagger-ui/**", "/swagger-ui.html",
                     "/api-docs/**",
                     "/actuator/health",
-                    "/api/public/**"
+                    "/public/**"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
