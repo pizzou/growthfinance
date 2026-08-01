@@ -2,14 +2,48 @@ package com.patrick.fintech.loan_backend.repository;
 
 import com.patrick.fintech.loan_backend.model.JournalEntry;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-@Repository
+
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long> {
-    List<JournalEntry> findByOrganization_IdOrderByEntryDateDesc(Long orgId);
-    Optional<JournalEntry> findByIdAndOrganization_Id(Long id, Long orgId);
-    List<JournalEntry> findByOrganization_IdAndEntryDateBetweenOrderByEntryDateAsc(Long orgId, LocalDate from, LocalDate to);
+
+    List<JournalEntry> findByOrganization_IdOrderByEntryDateDesc(Long organizationId);
+
+    List<JournalEntry> findByOrganization_IdAndEntryDateBetweenOrderByEntryDateAsc(
+            Long organizationId,
+            LocalDate from,
+            LocalDate to
+    );
+
+    Optional<JournalEntry> findByIdAndOrganization_Id(
+            Long entryId,
+            Long organizationId
+    );
+
+   
+    Optional<JournalEntry> findByOrganization_IdAndSourceTypeAndSourceId(
+            Long organizationId,
+            String sourceType,
+            String sourceId
+    );
+
+    List<JournalEntry> findByOrganization_IdAndSourceType(
+            Long organizationId,
+            String sourceType
+    );
+
+    List<JournalEntry> findByOrganization_IdAndSourceId(
+            Long organizationId,
+            String sourceId
+    );
+
+    boolean existsByOrganization_IdAndSourceTypeAndSourceId(
+            Long organizationId,
+            String sourceType,
+            String sourceId
+    );
 }

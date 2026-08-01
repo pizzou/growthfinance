@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @JsonIgnoreProperties({"hibernateLazyInitializer","handler"})
@@ -43,8 +45,8 @@ public class CreditBureauCheck {
 
     private Integer activeFacilities;
     private Integer delinquentAccounts;
-    private Double  totalOutstandingDebt;
-    private Double  totalMonthlyObligations;
+    private BigDecimal  totalOutstandingDebt;
+    private BigDecimal  totalMonthlyObligations;
     private Boolean hasDefaultHistory;
     private Boolean hasActiveListing;   // currently blacklisted/negatively listed
     private String  listingReason;

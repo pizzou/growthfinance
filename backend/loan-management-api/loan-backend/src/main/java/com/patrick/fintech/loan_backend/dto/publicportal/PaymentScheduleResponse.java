@@ -3,6 +3,7 @@ package com.patrick.fintech.loan_backend.dto.publicportal;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Data
@@ -13,17 +14,17 @@ public class PaymentScheduleResponse {
 
     private LocalDate dueDate;
 
-    private Double installmentAmount;
+    private BigDecimal installmentAmount;
 
-    private Double principal;
+    private BigDecimal principal;
 
-    private Double interest;
+    private BigDecimal interest;
 
-    private Double penalty;
+    private BigDecimal penalty;
 
-    private Double paid;
+    private BigDecimal paid;
 
-    private Double balance;
+    private BigDecimal balance;
 
     private String status;
 

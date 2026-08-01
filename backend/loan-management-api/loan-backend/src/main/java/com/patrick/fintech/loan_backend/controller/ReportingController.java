@@ -1,63 +1,144 @@
+
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.service.ReportingService;
 import com.patrick.fintech.loan_backend.util.CurrentUserUtil;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/reports")
+@RequiredArgsConstructor
 public class ReportingController {
 
     private final ReportingService reportingService;
-    private final CurrentUserUtil  currentUserUtil;
+    private final CurrentUserUtil currentUserUtil;
 
-    public ReportingController(ReportingService reportingService, CurrentUserUtil currentUserUtil) {
-        this.reportingService = reportingService;
-        this.currentUserUtil  = currentUserUtil;
-    }
-
+    /**
+     * Loan status report for the currently authenticated organization.
+     */
     @GetMapping("/loans/{orgId}")
-    public ResponseEntity<Map<String, Long>> loanStatusReport(@PathVariable Long orgId) {
-        if (!orgId.equals(currentUserUtil.getCurrentOrganizationId())) throw new RuntimeException("Access denied");
-        return ResponseEntity.ok(reportingService.loanStatusReport(orgId));
+    public ResponseEntity<Map<String, Long>> loanStatusReport(
+            @PathVariable Long orgId) {
+
+        validateOrganization(orgId);
+
+        return ResponseEntity.ok(
+            reportingService.loanStatusReport(orgId)
+        );
     }
 
+    /**
+     * Payment report for the currently authenticated organization.
+     *
+     * BigDecimal is used because financial amounts should not be represented
+     * using Double.
+     */
     @GetMapping("/payments/{orgId}")
-    public ResponseEntity<Map<String, Double>> paymentReport(@PathVariable Long orgId) {
-        if (!orgId.equals(currentUserUtil.getCurrentOrganizationId())) throw new RuntimeException("Access denied");
-        return ResponseEntity.ok(reportingService.paymentReport(orgId));
+    public ResponseEntity<Map<String, BigDecimal>> paymentReport(
+            @PathVariable Long orgId) {
+
+        validateOrganization(orgId);
+
+        return ResponseEntity.ok(
+            reportingService.paymentReport(orgId)
+        );
     }
 
-    // ---- Exports — orgId is taken from the caller's own session, not the path, so a staff
-    // member can never export another organization's data by editing the URL. ----
-
+    /**
+     * Export loans belonging to the authenticated organization.
+     */
     @GetMapping("/export/loans")
     public ResponseEntity<String> exportLoans() {
-        return csvResponse(reportingService.exportLoansCsv(currentUserUtil.getCurrentOrganizationId()), "loans");
+
+        Long orgId = currentUserUtil.getCurrentOrganizationId();
+
+        return csvResponse(
+            reportingService.exportLoansCsv(orgId),
+            "loans"
+        );
     }
 
+    /**
+     * Export payments belonging to the authenticated organization.
+     */
     @GetMapping("/export/payments")
     public ResponseEntity<String> exportPayments() {
-        return csvResponse(reportingService.exportPaymentsCsv(currentUserUtil.getCurrentOrganizationId()), "payments");
+
+        Long orgId = currentUserUtil.getCurrentOrganizationId();
+
+        return csvResponse(
+            reportingService.exportPaymentsCsv(orgId),
+            "payments"
+        );
     }
 
+    /**
+     * Export overdue payments belonging to the authenticated organization.
+     */
     @GetMapping("/export/overdue")
     public ResponseEntity<String> exportOverdue() {
-        return csvResponse(reportingService.exportOverdueCsv(currentUserUtil.getCurrentOrganizationId()), "overdue-payments");
+
+        Long orgId = currentUserUtil.getCurrentOrganizationId();
+
+        return csvResponse(
+            reportingService.exportOverdueCsv(orgId),
+            "overdue-payments"
+        );
     }
 
+    /**
+     * Export portfolio summary belonging to the authenticated organization.
+     */
     @GetMapping("/export/summary")
     public ResponseEntity<String> exportSummary() {
-        return csvResponse(reportingService.exportPortfolioSummaryCsv(currentUserUtil.getCurrentOrganizationId()), "portfolio-summary");
+
+        Long orgId = currentUserUtil.getCurrentOrganizationId();
+
+        return csvResponse(
+            reportingService.exportPortfolioSummaryCsv(orgId),
+            "portfolio-summary"
+        );
     }
 
-    private ResponseEntity<String> csvResponse(String csv, String filename) {
+    /**
+     * Make sure the organization in the URL belongs to the
+     * currently authenticated user.
+     */
+    private void validateOrganization(Long requestedOrgId) {
+
+        Long currentOrgId = currentUserUtil.getCurrentOrganizationId();
+
+        if (requestedOrgId == null || currentOrgId == null
+                || !requestedOrgId.equals(currentOrgId)) {
+
+            throw new RuntimeException("Access denied");
+        }
+    }
+
+    /**
+     * Build a CSV HTTP response.
+     */
+    private ResponseEntity<String> csvResponse(
+            String csv,
+            String filename) {
+
+        String finalFilename =
+            filename + "-" + LocalDate.now() + ".csv";
+
         return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_TYPE, "text/csv")
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "-" + java.time.LocalDate.now() + ".csv\"")
+            .contentType(MediaType.parseMediaType("text/csv"))
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"" + finalFilename + "\""
+            )
             .body(csv);
     }
 }

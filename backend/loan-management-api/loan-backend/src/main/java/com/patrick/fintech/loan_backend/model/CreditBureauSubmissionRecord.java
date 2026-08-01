@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -58,8 +59,8 @@ public class CreditBureauSubmissionRecord {
     private String loanNumber;
     private String loanType;
     private String loanStatus;
-    private Double loanAmount;
-    private Double outstandingBalance;
+    private BigDecimal loanAmount;
+    private BigDecimal outstandingBalance;
     private Integer daysPastDue;
     private Integer creditScore;
     private LocalDate dateOpened;

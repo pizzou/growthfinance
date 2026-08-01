@@ -9,6 +9,8 @@ import jakarta.validation.constraints.Pattern;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
+
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -106,9 +108,9 @@ public class Borrower {
     private String employerName;
     private String employmentType;       // PERMANENT, CONTRACT, SELF_EMPLOYED, UNEMPLOYED
     private String jobTitle;
-    private Double monthlyIncome;
-    private Double monthlyExpenses;
-    private Double netWorth;
+    private BigDecimal monthlyIncome;
+    private BigDecimal monthlyExpenses;
+    private BigDecimal netWorth;
 
     // Credit
     private Integer creditScore;

@@ -1,7 +1,12 @@
 package com.patrick.fintech.loan_backend.dto.publicportal;
 
-import lombok.*;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -9,46 +14,52 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class BorrowerDashboardResponse {
 
     private Long loanId;
+
     private String referenceNumber;
 
     private String borrowerName;
 
+    private String loanOfficer;
+
     private String status;
+
     private String loanType;
 
-    private Double principal;
-    private Double outstandingBalance;
-    private Double totalPaid;
-    private Double totalRepayable;
+    private BigDecimal principal;
 
-    private Double nextInstallmentAmount;
+    private BigDecimal outstandingBalance;
+
+    private BigDecimal totalPaid;
+
+    private BigDecimal totalRepayable;
+
+    private BigDecimal nextInstallmentAmount;
 
     private LocalDate nextPaymentDate;
-    private LocalDate nextDueDate;
+    private Integer daysUntilDue;
+
     private LocalDate maturityDate;
 
     private Integer missedInstallments;
-    private Integer daysOverdue;
 
-    private Double interestRate;
+    private Integer daysOverdue;
 
     private String currency;
 
-    private String loanOfficer;
+    /*
+     * IMPORTANT:
+     * Loan.interestRate is BigDecimal,
+     * so this must also be BigDecimal.
+     */
+    private BigDecimal interestRate;
 
-    private Integer activeLoans;
-    private Integer overdueLoans;
-    private Integer completedLoans;
+    private String interestRateType;
 
-    private Integer daysUntilDue;
-    private Double repaymentProgress;
+    private List<PaymentHistoryResponse> recentPayments;
 
-private List<PaymentHistoryResponse> recentPayments;
-
-private List<UpcomingInstallmentResponse> upcomingInstallments;
-
-private List<String> availablePaymentMethods;
+    private List<UpcomingInstallmentResponse> upcomingInstallments;
 }
