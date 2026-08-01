@@ -9,18 +9,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 
-/**
- * Bootstraps the single production organization (Growth Finance Services Ltd) on first
- * startup — roles, the real admin account (from BOOTSTRAP_ADMIN_* env vars), chart of
- * accounts, and the org's real loan products. Skipped if an organization already exists
- * (idempotent).
- *
- * No demo borrowers, loans, or extra staff accounts are created — this file previously
- * hardcoded fictional borrowers, their loans, and a demo Loan Officer account with a
- * published password. Publishing fixed credentials in source is a real security exposure
- * once this repo is anywhere (same class of issue previously fixed for JWT_SECRET and
- * DB_PASSWORD), and fake borrower/loan records have no place in a live production database.
- */
+
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -48,9 +37,7 @@ public class DataSeeder implements CommandLineRunner {
         Role officerRole = ensureRole("LOAN_OFFICER", "Approve and disburse loans");
         Role managerRole = ensureRole("MANAGER",      "Branch/portfolio management");
 
-        // ===== ORGANIZATION: Growth Finance Services Ltd (Rwanda) =====
-        // Edit these branding/contact defaults directly, or leave them — every field here is
-        // also editable live from Dashboard → Settings → Website once the app is running.
+       
         Organization growth = orgRepo.save(Organization.builder()
             .name("Growth Finance Services Ltd").industry("Microfinance").country("RW")
             .defaultCurrency("RWF").timezone("Africa/Kigali").locale("en-RW")

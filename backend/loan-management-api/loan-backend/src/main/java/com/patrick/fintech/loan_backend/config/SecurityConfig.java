@@ -25,7 +25,7 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtFilter;
     private final RegulatoryApiKeyAuthFilter regulatoryApiKeyAuthFilter;
 
-    @Value("${app.cors.allowed-origins:https://fintech01-cy17.vercel.app/}")
+    @Value("${app.cors.allowed-origins:https://growthfinance-six.vercel.app/}")
     private String allowedOrigins;
 
     @Bean
