@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
 
     CONSTRAINT fk_payment_tx_recorded_by
         FOREIGN KEY (recorded_by)
-        REFERENCES users(id),
+        REFERENCES app_users(id),
 
     CONSTRAINT chk_payment_tx_status
         CHECK (status IN ('POSTED', 'REVERSED'))
