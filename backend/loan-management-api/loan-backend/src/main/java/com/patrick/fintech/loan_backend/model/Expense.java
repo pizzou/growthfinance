@@ -8,13 +8,6 @@ import lombok.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/**
- * A single operating expense (rent, salaries, utilities, etc.) paid from one of the
- * institution's bank/cash accounts. Unlike loan disbursements/payments, which the system
- * posts to the ledger automatically, an Expense is the primary record — recording it IS
- * the transaction, so posting it to the general ledger happens synchronously and any
- * posting failure rolls the whole creation back (see AccountingService#postExpense).
- */
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(
@@ -23,7 +16,9 @@ import java.time.LocalDateTime;
         @Index(name = "idx_expenses_org", columnList = "organization_id"),
         @Index(name = "idx_expenses_date", columnList = "expense_date"),
         @Index(name = "idx_expenses_category", columnList = "category"),
-        @Index(name = "idx_expenses_branch", columnList = "branch_id")
+        @Index(name = "idx_expenses_branch", columnList = "branch_id"),
+        @Index(name = "idx_expenses_payment_method", columnList = "payment_method"),
+        @Index(name = "idx_expenses_payment_reference", columnList = "payment_transaction_reference")
     }
 )
 @Data
@@ -36,22 +31,55 @@ public class Expense {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // ============================================================
+    // ORGANIZATION
+    // ============================================================
+
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "organization_id", nullable = false)
     private Organization organization;
 
-    /** Which branch incurred the expense — null for head-office / org-wide costs. */
+
+    // ============================================================
+    // BRANCH
+    // ============================================================
+
+    /**
+     * Branch that incurred the expense.
+     *
+     * Null means Head Office / organization-wide expense.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "branch_id")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private Branch branch;
 
-    /** Which bank/cash account actually paid for this — determines the GL credit side. */
+
+    // ============================================================
+    // PAYMENT ACCOUNT
+    // ============================================================
+
+    /**
+     * The institution's accounting account that actually paid
+     * for the expense.
+     *
+     * Examples:
+     *
+     * - Cash on Hand
+     * - Bank Account
+     * - Mobile Money Account
+     * - Card Clearing Account
+     */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "payment_account_id", nullable = false)
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private BankAccount paymentAccount;
+
+
+    // ============================================================
+    // BASIC EXPENSE INFORMATION
+    // ============================================================
 
     @Column(name = "expense_date", nullable = false)
     private LocalDate expenseDate;
@@ -60,6 +88,9 @@ public class Expense {
     @Column(nullable = false, length = 50)
     private ExpenseCategory category;
 
+    /**
+     * Keep Double as requested.
+     */
     @Column(nullable = false)
     private Double amount;
 
@@ -70,7 +101,133 @@ public class Expense {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    // ---- Receipt attachment (same pattern as BorrowerFile) ----
+
+    // ============================================================
+    // PAYMENT METHOD
+    // ============================================================
+
+    /**
+     * How the expense was actually paid.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = false, length = 30)
+    @Builder.Default
+    private PaymentMethod paymentMethod = PaymentMethod.CASH;
+
+
+    /**
+     * Payment provider.
+     *
+     * Examples:
+     *
+     * - MTN
+     * - Airtel
+     * - Bank of Kigali
+     * - Equity Bank
+     * - Visa
+     * - Mastercard
+     */
+    @Column(name = "payment_provider", length = 100)
+    private String paymentProvider;
+
+
+    /**
+     * Phone number involved in a mobile-money payment.
+     *
+     * Example:
+     * 0788123456
+     */
+    @Column(name = "payment_phone_number", length = 30)
+    private String paymentPhoneNumber;
+
+
+    /**
+     * External transaction/reference number.
+     *
+     * Examples:
+     *
+     * Mobile Money:
+     * TXN123456789
+     *
+     * Bank:
+     * BANK-REF-12345
+     *
+     * Card:
+     * POS-123456
+     */
+    @Column(name = "payment_transaction_reference", length = 150)
+    private String paymentTransactionReference;
+
+
+    /**
+     * Merchant code / MoMo Pay code / payment code.
+     *
+     * Example:
+     * 123456
+     */
+    @Column(name = "payment_code", length = 100)
+    private String paymentCode;
+
+
+    // ============================================================
+    // CARD INFORMATION
+    // ============================================================
+
+    /**
+     * Card brand.
+     *
+     * Examples:
+     * VISA
+     * MASTERCARD
+     */
+    @Column(name = "card_brand", length = 30)
+    private String cardBrand;
+
+
+    /**
+     * ONLY the last four digits of the card.
+     *
+     * Example:
+     * 4821
+     *
+     * Never store the complete card number.
+     */
+    @Column(name = "card_last_four", length = 4)
+    private String cardLastFour;
+
+
+    /**
+     * Card authorization code/reference.
+     */
+    @Column(name = "card_authorization_code", length = 100)
+    private String cardAuthorizationCode;
+
+
+    // ============================================================
+    // CHEQUE
+    // ============================================================
+
+    /**
+     * Cheque number when payment method is CHEQUE.
+     */
+    @Column(name = "cheque_number", length = 100)
+    private String chequeNumber;
+
+
+    // ============================================================
+    // PAYMENT NOTES
+    // ============================================================
+
+    /**
+     * Additional payment information.
+     */
+    @Column(name = "payment_notes", columnDefinition = "TEXT")
+    private String paymentNotes;
+
+
+    // ============================================================
+    // RECEIPT
+    // ============================================================
 
     @Column(name = "receipt_file_name")
     private String receiptFileName;
@@ -85,14 +242,31 @@ public class Expense {
     @Column(name = "receipt_data", columnDefinition = "bytea")
     private byte[] receiptData;
 
+
+    // ============================================================
+    // STATUS
+    // ============================================================
+
     @Enumerated(EnumType.STRING)
     @Builder.Default
     @Column(nullable = false, length = 20)
     private Status status = Status.POSTED;
 
-    /** The journal entry this expense posted — used to reverse it if voided. */
+
+    // ============================================================
+    // ACCOUNTING
+    // ============================================================
+
+    /**
+     * Journal entry created when this expense was posted.
+     */
     @Column(name = "journal_entry_id")
     private Long journalEntryId;
+
+
+    // ============================================================
+    // AUDIT
+    // ============================================================
 
     @Column(name = "created_by_name")
     private String createdByName;
@@ -106,53 +280,201 @@ public class Expense {
     @Column(name = "voided_at")
     private LocalDateTime voidedAt;
 
+
+    // ============================================================
+    // PRE-PERSIST
+    // ============================================================
+
     @PrePersist
     protected void onCreate() {
-        if (createdAt == null) createdAt = LocalDateTime.now();
-        if (status == null) status = Status.POSTED;
-        if (currency == null || currency.isBlank()) currency = "RWF";
+
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+
+        if (status == null) {
+            status = Status.POSTED;
+        }
+
+        if (currency == null || currency.isBlank()) {
+            currency = "RWF";
+        }
+
+        if (paymentMethod == null) {
+            paymentMethod = PaymentMethod.CASH;
+        }
     }
 
+
+    // ============================================================
+    // RECEIPT HELPER
+    // ============================================================
+
     public boolean hasReceipt() {
-        return receiptData != null && receiptData.length > 0;
+        return receiptData != null &&
+               receiptData.length > 0;
     }
+
+
+    // ============================================================
+    // STATUS
+    // ============================================================
 
     public enum Status {
         POSTED,
         VOID
     }
 
-    /** Each category maps 1:1 to its own Chart of Accounts expense line (see
-     *  AccountingService.DEFAULT_ACCOUNTS) so the P&L breaks expenses down properly
-     *  instead of dumping everything into one generic bucket. */
+
+    // ============================================================
+    // PAYMENT METHOD
+    // ============================================================
+
+    public enum PaymentMethod {
+
+        /**
+         * Physical cash.
+         */
+        CASH,
+
+        /**
+         * Bank transfer.
+         */
+        BANK_TRANSFER,
+
+        /**
+         * Mobile money transaction.
+         */
+        MOBILE_MONEY,
+
+        /**
+         * MoMo Pay / merchant payment.
+         */
+        MOMO_PAY,
+
+        /**
+         * Debit or credit card.
+         */
+        CARD,
+
+        /**
+         * Cheque.
+         */
+        CHEQUE,
+
+        /**
+         * Other payment method.
+         */
+        OTHER
+    }
+
+
+    // ============================================================
+    // EXPENSE CATEGORIES
+    // ============================================================
+
     public enum ExpenseCategory {
 
-        SALARIES_AND_WAGES     ("Salaries and Wages",       "5200"),
-        RENT                    ("Rent",                     "5201"),
-        UTILITIES               ("Utilities",                "5202"),
-        INTERNET                ("Internet",                 "5203"),
-        TRANSPORT               ("Transport",                "5204"),
-        FUEL                    ("Fuel",                      "5205"),
-        OFFICE_SUPPLIES         ("Office Supplies",          "5206"),
-        BANK_CHARGES            ("Bank Charges",             "5207"),
-        INSURANCE               ("Insurance",                "5208"),
-        MARKETING               ("Marketing",                "5209"),
-        LEGAL_FEES              ("Legal Fees",               "5210"),
-        AUDIT_FEES              ("Audit Fees",               "5211"),
-        DEPRECIATION            ("Depreciation",             "5212"),
-        LOAN_RECOVERY_EXPENSES  ("Loan Recovery Expenses",   "5213"),
-        IT_EXPENSES             ("IT Expenses",              "5214"),
-        OTHER_OPERATING_EXPENSES("Other Operating Expenses", "5215");
+        SALARIES_AND_WAGES(
+            "Salaries and Wages",
+            "5200"
+        ),
+
+        RENT(
+            "Rent",
+            "5201"
+        ),
+
+        UTILITIES(
+            "Utilities",
+            "5202"
+        ),
+
+        INTERNET(
+            "Internet",
+            "5203"
+        ),
+
+        TRANSPORT(
+            "Transport",
+            "5204"
+        ),
+
+        FUEL(
+            "Fuel",
+            "5205"
+        ),
+
+        OFFICE_SUPPLIES(
+            "Office Supplies",
+            "5206"
+        ),
+
+        BANK_CHARGES(
+            "Bank Charges",
+            "5207"
+        ),
+
+        INSURANCE(
+            "Insurance",
+            "5208"
+        ),
+
+        MARKETING(
+            "Marketing",
+            "5209"
+        ),
+
+        LEGAL_FEES(
+            "Legal Fees",
+            "5210"
+        ),
+
+        AUDIT_FEES(
+            "Audit Fees",
+            "5211"
+        ),
+
+        DEPRECIATION(
+            "Depreciation",
+            "5212"
+        ),
+
+        LOAN_RECOVERY_EXPENSES(
+            "Loan Recovery Expenses",
+            "5213"
+        ),
+
+        IT_EXPENSES(
+            "IT Expenses",
+            "5214"
+        ),
+
+        OTHER_OPERATING_EXPENSES(
+            "Other Operating Expenses",
+            "5215"
+        );
 
         private final String label;
         private final String accountCode;
 
-        ExpenseCategory(String label, String accountCode) {
+
+        ExpenseCategory(
+            String label,
+            String accountCode
+        ) {
             this.label = label;
             this.accountCode = accountCode;
         }
 
-        public String getLabel() { return label; }
-        public String getAccountCode() { return accountCode; }
+
+        public String getLabel() {
+            return label;
+        }
+
+
+        public String getAccountCode() {
+            return accountCode;
+        }
     }
 }
