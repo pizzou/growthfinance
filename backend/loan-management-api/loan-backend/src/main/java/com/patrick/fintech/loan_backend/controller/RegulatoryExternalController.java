@@ -60,7 +60,7 @@ public class RegulatoryExternalController {
         return ResponseEntity.ok(ApiResponse.ok(report));
     }
 
-    @GetMapping("/bnr/breakdown/loan-type")
+    @GetMapping("/bnr/breakdown/by-loan-type")
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>> bnrByLoanType(
             @RequestParam(required = false, defaultValue = "MONTHLY") ReportPeriod period,
