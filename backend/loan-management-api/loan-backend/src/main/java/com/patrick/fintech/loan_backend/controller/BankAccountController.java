@@ -32,29 +32,7 @@ public class BankAccountController {
     private final AuditService auditService;
 
 
-    // ============================================================
-    // LIST BANK / CASH ACCOUNTS
-    // ============================================================
-
     
-@GetMapping
-public ResponseEntity<ApiResponse<List<Map<String, Object>>>> list() {
-
-    Long orgId = currentUserUtil.getCurrentOrganizationId();
-
-    return ResponseEntity.ok(
-            ApiResponse.ok(
-                    bankAccountService.listForApi(orgId)
-            )
-    );
-}
-
-
-
-    // ============================================================
-    // CREATE BANK / CASH ACCOUNT
-    // ============================================================
-
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN','ACCOUNTANT')")
     public ResponseEntity<ApiResponse<BankAccount>> create(

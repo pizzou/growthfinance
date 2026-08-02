@@ -23,9 +23,6 @@ public class BankAccountService {
     private final AccountingService accountingService;
 
 
-    // ============================================================
-    // CREATE
-    // ============================================================
 
     @Transactional
     public BankAccount create(
@@ -212,38 +209,39 @@ public List<Map<String, Object>> listForApi(Long orgId) {
     return accounts.stream()
             .map(account -> {
 
-                
-Map<String, Object> row = new LinkedHashMap<>();
+                Map<String, Object> row = new LinkedHashMap<>();
 
-row.put("id", account.getId());
-row.put("name", account.getName());
-row.put("accountType", account.getAccountType());
-row.put("bankName", account.getBankName());
-row.put("accountNumber", account.getAccountNumber());
+                row.put("id", account.getId());
+                row.put("name", account.getName());
+                row.put("accountType", account.getAccountType());
+                row.put("bankName", account.getBankName());
+                row.put("accountNumber", account.getAccountNumber());
+                row.put("active", account.getActive());
 
-if (account.getBranch() != null) {
-    row.put("branchId", account.getBranch().getId());
-    row.put("branchName", account.getBranch().getName());
-} else {
-    row.put("branchId", null);
-    row.put("branchName", "Unassigned");
-}
+                if (account.getBranch() != null) {
+                    row.put("branchId", account.getBranch().getId());
+                    row.put("branchName", account.getBranch().getName());
+                } else {
+                    row.put("branchId", null);
+                    row.put("branchName", "Unassigned");
+                }
 
-if (account.getGlAccount() != null) {
-    row.put("glAccountId", account.getGlAccount().getId());
-    row.put("glAccountCode", account.getGlAccount().getCode());
-    row.put("glAccountName", account.getGlAccount().getName());
-} else {
-    row.put("glAccountId", null);
-    row.put("glAccountCode", null);
-    row.put("glAccountName", null);
-}
+                if (account.getGlAccount() != null) {
+                    row.put("glAccountId", account.getGlAccount().getId());
+                    row.put("glAccountCode", account.getGlAccount().getCode());
+                    row.put("glAccountName", account.getGlAccount().getName());
+                } else {
+                    row.put("glAccountId", null);
+                    row.put("glAccountCode", null);
+                    row.put("glAccountName", null);
+                }
 
-return row;
-
+                return row;
             })
             .toList();
 }
+
+
 
    
     @Transactional(readOnly = true)
