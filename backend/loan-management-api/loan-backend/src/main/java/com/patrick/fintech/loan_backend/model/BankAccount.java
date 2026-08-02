@@ -6,12 +6,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
 
-/**
- * A specific cash-in-hand or bank account the institution actually holds — as opposed to the
- * single generic "1000 Cash and Bank" GL account that automatic loan postings use. Each one is
- * backed by its own dedicated ChartOfAccount sub-ledger (see BankAccountService#create), so
- * "how much is in the Kigali branch petty cash drawer" is a real, separately reconcilable number.
- */
+
 @JsonIgnoreProperties({"hibernateLazyInitializer","handler"})
 @Entity
 @Table(name = "bank_accounts", indexes = @Index(name = "idx_bank_account_org", columnList = "organization_id"))
