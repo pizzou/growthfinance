@@ -1,6 +1,7 @@
 package com.patrick.fintech.loan_backend.config;
 
 import com.patrick.fintech.loan_backend.security.JwtAuthFilter;
+import com.patrick.fintech.loan_backend.security.RateLimitFilter;
 import com.patrick.fintech.loan_backend.security.RegulatoryApiKeyAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +25,7 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtFilter;
     private final RegulatoryApiKeyAuthFilter regulatoryApiKeyAuthFilter;
+    private final RateLimitFilter rateLimitFilter;
 
     @Value("${app.cors.allowed-origins:https://growthfinance-six.vercel.app}")
     private String allowedOrigins;
@@ -53,6 +55,7 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .headers(h -> h.frameOptions(f -> f.sameOrigin()))
+            .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
             // Only engages for /api/regulatory/external/** (see RegulatoryApiKeyAuthFilter's
             // shouldNotFilter) — everything else keeps authenticating via jwtFilter exactly as before.
