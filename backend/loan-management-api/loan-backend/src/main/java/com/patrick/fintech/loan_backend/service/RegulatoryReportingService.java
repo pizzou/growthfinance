@@ -673,21 +673,6 @@ public class RegulatoryReportingService {
             }
 
 
-            // ----------------------------------------------------
-            // RESTRUCTURED
-            // ----------------------------------------------------
-
-            /*
-             * If your Loan entity later receives an explicit
-             * restructuring flag/status, this section can use it.
-             *
-             * For now we don't invent a field that may not exist.
-             */
-
-
-            // ----------------------------------------------------
-            // BORROWER
-            // ----------------------------------------------------
 
             Borrower borrower =
                     loan.getBorrower();
@@ -1032,11 +1017,7 @@ public class RegulatoryReportingService {
                                 + penalty;
 
 
-                /*
-                 * Penalty is intentionally NOT classified
-                 * as a fee because your Payment model does
-                 * not have a dedicated feeComponent field.
-                 */
+               
 
             } else {
 
@@ -1817,10 +1798,6 @@ public class RegulatoryReportingService {
                 );
 
 
-        // ========================================================
-        // INCOME STATEMENT
-        // ========================================================
-
         Map<String, Object>
                 incomeStatement =
                 getMap(
@@ -1829,9 +1806,7 @@ public class RegulatoryReportingService {
                 );
 
 
-        // ========================================================
-        // BALANCE SHEET
-        // ========================================================
+  
 
         double totalAssets =
                 doubleValue(
@@ -1873,10 +1848,6 @@ public class RegulatoryReportingService {
                 );
 
 
-        // ========================================================
-        // PROFIT AND LOSS
-        // ========================================================
-
         double totalIncome =
                 doubleValue(
                         incomeStatement.get(
@@ -1901,9 +1872,7 @@ public class RegulatoryReportingService {
                 );
 
 
-        // ========================================================
-        // TRIAL BALANCE
-        // ========================================================
+       
 
         double trialBalanceDebit =
                 doubleValue(
@@ -1929,9 +1898,7 @@ public class RegulatoryReportingService {
                 );
 
 
-        // ========================================================
-        // CASH FLOW
-        // ========================================================
+      
 
         double cashUsedForLending =
                 doubleValue(

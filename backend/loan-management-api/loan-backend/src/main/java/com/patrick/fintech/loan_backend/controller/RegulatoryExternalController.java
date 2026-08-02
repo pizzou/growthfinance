@@ -60,7 +60,7 @@ public class RegulatoryExternalController {
         return ResponseEntity.ok(ApiResponse.ok(report));
     }
 
-    @GetMapping("/bnr/breakdown/by-loan-type")
+    @GetMapping("/bnr/by-loan-type")
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>> bnrByLoanType(
             @RequestParam(required = false, defaultValue = "MONTHLY") ReportPeriod period,
@@ -72,7 +72,7 @@ public class RegulatoryExternalController {
         return ResponseEntity.ok(ApiResponse.ok(rows));
     }
 
-    @GetMapping("/bnr/breakdown/by-branch")
+    @GetMapping("/bnr/by-branch")
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>> bnrByBranch(
             @RequestParam(required = false, defaultValue = "MONTHLY") ReportPeriod period,
@@ -84,7 +84,7 @@ public class RegulatoryExternalController {
         return ResponseEntity.ok(ApiResponse.ok(rows));
     }
 
-    @GetMapping("/bnr/breakdown/by-gender")
+    @GetMapping("/bnr/by-gender")
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>> bnrByGender(
             @RequestParam(required = false, defaultValue = "MONTHLY") ReportPeriod period,
