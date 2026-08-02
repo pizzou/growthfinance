@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.dto.regulatory.BnrBreakdownRow;
@@ -12,6 +11,7 @@ import com.patrick.fintech.loan_backend.model.Organization;
 import com.patrick.fintech.loan_backend.model.Payment;
 import com.patrick.fintech.loan_backend.repository.LoanRepository;
 import com.patrick.fintech.loan_backend.repository.OrganizationRepository;
+import com.patrick.fintech.loan_backend.repository.PaymentRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -21,31 +21,37 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
 import java.time.temporal.TemporalAdjusters;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class RegulatoryReportingService {
 
     private final LoanRepository loanRepository;
 
+    private final PaymentRepository paymentRepository;
+
     private final OrganizationRepository organizationRepository;
 
-    private final AccountingService accountingService;
+    
+    private final BnrFinancialStatementService
+            bnrFinancialStatementService;
 
 
-    // ============================================================
-    // REPORT PERIOD
-    // ============================================================
 
     public enum ReportPeriod {
 
@@ -64,7 +70,7 @@ public class RegulatoryReportingService {
 
 
     // ============================================================
-    // RESOLVE REPORTING PERIOD
+    // PERIOD RESOLUTION
     // ============================================================
 
     public LocalDate[] resolvePeriod(
@@ -82,24 +88,15 @@ public class RegulatoryReportingService {
                     ReportPeriod.CUSTOM;
         }
 
-
         return switch (period) {
-
-            // ----------------------------------------------------
-            // DAILY
-            // ----------------------------------------------------
 
             case DAILY ->
 
                     new LocalDate[]{
                             today,
-                            today.plusDays(1)
+                            today
                     };
 
-
-            // ----------------------------------------------------
-            // WEEKLY
-            // ----------------------------------------------------
 
             case WEEKLY -> {
 
@@ -112,80 +109,94 @@ public class RegulatoryReportingService {
 
                 yield new LocalDate[]{
                         start,
-                        today.plusDays(1)
+                        start.plusDays(6)
                 };
             }
 
-
-            // ----------------------------------------------------
-            // MONTHLY
-            // ----------------------------------------------------
 
             case MONTHLY -> {
 
                 LocalDate start =
                         today.withDayOfMonth(1);
 
-                yield new LocalDate[]{
-                        start,
-                        today.plusDays(1)
-                };
-            }
-
-
-            // ----------------------------------------------------
-            // QUARTERLY
-            // ----------------------------------------------------
-
-            case QUARTERLY -> {
-
-                int quarterStartMonth =
-                        ((today.getMonthValue() - 1) / 3) * 3 + 1;
-
-                LocalDate start =
-                        LocalDate.of(
-                                today.getYear(),
-                                quarterStartMonth,
-                                1
+                LocalDate end =
+                        today.with(
+                                TemporalAdjusters.lastDayOfMonth()
                         );
 
                 yield new LocalDate[]{
                         start,
-                        today.plusDays(1)
+                        end
                 };
             }
 
 
-            // ----------------------------------------------------
-            // YEARLY
-            // ----------------------------------------------------
+            case QUARTERLY -> {
+
+                int firstMonth =
+                        ((today.getMonthValue() - 1) / 3)
+                                * 3
+                                + 1;
+
+                LocalDate start =
+                        LocalDate.of(
+                                today.getYear(),
+                                firstMonth,
+                                1
+                        );
+
+                LocalDate end =
+                        start.plusMonths(3)
+                                .minusDays(1);
+
+                yield new LocalDate[]{
+                        start,
+                        end
+                };
+            }
+
 
             case YEARLY -> {
 
                 LocalDate start =
                         today.withDayOfYear(1);
 
+                LocalDate end =
+                        today.with(
+                                TemporalAdjusters.lastDayOfYear()
+                        );
+
                 yield new LocalDate[]{
                         start,
-                        today.plusDays(1)
+                        end
                 };
             }
 
 
-            // ----------------------------------------------------
-            // CUSTOM
-            // ----------------------------------------------------
-
             case CUSTOM -> {
 
-                LocalDate exclusiveTo =
+                if (from == null) {
+
+                    throw new IllegalArgumentException(
+                            "Custom reporting period requires 'from'."
+                    );
+                }
+
+                LocalDate end =
                         to == null
-                                ? null
-                                : to.plusDays(1);
+                                ? from
+                                : to;
+
+                if (end.isBefore(from)) {
+
+                    throw new IllegalArgumentException(
+                            "'to' cannot be before 'from'."
+                    );
+                }
 
                 yield new LocalDate[]{
                         from,
-                        exclusiveTo
+                        end
                 };
             }
         };
@@ -193,57 +204,81 @@ public class RegulatoryReportingService {
 
 
     // ============================================================
-    // FETCH LOANS
+    // PORTFOLIO
     // ============================================================
 
-    private List<Loan> fetchLoans(
-            Long orgId,
+    private List<Loan> fetchPortfolio(
+            Long organizationId,
             Long branchId,
-            LocalDate from,
-            LocalDate to
+            LocalDate asOf
     ) {
 
-        LocalDateTime fromDt =
-                from == null
-                        ? null
-                        : from.atStartOfDay();
-
-
-        LocalDateTime toDt =
-                to == null
-                        ? null
-                        : to.atStartOfDay();
-
-
-        return loanRepository.findForRegulatoryReport(
-                orgId,
+        return loanRepository.findPortfolioAsOf(
+                organizationId,
                 branchId,
-                fromDt,
-                toDt
+                asOf
         );
     }
 
 
     // ============================================================
-    // BNR SUMMARY
+    // DISBURSEMENTS
     // ============================================================
 
-    @Transactional(readOnly = true)
+    private List<Loan> fetchDisbursements(
+            Long organizationId,
+            Long branchId,
+            LocalDate from,
+            LocalDate to
+    ) {
+
+        return loanRepository.findLoansDisbursedDuringPeriod(
+                organizationId,
+                branchId,
+                from,
+                to
+        );
+    }
+
+
+    // ============================================================
+    // PAYMENTS
+    // ============================================================
+
+    private List<Payment> fetchPayments(
+            Long organizationId,
+            Long branchId,
+            LocalDate from,
+            LocalDate to
+    ) {
+
+        return paymentRepository.findPaymentsDuringPeriod(
+                organizationId,
+                branchId,
+                from,
+                to
+        );
+    }
+
+
+    // ============================================================
+    // BNR SUMMARY REPORT
+    // ============================================================
+
     public BnrSummaryReport buildBnrSummary(
-            Long orgId,
+            Long organizationId,
             Long branchId,
             ReportPeriod period,
             LocalDate from,
             LocalDate to
     ) {
 
-        if (orgId == null) {
+        if (organizationId == null) {
 
             throw new IllegalArgumentException(
-                    "Organization ID is required"
+                    "organizationId is required."
             );
         }
-
 
         LocalDate[] window =
                 resolvePeriod(
@@ -252,79 +287,188 @@ public class RegulatoryReportingService {
                         to
                 );
 
+        LocalDate periodStart =
+                window[0];
 
-        List<Loan> loans =
-                fetchLoans(
-                        orgId,
+        LocalDate periodEnd =
+                window[1];
+
+
+        // ========================================================
+        // ORGANIZATION
+        // ========================================================
+
+        Organization organization =
+                organizationRepository
+                        .findById(organizationId)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "Organization not found: "
+                                                        + organizationId
+                                        )
+                        );
+
+
+        // ========================================================
+        // DATA
+        // ========================================================
+
+        List<Loan> portfolioLoans =
+                fetchPortfolio(
+                        organizationId,
                         branchId,
-                        window[0],
-                        window[1]
+                        periodEnd
+                );
+
+        List<Loan> disbursementLoans =
+                fetchDisbursements(
+                        organizationId,
+                        branchId,
+                        periodStart,
+                        periodEnd
+                );
+
+        List<Payment> payments =
+                fetchPayments(
+                        organizationId,
+                        branchId,
+                        periodStart,
+                        periodEnd
                 );
 
 
-        Organization org =
-                organizationRepository
-                        .findById(orgId)
-                        .orElse(null);
+        // ========================================================
+        // LOAN COUNTS
+        // ========================================================
+
+        long activeLoans = 0;
+
+        long closedLoans = 0;
+
+        long paidLoans = 0;
+
+        long pendingLoans = 0;
+
+        long approvedLoans = 0;
+
+        long rejectedLoans = 0;
+
+        long cancelledLoans = 0;
+
+        long overdueLoans = 0;
+
+        long defaultedLoans = 0;
+
+        long writtenOffLoans = 0;
+
+        long restructuredLoans = 0;
 
 
         // ========================================================
-        // COUNTERS
+        // MONEY
         // ========================================================
 
-        long active = 0;
-
-        long closed = 0;
-
-        long pending = 0;
-
-        long rejected = 0;
-
-        long overdue = 0;
-
-        long defaulted = 0;
-
-
-        // ========================================================
-        // FINANCIAL TOTALS
-        // ========================================================
-
-        double principalDisbursed = 0.0;
-
-        double outstanding = 0.0;
-
-        double interestCollected = 0.0;
-
-        double interestAccrued = 0.0;
-
-        double fees = 0.0;
-
-
-        // ========================================================
-        // GENDER
-        // ========================================================
-
-        long male = 0;
-
-        long female = 0;
-
-        long other = 0;
-
-
-        // ========================================================
-        // PORTFOLIO RISK
-        // ========================================================
+        double outstandingPrincipal = 0.0;
 
         double parAmount = 0.0;
 
         double nplAmount = 0.0;
 
+        double defaultedAmount = 0.0;
+
+        double writtenOffAmount = 0.0;
+
 
         // ========================================================
-        // PROCESS LOANS
+        // PAR BUCKETS
         // ========================================================
 
-        for (Loan loan : loans) {
+        double par1To30 = 0.0;
+
+        double par31To60 = 0.0;
+
+        double par61To90 = 0.0;
+
+        double par91To180 = 0.0;
+
+        double par181To365 = 0.0;
+
+        double parOver365 = 0.0;
+
+
+        long loansOver30Days = 0;
+
+        long loansOver60Days = 0;
+
+        long loansOver90Days = 0;
+
+        long loansOver180Days = 0;
+
+        long loansOver365Days = 0;
+
+        long nplLoanCount = 0;
+
+
+        // ========================================================
+        // BORROWERS
+        // ========================================================
+
+        Set<Long> borrowerIds =
+                new HashSet<>();
+
+        Set<Long> activeBorrowerIds =
+                new HashSet<>();
+
+        Set<Long> borrowersWithMultipleLoans =
+                new HashSet<>();
+
+        Set<Long> borrowersMissingNationalId =
+                new HashSet<>();
+
+        Set<Long> maleBorrowerIds =
+                new HashSet<>();
+
+        Set<Long> femaleBorrowerIds =
+                new HashSet<>();
+
+        Set<Long> otherGenderBorrowerIds =
+                new HashSet<>();
+
+        Set<Long> youthBorrowerIds =
+                new HashSet<>();
+
+        Set<Long> adultBorrowerIds =
+                new HashSet<>();
+
+        Set<Long> seniorBorrowerIds =
+                new HashSet<>();
+
+
+        Map<Long, Integer> borrowerLoanCounts =
+                new HashMap<>();
+
+
+        // ========================================================
+        // DATA QUALITY
+        // ========================================================
+
+        long loansMissingBorrower = 0;
+
+        long loansMissingBranch = 0;
+
+        long loansMissingCurrency = 0;
+
+
+        List<String> warnings =
+                new ArrayList<>();
+
+
+        // ========================================================
+        // PROCESS PORTFOLIO
+        // ========================================================
+
+        for (Loan loan : portfolioLoans) {
 
             if (loan == null) {
                 continue;
@@ -336,117 +480,64 @@ public class RegulatoryReportingService {
 
 
             // ----------------------------------------------------
-            // STATUS COUNTS
+            // STATUS
             // ----------------------------------------------------
 
             if (status != null) {
 
                 switch (status) {
 
-                    case ACTIVE:
-                    case DISBURSED:
+                    case ACTIVE,
+                         DISBURSED,
+                         OVERDUE ->
 
-                        active++;
-
-                        break;
-
-
-                    case CLOSED:
-                    case PAID:
-
-                        closed++;
-
-                        break;
+                            activeLoans++;
 
 
-                    case PENDING:
-                    case UNDER_REVIEW:
-                    case APPROVED:
+                    case CLOSED ->
 
-                        pending++;
-
-                        break;
+                            closedLoans++;
 
 
-                    case REJECTED:
-                    case CANCELLED:
+                    case PAID ->
 
-                        rejected++;
-
-                        break;
+                            paidLoans++;
 
 
-                    default:
+                    case PENDING,
+                         UNDER_REVIEW ->
 
-                        break;
+                            pendingLoans++;
+
+
+                    case APPROVED ->
+
+                            approvedLoans++;
+
+
+                    case REJECTED ->
+
+                            rejectedLoans++;
+
+
+                    case CANCELLED ->
+
+                            cancelledLoans++;
+
+
+                    case DEFAULTED ->
+
+                            defaultedLoans++;
+
+
+                    case WRITTEN_OFF ->
+
+                            writtenOffLoans++;
+
+
+                    default -> {
+                    }
                 }
-
-
-                // ------------------------------------------------
-                // DEFAULTED
-                // ------------------------------------------------
-
-                if (
-                        status == LoanStatus.DEFAULTED
-                                || status == LoanStatus.WRITTEN_OFF
-                ) {
-
-                    defaulted++;
-                }
-            }
-
-
-            // ----------------------------------------------------
-            // DAYS OVERDUE
-            // ----------------------------------------------------
-
-            Integer daysOverdue =
-                    loan.getDaysOverdue();
-
-
-            /*
-             * A loan is overdue when:
-             *
-             * 1. Its status is explicitly OVERDUE
-             *
-             * OR
-             *
-             * 2. It has positive days overdue.
-             *
-             * The loan is counted only once.
-             */
-
-            boolean isOverdue =
-                    status == LoanStatus.OVERDUE
-                            || (
-                            daysOverdue != null
-                                    && daysOverdue > 0
-                    );
-
-
-            if (isOverdue) {
-
-                overdue++;
-            }
-
-
-            // ----------------------------------------------------
-            // PRINCIPAL DISBURSED
-            // ----------------------------------------------------
-
-            if (
-                    loan.getDisbursedAmount() != null
-            ) {
-
-                principalDisbursed +=
-                        loan.getDisbursedAmount();
-
-            } else if (
-                    loan.getAmount() != null
-            ) {
-
-                principalDisbursed +=
-                        loan.getAmount();
             }
 
 
@@ -454,321 +545,1187 @@ public class RegulatoryReportingService {
             // OUTSTANDING
             // ----------------------------------------------------
 
-            if (
-                    loan.getOutstandingBalance() != null
-            ) {
+            double outstanding =
+                    number(
+                            loan.getOutstandingBalance()
+                    );
 
-                outstanding +=
-                        loan.getOutstandingBalance();
-            }
-
-
-            // ----------------------------------------------------
-            // PROCESSING FEES
-            // ----------------------------------------------------
-
-            if (
-                    loan.getProcessingFee() != null
-            ) {
-
-                fees +=
-                        loan.getProcessingFee();
-            }
+            outstandingPrincipal +=
+                    outstanding;
 
 
             // ----------------------------------------------------
-            // INTEREST
+            // DAYS PAST DUE
             // ----------------------------------------------------
+
+            int dpd =
+                    loan.getDaysOverdue() == null
+                            ? 0
+                            : Math.max(
+                                    0,
+                                    loan.getDaysOverdue()
+                            );
+
 
             if (
-                    loan.getPayments() != null
+                    dpd > 0 &&
+                    outstanding > 0
             ) {
 
-                for (
-                        Payment payment :
-                        loan.getPayments()
-                ) {
+                overdueLoans++;
 
-                    if (
-                            payment == null
-                                    || payment.getInterestComponent() == null
-                    ) {
-                        continue;
-                    }
+                parAmount +=
+                        outstanding;
 
 
-                    if (
-                            Boolean.TRUE.equals(
-                                    payment.getPaid()
-                            )
-                    ) {
+                if (dpd <= 30) {
 
-                        interestCollected +=
-                                payment.getInterestComponent();
+                    par1To30 +=
+                            outstanding;
 
-                    } else {
+                } else if (dpd <= 60) {
 
-                        interestAccrued +=
-                                payment.getInterestComponent();
-                    }
+                    par31To60 +=
+                            outstanding;
+
+                } else if (dpd <= 90) {
+
+                    par61To90 +=
+                            outstanding;
+
+                } else if (dpd <= 180) {
+
+                    par91To180 +=
+                            outstanding;
+
+                } else if (dpd <= 365) {
+
+                    par181To365 +=
+                            outstanding;
+
+                } else {
+
+                    parOver365 +=
+                            outstanding;
                 }
             }
 
 
+            if (dpd > 30) {
+                loansOver30Days++;
+            }
+
+            if (dpd > 60) {
+                loansOver60Days++;
+            }
+
+            if (dpd > 90) {
+                loansOver90Days++;
+            }
+
+            if (dpd > 180) {
+                loansOver180Days++;
+            }
+
+            if (dpd > 365) {
+                loansOver365Days++;
+            }
+
+
             // ----------------------------------------------------
-            // GENDER
+            // NPL
+            // ----------------------------------------------------
+
+            if (isNpl(loan)) {
+
+                nplLoanCount++;
+
+                nplAmount +=
+                        outstanding;
+            }
+
+
+            // ----------------------------------------------------
+            // DEFAULT
+            // ----------------------------------------------------
+
+            if (
+                    status ==
+                            LoanStatus.DEFAULTED
+            ) {
+
+                defaultedAmount +=
+                        outstanding;
+            }
+
+
+            // ----------------------------------------------------
+            // WRITE OFF
+            // ----------------------------------------------------
+
+            if (
+                    status ==
+                            LoanStatus.WRITTEN_OFF
+            ) {
+
+                writtenOffAmount +=
+                        outstanding;
+            }
+
+
+            // ----------------------------------------------------
+            // RESTRUCTURED
+            // ----------------------------------------------------
+
+            /*
+             * If your Loan entity later receives an explicit
+             * restructuring flag/status, this section can use it.
+             *
+             * For now we don't invent a field that may not exist.
+             */
+
+
+            // ----------------------------------------------------
+            // BORROWER
             // ----------------------------------------------------
 
             Borrower borrower =
                     loan.getBorrower();
 
 
-            String gender =
-                    borrower != null
-                            ? borrower.getGender()
-                            : null;
+            if (borrower == null) {
+
+                loansMissingBorrower++;
+
+            } else {
+
+                Long borrowerId =
+                        borrower.getId();
 
 
-            if (gender != null) {
+                if (borrowerId != null) {
 
-                switch (
-                        gender
-                                .trim()
-                                .toUpperCase()
-                ) {
-
-                    case "MALE":
-                    case "M":
-
-                        male++;
-
-                        break;
+                    borrowerIds.add(
+                            borrowerId
+                    );
 
 
-                    case "FEMALE":
-                    case "F":
+                    int loanCount =
+                            borrowerLoanCounts.merge(
+                                    borrowerId,
+                                    1,
+                                    Integer::sum
+                            );
 
-                        female++;
 
-                        break;
+                    if (loanCount > 1) {
+
+                        borrowersWithMultipleLoans.add(
+                                borrowerId
+                        );
+                    }
 
 
-                    default:
+                    if (
+                            status ==
+                                    LoanStatus.ACTIVE
+                                    ||
+                            status ==
+                                    LoanStatus.DISBURSED
+                                    ||
+                            status ==
+                                    LoanStatus.OVERDUE
+                    ) {
 
-                        other++;
+                        activeBorrowerIds.add(
+                                borrowerId
+                        );
+                    }
 
-                        break;
+
+                    String gender =
+                            normalize(
+                                    borrower.getGender()
+                            );
+
+
+                    switch (gender) {
+
+                        case "MALE",
+                             "M" ->
+
+                                maleBorrowerIds.add(
+                                        borrowerId
+                                );
+
+
+                        case "FEMALE",
+                             "F" ->
+
+                                femaleBorrowerIds.add(
+                                        borrowerId
+                                );
+
+
+                        default ->
+
+                                otherGenderBorrowerIds.add(
+                                        borrowerId
+                                );
+                    }
+
+
+                    if (
+                            borrower.getNationalId() ==
+                                    null
+                                    ||
+                            borrower.getNationalId()
+                                    .isBlank()
+                    ) {
+
+                        borrowersMissingNationalId.add(
+                                borrowerId
+                        );
+                    }
+
+
+                    if (
+                            borrower.getDateOfBirth() !=
+                                    null
+                    ) {
+
+                        int age =
+                                Period.between(
+                                        borrower.getDateOfBirth(),
+                                        periodEnd
+                                ).getYears();
+
+
+                        if (age < 35) {
+
+                            youthBorrowerIds.add(
+                                    borrowerId
+                            );
+
+                        } else if (age < 60) {
+
+                            adultBorrowerIds.add(
+                                    borrowerId
+                            );
+
+                        } else {
+
+                            seniorBorrowerIds.add(
+                                    borrowerId
+                            );
+                        }
+                    }
                 }
             }
 
 
             // ----------------------------------------------------
-            // LOAN OUTSTANDING
+            // DATA QUALITY
             // ----------------------------------------------------
 
-            double loanOutstanding =
-                    loan.getOutstandingBalance() != null
-                            ? loan.getOutstandingBalance()
-                            : 0.0;
+            if (loan.getBranch() == null) {
 
-
-            // ----------------------------------------------------
-            // PAR / NPL
-            // ----------------------------------------------------
-
-            if (
-                    daysOverdue != null
-                            && daysOverdue > 0
-                            && loanOutstanding > 0
-            ) {
-
-                parAmount +=
-                        loanOutstanding;
-
-
-                if (
-                        daysOverdue > 90
-                ) {
-
-                    nplAmount +=
-                            loanOutstanding;
-                }
+                loansMissingBranch++;
             }
 
 
-            // ----------------------------------------------------
-            // DEFAULTED / WRITTEN OFF AS NPL
-            // ----------------------------------------------------
-
             if (
-                    status == LoanStatus.DEFAULTED
-                            || status == LoanStatus.WRITTEN_OFF
+                    loan.getCurrency() == null
+                            ||
+                    loan.getCurrency().isBlank()
             ) {
 
-                if (
-                        loanOutstanding > 0
-                                && (
-                                daysOverdue == null
-                                        || daysOverdue <= 90
-                        )
-                ) {
-
-                    nplAmount +=
-                            loanOutstanding;
-                }
+                loansMissingCurrency++;
             }
         }
 
 
         // ========================================================
-        // REPORT PERIOD
+        // DISBURSEMENTS
         // ========================================================
 
-        String reportPeriod =
-                (
-                        period == null
-                                ? ReportPeriod.CUSTOM
-                                : period
-                ).name();
+        double totalPrincipalDisbursed =
+                0.0;
+
+        double totalApprovedAmount =
+                0.0;
+
+        double largestLoanAmount =
+                0.0;
+
+        double smallestLoanAmount =
+                0.0;
+
+        long actualDisbursementCount =
+                0;
 
 
-        LocalDate periodEnd =
-                window[1] == null
-                        ? null
-                        : window[1].minusDays(1);
+        for (Loan loan :
+                disbursementLoans) {
+
+            if (loan == null) {
+                continue;
+            }
+
+
+            double requested =
+                    number(
+                            loan.getAmount()
+                    );
+
+
+            double disbursed =
+                    number(
+                            loan.getDisbursedAmount()
+                    );
+
+
+            if (requested > 0) {
+
+                totalApprovedAmount +=
+                        requested;
+            }
+
+
+            if (disbursed > 0) {
+
+                totalPrincipalDisbursed +=
+                        disbursed;
+
+                actualDisbursementCount++;
+
+
+                if (
+                        disbursed >
+                                largestLoanAmount
+                ) {
+
+                    largestLoanAmount =
+                            disbursed;
+                }
+
+
+                if (
+                        smallestLoanAmount == 0.0
+                                ||
+                        disbursed <
+                                smallestLoanAmount
+                ) {
+
+                    smallestLoanAmount =
+                            disbursed;
+                }
+            }
+        }
+
+
+        double averageLoanSize =
+                actualDisbursementCount == 0
+                        ? 0.0
+                        : totalPrincipalDisbursed
+                        /
+                        actualDisbursementCount;
 
 
         // ========================================================
-        // BUILD SUMMARY
+        // PAYMENTS
+        // ========================================================
+
+        double principalCollected =
+                0.0;
+
+        double interestCollected =
+                0.0;
+
+        double feesCollected =
+                0.0;
+
+        double totalAmountCollected =
+                0.0;
+
+
+        long totalPayments =
+                payments.size();
+
+
+        long missedPayments =
+                0;
+
+
+        long overduePayments =
+                0;
+
+
+        double interestAccruedUnpaid =
+                0.0;
+
+
+        double feesAccruedUnpaid =
+                0.0;
+
+
+        for (Payment payment :
+                payments) {
+
+            if (payment == null) {
+                continue;
+            }
+
+
+            boolean completed =
+                    Boolean.TRUE.equals(
+                            payment.getPaid()
+                    )
+                    ||
+                    payment.getStatus() ==
+                            Payment.PaymentStatus.COMPLETED;
+
+
+            if (completed) {
+
+                double principal =
+                        number(
+                                payment
+                                        .getPrincipalComponent()
+                        );
+
+
+                double interest =
+                        number(
+                                payment
+                                        .getInterestComponent()
+                        );
+
+
+                double amountPaid =
+                        number(
+                                payment
+                                        .getAmountPaid()
+                        );
+
+
+                double penalty =
+                        number(
+                                payment
+                                        .getPenalty()
+                        );
+
+
+                principalCollected +=
+                        principal;
+
+
+                interestCollected +=
+                        interest;
+
+
+                totalAmountCollected +=
+                        amountPaid > 0
+                                ? amountPaid
+                                : principal
+                                + interest
+                                + penalty;
+
+
+                /*
+                 * Penalty is intentionally NOT classified
+                 * as a fee because your Payment model does
+                 * not have a dedicated feeComponent field.
+                 */
+
+            } else {
+
+                if (
+                        payment.getDueDate() != null
+                                &&
+                        !payment.getDueDate()
+                                .isAfter(
+                                        periodEnd
+                                )
+                ) {
+
+                    missedPayments++;
+
+
+                    if (
+                            payment.getDueDate()
+                                    .isBefore(
+                                            periodEnd
+                                    )
+                    ) {
+
+                        overduePayments++;
+                    }
+                }
+
+
+                interestAccruedUnpaid +=
+                        number(
+                                payment
+                                        .getInterestComponent()
+                        );
+            }
+        }
+
+
+        // ========================================================
+        // RATIOS
+        // ========================================================
+
+        double parRatio =
+                ratio(
+                        parAmount,
+                        outstandingPrincipal
+                );
+
+
+        double nplRatio =
+                ratio(
+                        nplAmount,
+                        outstandingPrincipal
+                );
+
+
+        // ========================================================
+        // OUTSTANDING
+        // ========================================================
+
+        double outstandingInterest =
+                0.0;
+
+        double outstandingFees =
+                0.0;
+
+
+        double totalOutstanding =
+                outstandingPrincipal
+                        +
+                        outstandingInterest
+                        +
+                        outstandingFees;
+
+
+        // ========================================================
+        // WARNINGS
+        // ========================================================
+
+        if (loansMissingBorrower > 0) {
+
+            warnings.add(
+                    loansMissingBorrower
+                            +
+                            " loan(s) have no borrower."
+            );
+        }
+
+
+        if (
+                !borrowersMissingNationalId
+                        .isEmpty()
+        ) {
+
+            warnings.add(
+                    borrowersMissingNationalId.size()
+                            +
+                            " borrower(s) have no national ID."
+            );
+        }
+
+
+        if (loansMissingBranch > 0) {
+
+            warnings.add(
+                    loansMissingBranch
+                            +
+                            " loan(s) have no branch."
+            );
+        }
+
+
+        if (loansMissingCurrency > 0) {
+
+            warnings.add(
+                    loansMissingCurrency
+                            +
+                            " loan(s) have no currency."
+            );
+        }
+
+
+        // ========================================================
+        // BREAKDOWNS
+        // ========================================================
+
+        List<BnrBreakdownRow>
+                loanTypeBreakdown =
+                groupAndSum(
+                        portfolioLoans,
+                        loan ->
+                                loan.getLoanType() ==
+                                        null
+                                        ? "UNSPECIFIED"
+                                        : loan.getLoanType()
+                                        .name()
+                );
+
+
+        List<BnrBreakdownRow>
+                branchBreakdown =
+                groupAndSum(
+                        portfolioLoans,
+                        loan ->
+                                loan.getBranch() ==
+                                        null
+                                        ? "UNASSIGNED"
+                                        : loan.getBranch()
+                                        .getName()
+                );
+
+
+        List<BnrBreakdownRow>
+                genderBreakdown =
+                groupAndSum(
+                        portfolioLoans,
+                        loan -> {
+
+                            Borrower borrower =
+                                    loan.getBorrower();
+
+
+                            if (borrower == null) {
+                                return "UNSPECIFIED";
+                            }
+
+
+                            String gender =
+                                    normalize(
+                                            borrower.getGender()
+                                    );
+
+
+                            return switch (gender) {
+
+                                case "MALE",
+                                     "M" ->
+
+                                        "MALE";
+
+
+                                case "FEMALE",
+                                     "F" ->
+
+                                        "FEMALE";
+
+
+                                default ->
+
+                                        "OTHER";
+                            };
+                        }
+                );
+
+
+        // ========================================================
+        // REPORT STATUS
+        // ========================================================
+
+        String reportStatus =
+                warnings.isEmpty()
+                        ? "VALIDATED"
+                        : "VALIDATION_WARNINGS";
+
+
+        // ========================================================
+        // BNR SUMMARY
         // ========================================================
 
         return BnrSummaryReport.builder()
 
+                // ------------------------------------------------
+                // ORGANIZATION
+                // ------------------------------------------------
+
                 .organizationId(
-                        orgId
+                        organizationId
                 )
 
                 .organizationName(
-                        org != null
-                                ? org.getName()
-                                : null
+                        organization.getName()
                 )
 
                 .bnrInstitutionCode(
-                        org != null
-                                ? org.getRegistrationNumber()
-                                : null
+                        organization.getRegistrationNumber()
                 )
 
-                .branchId(
-                        branchId
+                .registrationNumber(
+                        organization.getRegistrationNumber()
                 )
 
-                .branchName(
-                        null
+                .institutionType(
+                        "NON_DEPOSIT_TAKING_LENDER"
                 )
+
+                .country(
+                        organization.getCountry() !=
+                                null
+                                ? organization.getCountry()
+                                : "RW"
+                )
+
+                .currency(
+                        organization.getDefaultCurrency() !=
+                                null
+                                ? organization
+                                .getDefaultCurrency()
+                                : "RWF"
+                )
+
+
+                // ------------------------------------------------
+                // PERIOD
+                // ------------------------------------------------
 
                 .reportPeriod(
-                        reportPeriod
+                        (
+                                period == null
+                                        ? ReportPeriod.CUSTOM
+                                        : period
+                        ).name()
                 )
 
                 .periodStart(
-                        window[0]
+                        periodStart
                 )
 
                 .periodEnd(
                         periodEnd
                 )
 
-                .totalLoansIssued(
-                        loans.size()
+                .reportDate(
+                        periodEnd
+                )
+
+                .generatedAt(
+                        LocalDateTime.now()
+                )
+
+                .generatedBy(
+                        "SYSTEM"
+                )
+
+                .reportReference(
+                        buildReportReference(
+                                organizationId,
+                                periodStart,
+                                periodEnd
+                        )
+                )
+
+
+                // ------------------------------------------------
+                // BRANCH
+                // ------------------------------------------------
+
+                .branchId(
+                        branchId
+                )
+
+                .branchName(
+                        resolveBranchName(
+                                portfolioLoans,
+                                branchId
+                        )
+                )
+
+
+                // ------------------------------------------------
+                // LOANS
+                // ------------------------------------------------
+
+                .totalLoans(
+                        portfolioLoans.size()
+                )
+
+                .loansDisbursedDuringPeriod(
+                        actualDisbursementCount
                 )
 
                 .activeLoans(
-                        active
+                        activeLoans
                 )
 
                 .closedLoans(
-                        closed
+                        closedLoans
+                )
+
+                .paidLoans(
+                        paidLoans
                 )
 
                 .pendingLoans(
-                        pending
+                        pendingLoans
+                )
+
+                .approvedLoans(
+                        approvedLoans
                 )
 
                 .rejectedLoans(
-                        rejected
+                        rejectedLoans
+                )
+
+                .cancelledLoans(
+                        cancelledLoans
                 )
 
                 .overdueLoans(
-                        overdue
+                        overdueLoans
                 )
 
                 .defaultedLoans(
-                        defaulted
+                        defaultedLoans
                 )
+
+                .writtenOffLoans(
+                        writtenOffLoans
+                )
+
+                .restructuredLoans(
+                        restructuredLoans
+                )
+
+
+                // ------------------------------------------------
+                // DISBURSEMENTS
+                // ------------------------------------------------
 
                 .totalPrincipalDisbursed(
-                        principalDisbursed
+                        totalPrincipalDisbursed
                 )
 
+                .totalApprovedAmount(
+                        totalApprovedAmount
+                )
+
+                .averageLoanSize(
+                        averageLoanSize
+                )
+
+                .largestLoanAmount(
+                        largestLoanAmount
+                )
+
+                .smallestLoanAmount(
+                        smallestLoanAmount
+                )
+
+
+                // ------------------------------------------------
+                // OUTSTANDING
+                // ------------------------------------------------
+
                 .outstandingPrincipal(
-                        outstanding
+                        outstandingPrincipal
+                )
+
+                .outstandingInterest(
+                        outstandingInterest
+                )
+
+                .outstandingFees(
+                        outstandingFees
+                )
+
+                .totalOutstanding(
+                        totalOutstanding
+                )
+
+
+                // ------------------------------------------------
+                // REPAYMENTS
+                // ------------------------------------------------
+
+                .totalPrincipalCollected(
+                        principalCollected
                 )
 
                 .totalInterestCollected(
                         interestCollected
                 )
 
+                .totalFeesCollected(
+                        feesCollected
+                )
+
+                .totalAmountCollected(
+                        totalAmountCollected
+                )
+
                 .interestAccruedUnpaid(
-                        interestAccrued
+                        interestAccruedUnpaid
                 )
 
-                .totalProcessingFees(
-                        fees
+                .feesAccruedUnpaid(
+                        feesAccruedUnpaid
                 )
 
-                .maleBorrowers(
-                        male
+                .totalPayments(
+                        totalPayments
                 )
 
-                .femaleBorrowers(
-                        female
+                .missedPayments(
+                        missedPayments
                 )
 
-                .otherGenderBorrowers(
-                        other
+                .overduePayments(
+                        overduePayments
                 )
+
+
+                // ------------------------------------------------
+                // PAR
+                // ------------------------------------------------
 
                 .parAmount(
                         parAmount
                 )
 
                 .parRatio(
-                        outstanding > 0
-                                ? parAmount / outstanding
-                                : 0.0
+                        parRatio
                 )
+
+                .par1To30Amount(
+                        par1To30
+                )
+
+                .par31To60Amount(
+                        par31To60
+                )
+
+                .par61To90Amount(
+                        par61To90
+                )
+
+                .par91To180Amount(
+                        par91To180
+                )
+
+                .par181To365Amount(
+                        par181To365
+                )
+
+                .parOver365Amount(
+                        parOver365
+                )
+
+
+                // ------------------------------------------------
+                // NPL
+                // ------------------------------------------------
 
                 .nplAmount(
                         nplAmount
                 )
 
                 .nplRatio(
-                        outstanding > 0
-                                ? nplAmount / outstanding
-                                : 0.0
+                        nplRatio
                 )
 
-                .currency(
-                        org != null
-                                && org.getDefaultCurrency() != null
-                                ? org.getDefaultCurrency()
-                                : "RWF"
+                .nplLoanCount(
+                        nplLoanCount
                 )
 
-                .generatedAt(
-                        LocalDateTime.now()
+                .loansOver30Days(
+                        loansOver30Days
+                )
+
+                .loansOver60Days(
+                        loansOver60Days
+                )
+
+                .loansOver90Days(
+                        loansOver90Days
+                )
+
+                .loansOver180Days(
+                        loansOver180Days
+                )
+
+                .loansOver365Days(
+                        loansOver365Days
+                )
+
+
+                // ------------------------------------------------
+                // DEFAULT / WRITE OFF
+                // ------------------------------------------------
+
+                .defaultedAmount(
+                        defaultedAmount
+                )
+
+                .writtenOffAmount(
+                        writtenOffAmount
+                )
+
+                .recoveriesAfterWriteOff(
+                        0.0
+                )
+
+
+                // ------------------------------------------------
+                // PROVISION
+                // ------------------------------------------------
+
+                .requiredProvision(
+                        0.0
+                )
+
+                .existingProvision(
+                        0.0
+                )
+
+                .provisionShortfall(
+                        0.0
+                )
+
+
+                // ------------------------------------------------
+                // BORROWERS
+                // ------------------------------------------------
+
+                .totalBorrowers(
+                        borrowerIds.size()
+                )
+
+                .activeBorrowers(
+                        activeBorrowerIds.size()
+                )
+
+                .maleBorrowers(
+                        maleBorrowerIds.size()
+                )
+
+                .femaleBorrowers(
+                        femaleBorrowerIds.size()
+                )
+
+                .otherGenderBorrowers(
+                        otherGenderBorrowerIds.size()
+                )
+
+                .borrowersWithMultipleLoans(
+                        borrowersWithMultipleLoans.size()
+                )
+
+
+                // ------------------------------------------------
+                // FINANCIAL INCLUSION
+                // ------------------------------------------------
+
+                .youthBorrowers(
+                        youthBorrowerIds.size()
+                )
+
+                .adultBorrowers(
+                        adultBorrowerIds.size()
+                )
+
+                .seniorBorrowers(
+                        seniorBorrowerIds.size()
+                )
+
+
+                // ------------------------------------------------
+                // CREDIT
+                // ------------------------------------------------
+
+                .borrowersCreditChecked(
+                        countCreditChecked(
+                                portfolioLoans
+                        )
+                )
+
+                .borrowersWithDefaultHistory(
+                        countBorrowersWithDefaultHistory(
+                                portfolioLoans
+                        )
+                )
+
+                .borrowersWithActiveListing(
+                        0
+                )
+
+                .borrowersWithMultipleFacilities(
+                        borrowersWithMultipleLoans.size()
+                )
+
+                .totalExternalDebt(
+                        0.0
+                )
+
+
+                // ------------------------------------------------
+                // BREAKDOWNS
+                // ------------------------------------------------
+
+                .loanTypeBreakdown(
+                        loanTypeBreakdown
+                )
+
+                .branchBreakdown(
+                        branchBreakdown
+                )
+
+                .genderBreakdown(
+                        genderBreakdown
+                )
+
+
+                // ------------------------------------------------
+                // DATA QUALITY
+                // ------------------------------------------------
+
+                .loansMissingBorrower(
+                        loansMissingBorrower
+                )
+
+                .borrowersMissingNationalId(
+                        borrowersMissingNationalId.size()
+                )
+
+                .loansMissingBranch(
+                        loansMissingBranch
+                )
+
+                .loansMissingCurrency(
+                        loansMissingCurrency
+                )
+
+                .loansMissingRepaymentSchedule(
+                        0
+                )
+
+                .dataQualityWarnings(
+                        warnings
+                )
+
+
+                // ------------------------------------------------
+                // STATUS
+                // ------------------------------------------------
+
+                .reportStatus(
+                        reportStatus
+                )
+
+                .submissionReference(
+                        null
                 )
 
                 .build();
@@ -776,472 +1733,31 @@ public class RegulatoryReportingService {
 
 
     // ============================================================
-    // BNR - LOAN TYPE
-    // ============================================================
-
-    @Transactional(readOnly = true)
-    public List<BnrBreakdownRow> breakdownByLoanType(
-            Long orgId,
-            Long branchId,
-            ReportPeriod period,
-            LocalDate from,
-            LocalDate to
-    ) {
-
-        LocalDate[] window =
-                resolvePeriod(
-                        period,
-                        from,
-                        to
-                );
-
-
-        List<Loan> loans =
-                fetchLoans(
-                        orgId,
-                        branchId,
-                        window[0],
-                        window[1]
-                );
-
-
-        return groupAndSum(
-                loans,
-                loan ->
-                        loan.getLoanType() == null
-                                ? "UNSPECIFIED"
-                                : loan.getLoanType().name()
-        );
-    }
-
-
-    // ============================================================
-    // BNR - BRANCH
-    // ============================================================
-
-    @Transactional(readOnly = true)
-    public List<BnrBreakdownRow> breakdownByBranch(
-            Long orgId,
-            ReportPeriod period,
-            LocalDate from,
-            LocalDate to
-    ) {
-
-        LocalDate[] window =
-                resolvePeriod(
-                        period,
-                        from,
-                        to
-                );
-
-
-        List<Loan> loans =
-                fetchLoans(
-                        orgId,
-                        null,
-                        window[0],
-                        window[1]
-                );
-
-
-        return groupAndSum(
-                loans,
-                loan ->
-                        loan.getBranch() == null
-                                ? "Unassigned"
-                                : loan.getBranch().getName()
-        );
-    }
-
-
-    // ============================================================
-    // BNR - GENDER
-    // ============================================================
-
-    @Transactional(readOnly = true)
-    public List<BnrBreakdownRow> breakdownByGender(
-            Long orgId,
-            Long branchId,
-            ReportPeriod period,
-            LocalDate from,
-            LocalDate to
-    ) {
-
-        LocalDate[] window =
-                resolvePeriod(
-                        period,
-                        from,
-                        to
-                );
-
-
-        List<Loan> loans =
-                fetchLoans(
-                        orgId,
-                        branchId,
-                        window[0],
-                        window[1]
-                );
-
-
-        return groupAndSum(
-                loans,
-                loan -> {
-
-                    String gender =
-                            loan.getBorrower() != null
-                                    ? loan.getBorrower().getGender()
-                                    : null;
-
-
-                    if (gender == null) {
-                        return "UNSPECIFIED";
-                    }
-
-
-                    return switch (
-                            gender
-                                    .trim()
-                                    .toUpperCase()
-                    ) {
-
-                        case "MALE", "M" ->
-
-                                "MALE";
-
-
-                        case "FEMALE", "F" ->
-
-                                "FEMALE";
-
-
-                        default ->
-
-                                "OTHER";
-                    };
-                }
-        );
-    }
-
-
-    // ============================================================
-    // BNR - PAR AGING
-    // ============================================================
-
-    /**
-     * Breaks the outstanding portfolio into aging buckets.
-     *
-     * CURRENT
-     * 1-30 DAYS
-     * 31-60 DAYS
-     * 61-90 DAYS
-     * 91-180 DAYS
-     * 181-365 DAYS
-     * 365+ DAYS
-     */
-
-    @Transactional(readOnly = true)
-    public List<BnrBreakdownRow> breakdownByParBucket(
-            Long orgId,
-            Long branchId,
-            ReportPeriod period,
-            LocalDate from,
-            LocalDate to
-    ) {
-
-        LocalDate[] window =
-                resolvePeriod(
-                        period,
-                        from,
-                        to
-                );
-
-
-        List<Loan> loans =
-                fetchLoans(
-                        orgId,
-                        branchId,
-                        window[0],
-                        window[1]
-                );
-
-
-        List<String> buckets =
-                List.of(
-                        "CURRENT",
-                        "1-30 DAYS",
-                        "31-60 DAYS",
-                        "61-90 DAYS",
-                        "91-180 DAYS",
-                        "181-365 DAYS",
-                        "365+ DAYS"
-                );
-
-
-        Map<String, Long> counts =
-                new LinkedHashMap<>();
-
-
-        Map<String, Double> amounts =
-                new LinkedHashMap<>();
-
-
-        for (String bucket : buckets) {
-
-            counts.put(
-                    bucket,
-                    0L
-            );
-
-
-            amounts.put(
-                    bucket,
-                    0.0
-            );
-        }
-
-
-        // ========================================================
-        // PROCESS LOANS
-        // ========================================================
-
-        for (Loan loan : loans) {
-
-            if (loan == null) {
-                continue;
-            }
-
-
-            double outstanding =
-                    loan.getOutstandingBalance() != null
-                            ? loan.getOutstandingBalance()
-                            : 0.0;
-
-
-            /*
-             * No outstanding principal means there is nothing
-             * to include in the portfolio aging amount.
-             */
-
-            if (outstanding <= 0.0) {
-                continue;
-            }
-
-
-            int daysOverdue =
-                    loan.getDaysOverdue() != null
-                            ? Math.max(
-                            loan.getDaysOverdue(),
-                            0
-                    )
-                            : 0;
-
-
-            String bucket;
-
-
-            if (daysOverdue == 0) {
-
-                bucket =
-                        "CURRENT";
-
-            } else if (daysOverdue <= 30) {
-
-                bucket =
-                        "1-30 DAYS";
-
-            } else if (daysOverdue <= 60) {
-
-                bucket =
-                        "31-60 DAYS";
-
-            } else if (daysOverdue <= 90) {
-
-                bucket =
-                        "61-90 DAYS";
-
-            } else if (daysOverdue <= 180) {
-
-                bucket =
-                        "91-180 DAYS";
-
-            } else if (daysOverdue <= 365) {
-
-                bucket =
-                        "181-365 DAYS";
-
-            } else {
-
-                bucket =
-                        "365+ DAYS";
-            }
-
-
-            counts.put(
-                    bucket,
-                    counts.get(bucket) + 1
-            );
-
-
-            amounts.put(
-                    bucket,
-                    amounts.get(bucket) + outstanding
-            );
-        }
-
-
-        // ========================================================
-        // BUILD RESULT
-        // ========================================================
-
-        List<BnrBreakdownRow> result =
-                new ArrayList<>();
-
-
-        for (String bucket : buckets) {
-
-            result.add(
-                    new BnrBreakdownRow(
-                            bucket,
-                            counts.get(bucket),
-                            amounts.get(bucket)
-                    )
-            );
-        }
-
-
-        return result;
-    }
-
-
-    // ============================================================
-    // GENERIC BNR BREAKDOWN
-    // ============================================================
-
-    private List<BnrBreakdownRow> groupAndSum(
-            List<Loan> loans,
-            Function<Loan, String> keyFn
-    ) {
-
-        Map<String, Long> counts =
-                new LinkedHashMap<>();
-
-
-        Map<String, Double> amounts =
-                new LinkedHashMap<>();
-
-
-        for (Loan loan : loans) {
-
-            if (loan == null) {
-                continue;
-            }
-
-
-            String key =
-                    keyFn.apply(loan);
-
-
-            if (
-                    key == null
-                            || key.isBlank()
-            ) {
-
-                key =
-                        "UNSPECIFIED";
-            }
-
-
-            counts.put(
-                    key,
-                    counts.getOrDefault(
-                            key,
-                            0L
-                    ) + 1
-            );
-
-
-            double amount =
-                    0.0;
-
-
-            if (
-                    loan.getDisbursedAmount() != null
-            ) {
-
-                amount =
-                        loan.getDisbursedAmount();
-
-            } else if (
-                    loan.getAmount() != null
-            ) {
-
-                amount =
-                        loan.getAmount();
-            }
-
-
-            amounts.put(
-                    key,
-                    amounts.getOrDefault(
-                            key,
-                            0.0
-                    ) + amount
-            );
-        }
-
-
-        return counts.entrySet()
-                .stream()
-
-                .map(
-                        entry ->
-                                new BnrBreakdownRow(
-                                        entry.getKey(),
-                                        entry.getValue(),
-                                        amounts.getOrDefault(
-                                                entry.getKey(),
-                                                0.0
-                                        )
-                                )
-                )
-
-                .sorted(
-                        Comparator.comparing(
-                                BnrBreakdownRow::getLabel
-                        )
-                )
-
-                .collect(
-                        Collectors.toList()
-                );
-    }
-
-
-    // ============================================================
     // BNR FINANCIAL STATEMENT
     // ============================================================
 
-    @Transactional(readOnly = true)
-    public BnrFinancialStatementReport buildBnrFinancialStatement(
-            Long orgId,
+    public BnrFinancialStatementReport
+    buildBnrFinancialStatement(
+
+            Long organizationId,
+
             Long branchId,
+
             ReportPeriod period,
+
             LocalDate from,
+
             LocalDate to
+
     ) {
 
-        if (orgId == null) {
+        if (organizationId == null) {
 
             throw new IllegalArgumentException(
-                    "Organization ID is required"
+                    "organizationId is required."
             );
         }
 
-
-        // --------------------------------------------------------
-        // Resolve reporting period
-        // --------------------------------------------------------
 
         LocalDate[] window =
                 resolvePeriod(
@@ -1254,314 +1770,229 @@ public class RegulatoryReportingService {
         LocalDate periodStart =
                 window[0];
 
-
         LocalDate periodEnd =
-                window[1] == null
-                        ? null
-                        : window[1].minusDays(1);
+                window[1];
 
 
-        // --------------------------------------------------------
-        // Organization
-        // --------------------------------------------------------
+        // ========================================================
+        // ORGANIZATION
+        // ========================================================
 
-        Organization org =
+        Organization organization =
                 organizationRepository
-                        .findById(orgId)
-                        .orElse(null);
+                        .findById(
+                                organizationId
+                        )
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "Organization not found: "
+                                                        + organizationId
+                                        )
+                        );
 
 
-        // --------------------------------------------------------
-        // Financial statements
-        // --------------------------------------------------------
+        // ========================================================
+        // ACCOUNTING SOURCE
+        // ========================================================
 
-        Map<String, Object> balanceSheet =
-                accountingService.getBalanceSheet(
-                        orgId
+        Map<String, Object> accountingReport =
+                bnrFinancialStatementService
+                        .buildFinancialStatement(
+                                organizationId,
+                                periodStart,
+                                periodEnd
+                        );
+
+
+        // ========================================================
+        // STATEMENT OF FINANCIAL POSITION
+        // ========================================================
+
+        Map<String, Object>
+                financialPosition =
+                getMap(
+                        accountingReport,
+                        "statementOfFinancialPosition"
                 );
 
 
-        Map<String, Object> profitAndLoss =
-                accountingService.getProfitAndLoss(
-                        orgId,
-                        periodStart,
-                        periodEnd
+        // ========================================================
+        // INCOME STATEMENT
+        // ========================================================
+
+        Map<String, Object>
+                incomeStatement =
+                getMap(
+                        accountingReport,
+                        "incomeStatement"
                 );
 
 
-        Map<String, Object> cashFlow =
-                accountingService.getCashFlow(
-                        orgId,
-                        periodStart,
-                        periodEnd
-                );
-
-
-        Map<String, Object> trialBalance =
-                accountingService.getTrialBalance(
-                        orgId
-                );
-
-
-        // --------------------------------------------------------
-        // Branch name
-        // --------------------------------------------------------
-
-        String branchName =
-                null;
-
-
-        if (branchId != null) {
-
-            List<Loan> branchLoans =
-                    fetchLoans(
-                            orgId,
-                            branchId,
-                            periodStart,
-                            window[1]
-                    );
-
-
-            if (
-                    !branchLoans.isEmpty()
-                            && branchLoans.get(0).getBranch() != null
-            ) {
-
-                branchName =
-                        branchLoans
-                                .get(0)
-                                .getBranch()
-                                .getName();
-            }
-        }
-
-
-        // --------------------------------------------------------
-        // Extract balance sheet
-        // --------------------------------------------------------
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> assets =
-                (List<Map<String, Object>>)
-                        balanceSheet.get(
-                                "assets"
-                        );
-
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> liabilities =
-                (List<Map<String, Object>>)
-                        balanceSheet.get(
-                                "liabilities"
-                        );
-
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> equity =
-                (List<Map<String, Object>>)
-                        balanceSheet.get(
-                                "equity"
-                        );
-
-
-        // --------------------------------------------------------
-        // Extract P&L
-        // --------------------------------------------------------
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> income =
-                (List<Map<String, Object>>)
-                        profitAndLoss.get(
-                                "income"
-                        );
-
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> expenses =
-                (List<Map<String, Object>>)
-                        profitAndLoss.get(
-                                "expense"
-                        );
-
-
-        // --------------------------------------------------------
-        // Extract totals
-        // --------------------------------------------------------
+        // ========================================================
+        // BALANCE SHEET
+        // ========================================================
 
         double totalAssets =
-                toDouble(
-                        balanceSheet.get(
+                doubleValue(
+                        financialPosition.get(
                                 "totalAssets"
                         )
                 );
 
 
         double totalLiabilities =
-                toDouble(
-                        balanceSheet.get(
+                doubleValue(
+                        financialPosition.get(
                                 "totalLiabilities"
                         )
                 );
 
 
         double totalEquity =
-                toDouble(
-                        balanceSheet.get(
+                doubleValue(
+                        financialPosition.get(
                                 "totalEquity"
                         )
                 );
 
 
         double currentPeriodNetIncome =
-                toDouble(
-                        balanceSheet.get(
+                doubleValue(
+                        financialPosition.get(
                                 "currentPeriodNetIncome"
                         )
                 );
 
 
+        boolean balanceSheetBalanced =
+                booleanValue(
+                        financialPosition.get(
+                                "balanced"
+                        )
+                );
+
+
+        // ========================================================
+        // PROFIT AND LOSS
+        // ========================================================
+
         double totalIncome =
-                toDouble(
-                        profitAndLoss.get(
+                doubleValue(
+                        incomeStatement.get(
                                 "totalIncome"
                         )
                 );
 
 
         double totalExpenses =
-                toDouble(
-                        profitAndLoss.get(
-                                "totalExpense"
+                doubleValue(
+                        incomeStatement.get(
+                                "totalExpenses"
                         )
                 );
 
 
         double netIncome =
-                toDouble(
-                        profitAndLoss.get(
+                doubleValue(
+                        incomeStatement.get(
                                 "netIncome"
                         )
                 );
 
 
-        // --------------------------------------------------------
-        // Cash flow
-        // --------------------------------------------------------
+        // ========================================================
+        // TRIAL BALANCE
+        // ========================================================
+
+        double trialBalanceDebit =
+                doubleValue(
+                        accountingReport.get(
+                                "trialBalanceDebit"
+                        )
+                );
+
+
+        double trialBalanceCredit =
+                doubleValue(
+                        accountingReport.get(
+                                "trialBalanceCredit"
+                        )
+                );
+
+
+        boolean trialBalanceBalanced =
+                booleanValue(
+                        accountingReport.get(
+                                "trialBalanceBalanced"
+                        )
+                );
+
+
+        // ========================================================
+        // CASH FLOW
+        // ========================================================
 
         double cashUsedForLending =
-                toDouble(
-                        cashFlow.get(
+                doubleValue(
+                        accountingReport.get(
                                 "cashUsedForLending"
                         )
                 );
 
 
         double cashFromCollections =
-                toDouble(
-                        cashFlow.get(
+                doubleValue(
+                        accountingReport.get(
                                 "cashFromCollections"
                         )
                 );
 
 
         double cashFromFees =
-                toDouble(
-                        cashFlow.get(
+                doubleValue(
+                        accountingReport.get(
                                 "cashFromFees"
                         )
                 );
 
 
         double otherCashMovement =
-                toDouble(
-                        cashFlow.get(
+                doubleValue(
+                        accountingReport.get(
                                 "otherCashMovement"
                         )
                 );
 
 
         double netChangeInCash =
-                toDouble(
-                        cashFlow.get(
+                doubleValue(
+                        accountingReport.get(
                                 "netChangeInCash"
                         )
                 );
 
 
-        // --------------------------------------------------------
-        // Trial balance
-        // --------------------------------------------------------
-
-        double trialBalanceDebit =
-                toDouble(
-                        trialBalance.get(
-                                "totalDebit"
-                        )
-                );
-
-
-        double trialBalanceCredit =
-                toDouble(
-                        trialBalance.get(
-                                "totalCredit"
-                        )
-                );
-
-
-        boolean trialBalanceBalanced =
-                Boolean.TRUE.equals(
-                        trialBalance.get(
-                                "balanced"
-                        )
-                );
-
-
-        // --------------------------------------------------------
-        // Report period name
-        // --------------------------------------------------------
-
-        String reportPeriod =
-                (
-                        period == null
-                                ? ReportPeriod.CUSTOM
-                                : period
-                ).name();
-
-
-        // --------------------------------------------------------
-        // Currency
-        // --------------------------------------------------------
-
-        String currency =
-                org != null
-                        && org.getDefaultCurrency() != null
-                        && !org.getDefaultCurrency().isBlank()
-
-                        ? org.getDefaultCurrency()
-
-                        : "RWF";
-
-
-        // --------------------------------------------------------
-        // Build financial report
-        // --------------------------------------------------------
+        // ========================================================
+        // FINANCIAL STATEMENT
+        // ========================================================
 
         return BnrFinancialStatementReport.builder()
 
+                // ------------------------------------------------
+                // REPORT INFORMATION
+                // ------------------------------------------------
+
                 .organizationId(
-                        orgId
+                        organizationId
                 )
 
                 .organizationName(
-                        org != null
-                                ? org.getName()
-                                : null
+                        organization.getName()
                 )
 
                 .bnrInstitutionCode(
-                        org != null
-                                ? org.getRegistrationNumber()
-                                : null
+                        organization.getRegistrationNumber()
                 )
 
                 .branchId(
@@ -1569,15 +2000,26 @@ public class RegulatoryReportingService {
                 )
 
                 .branchName(
-                        branchName
+                        resolveBranchNameForFinancialStatement(
+                                organizationId,
+                                branchId
+                        )
                 )
 
                 .currency(
-                        currency
+                        organization.getDefaultCurrency() !=
+                                null
+                                ? organization
+                                .getDefaultCurrency()
+                                : "RWF"
                 )
 
                 .reportPeriod(
-                        reportPeriod
+                        (
+                                period == null
+                                        ? ReportPeriod.CUSTOM
+                                        : period
+                        ).name()
                 )
 
                 .periodStart(
@@ -1598,21 +2040,24 @@ public class RegulatoryReportingService {
                 // ------------------------------------------------
 
                 .assets(
-                        assets != null
-                                ? assets
-                                : new ArrayList<>()
+                        getList(
+                                financialPosition,
+                                "assets"
+                        )
                 )
 
                 .liabilities(
-                        liabilities != null
-                                ? liabilities
-                                : new ArrayList<>()
+                        getList(
+                                financialPosition,
+                                "liabilities"
+                        )
                 )
 
                 .equity(
-                        equity != null
-                                ? equity
-                                : new ArrayList<>()
+                        getList(
+                                financialPosition,
+                                "equity"
+                        )
                 )
 
                 .totalAssets(
@@ -1632,28 +2077,26 @@ public class RegulatoryReportingService {
                 )
 
                 .balanceSheetBalanced(
-                        Boolean.TRUE.equals(
-                                balanceSheet.get(
-                                        "balanced"
-                                )
-                        )
+                        balanceSheetBalanced
                 )
 
 
                 // ------------------------------------------------
-                // PROFIT & LOSS
+                // PROFIT AND LOSS
                 // ------------------------------------------------
 
                 .income(
-                        income != null
-                                ? income
-                                : new ArrayList<>()
+                        getList(
+                                incomeStatement,
+                                "income"
+                        )
                 )
 
                 .expenses(
-                        expenses != null
-                                ? expenses
-                                : new ArrayList<>()
+                        getList(
+                                incomeStatement,
+                                "expenses"
+                        )
                 )
 
                 .totalIncome(
@@ -1695,7 +2138,7 @@ public class RegulatoryReportingService {
 
 
                 // ------------------------------------------------
-                // TRIAL BALANCE CONTROL
+                // TRIAL BALANCE
                 // ------------------------------------------------
 
                 .trialBalanceDebit(
@@ -1715,80 +2158,334 @@ public class RegulatoryReportingService {
 
 
     // ============================================================
-    // SAFE NUMBER CONVERSION
+    // LOAN TYPE BREAKDOWN
     // ============================================================
 
-    private double toDouble(
-            Object value
+    public List<BnrBreakdownRow>
+    breakdownByLoanType(
+
+            Long organizationId,
+
+            Long branchId,
+
+            ReportPeriod period,
+
+            LocalDate from,
+
+            LocalDate to
+
     ) {
 
-        if (value == null) {
-            return 0.0;
-        }
+        LocalDate[] window =
+                resolvePeriod(
+                        period,
+                        from,
+                        to
+                );
 
 
-        if (value instanceof Number number) {
-
-            return number.doubleValue();
-        }
-
-
-        try {
-
-            return Double.parseDouble(
-                    value.toString()
-            );
-
-        } catch (NumberFormatException e) {
-
-            return 0.0;
-        }
+        return groupAndSum(
+                fetchPortfolio(
+                        organizationId,
+                        branchId,
+                        window[1]
+                ),
+                loan ->
+                        loan.getLoanType() == null
+                                ? "UNSPECIFIED"
+                                : loan.getLoanType()
+                                .name()
+        );
     }
 
 
     // ============================================================
-    // CREDIT BUREAU EXPORT
+    // BRANCH BREAKDOWN
     // ============================================================
 
-    @Transactional(readOnly = true)
-    public List<CreditBureauRecord> buildCreditBureauExport(
-            Long orgId,
-            Long branchId,
+    public List<BnrBreakdownRow>
+    breakdownByBranch(
+
+            Long organizationId,
+
+            ReportPeriod period,
+
             LocalDate from,
+
             LocalDate to
+
     ) {
 
-        if (orgId == null) {
+        LocalDate[] window =
+                resolvePeriod(
+                        period,
+                        from,
+                        to
+                );
 
-            throw new IllegalArgumentException(
-                    "Organization ID is required"
+
+        return groupAndSum(
+                fetchPortfolio(
+                        organizationId,
+                        null,
+                        window[1]
+                ),
+                loan ->
+                        loan.getBranch() == null
+                                ? "UNASSIGNED"
+                                : loan.getBranch()
+                                .getName()
+        );
+    }
+
+
+    // ============================================================
+    // GENDER BREAKDOWN
+    // ============================================================
+
+    public List<BnrBreakdownRow>
+    breakdownByGender(
+
+            Long organizationId,
+
+            Long branchId,
+
+            ReportPeriod period,
+
+            LocalDate from,
+
+            LocalDate to
+
+    ) {
+
+        LocalDate[] window =
+                resolvePeriod(
+                        period,
+                        from,
+                        to
+                );
+
+
+        return groupAndSum(
+                fetchPortfolio(
+                        organizationId,
+                        branchId,
+                        window[1]
+                ),
+                loan -> {
+
+                    Borrower borrower =
+                            loan.getBorrower();
+
+
+                    if (borrower == null) {
+
+                        return "UNSPECIFIED";
+                    }
+
+
+                    String gender =
+                            normalize(
+                                    borrower.getGender()
+                            );
+
+
+                    return switch (gender) {
+
+                        case "MALE",
+                             "M" ->
+
+                                "MALE";
+
+
+                        case "FEMALE",
+                             "F" ->
+
+                                "FEMALE";
+
+
+                        default ->
+
+                                "OTHER";
+                    };
+                }
+        );
+    }
+
+
+    // ============================================================
+    // GENERIC BREAKDOWN
+    // ============================================================
+
+    private List<BnrBreakdownRow>
+    groupAndSum(
+
+            List<Loan> loans,
+
+            Function<Loan, String> keyFunction
+
+    ) {
+
+        Map<String, Long> counts =
+                new LinkedHashMap<>();
+
+
+        Map<String, Double> amounts =
+                new LinkedHashMap<>();
+
+
+        for (Loan loan : loans) {
+
+            if (loan == null) {
+                continue;
+            }
+
+
+            String key =
+                    keyFunction.apply(
+                            loan
+                    );
+
+
+            if (
+                    key == null ||
+                    key.isBlank()
+            ) {
+
+                key =
+                        "UNSPECIFIED";
+            }
+
+
+            counts.merge(
+                    key,
+                    1L,
+                    Long::sum
+            );
+
+
+            double amount =
+                    number(
+                            loan.getDisbursedAmount()
+                    );
+
+
+            if (amount == 0.0) {
+
+                amount =
+                        number(
+                                loan.getAmount()
+                        );
+            }
+
+
+            amounts.merge(
+                    key,
+                    amount,
+                    Double::sum
             );
         }
 
 
-        /*
-         * Credit Bureau export receives an inclusive
-         * 'to' date from the caller.
-         *
-         * Convert it to an exclusive repository date.
-         */
+        return counts.entrySet()
+                .stream()
+                .map(
+                        entry ->
+                                BnrBreakdownRow.builder()
 
-        LocalDate exclusiveTo =
-                to == null
-                        ? null
-                        : to.plusDays(1);
+                                        .label(
+                                                entry.getKey()
+                                        )
 
+                                        .count(
+                                                entry.getValue()
+                                        )
 
-        List<Loan> loans =
-                fetchLoans(
-                        orgId,
-                        branchId,
-                        from,
-                        exclusiveTo
+                                        .amount(
+                                                amounts.getOrDefault(
+                                                        entry.getKey(),
+                                                        0.0
+                                                )
+                                        )
+
+                                        .build()
+                )
+                .sorted(
+                        Comparator.comparing(
+                                BnrBreakdownRow::getLabel
+                        )
+                )
+                .collect(
+                        Collectors.toList()
                 );
+    }
 
 
-        List<CreditBureauRecord> records =
+    // ============================================================
+    // CREDIT BUREAU / CRB REPORT
+    // ============================================================
+
+    public List<CreditBureauRecord>
+    buildCreditBureauExport(
+
+            Long organizationId,
+
+            Long branchId,
+
+            LocalDate from,
+
+            LocalDate to
+
+    ) {
+
+        if (organizationId == null) {
+
+            throw new IllegalArgumentException(
+                    "organizationId is required."
+            );
+        }
+
+
+        List<Loan> loans;
+
+
+        if (from != null) {
+
+            LocalDate end =
+                    to == null
+                            ? from
+                            : to;
+
+
+            if (end.isBefore(from)) {
+
+                throw new IllegalArgumentException(
+                        "'to' cannot be before 'from'."
+                );
+            }
+
+
+            loans =
+                    fetchDisbursements(
+                            organizationId,
+                            branchId,
+                            from,
+                            end
+                    );
+
+        } else {
+
+            loans =
+                    fetchPortfolio(
+                            organizationId,
+                            branchId,
+                            LocalDate.now()
+                    );
+        }
+
+
+        List<CreditBureauRecord>
+                output =
                 new ArrayList<>();
 
 
@@ -1803,76 +2500,86 @@ public class RegulatoryReportingService {
                     loan.getBorrower();
 
 
-            // ----------------------------------------------------
-            // CLOSED LOAN
-            // ----------------------------------------------------
-
             boolean closed =
-                    loan.getStatus() == LoanStatus.CLOSED
-                            || loan.getStatus() == LoanStatus.PAID;
+                    loan.getStatus() ==
+                            LoanStatus.CLOSED
+                            ||
+                    loan.getStatus() ==
+                            LoanStatus.PAID;
 
 
-            // ----------------------------------------------------
-            // BORROWER NAME
-            // ----------------------------------------------------
-
-            String fullName =
-                    null;
+            Integer daysPastDue =
+                    loan.getDaysOverdue();
 
 
-            if (borrower != null) {
+            if (daysPastDue == null) {
 
-                String firstName =
-                        borrower.getFirstName() != null
-                                ? borrower.getFirstName()
-                                : "";
-
-
-                String lastName =
-                        borrower.getLastName() != null
-                                ? borrower.getLastName()
-                                : "";
-
-
-                fullName =
-                        (
-                                firstName
-                                        + " "
-                                        + lastName
-                        ).trim();
+                daysPastDue = 0;
             }
 
 
-            // ----------------------------------------------------
-            // LOAN AMOUNT
-            // ----------------------------------------------------
+            /*
+             * CRB / credit-bureau classification.
+             *
+             * These categories make the export more useful
+             * for bureau submission and internal credit review.
+             */
 
-            Double loanAmount =
-                    loan.getDisbursedAmount() != null
-                            ? loan.getDisbursedAmount()
-                            : loan.getAmount();
+            String repaymentClassification;
 
 
-            // ----------------------------------------------------
-            // CREDIT SCORE
-            // ----------------------------------------------------
+            if (loan.getStatus() ==
+                    LoanStatus.WRITTEN_OFF) {
+
+                repaymentClassification =
+                        "WRITTEN_OFF";
+
+            } else if (
+                    loan.getStatus() ==
+                            LoanStatus.DEFAULTED
+            ) {
+
+                repaymentClassification =
+                        "DEFAULT";
+
+            } else if (
+                    daysPastDue > 90
+            ) {
+
+                repaymentClassification =
+                        "NPL";
+
+            } else if (
+                    daysPastDue > 30
+            ) {
+
+                repaymentClassification =
+                        "SUBSTANDARD";
+
+            } else if (
+                    daysPastDue > 0
+            ) {
+
+                repaymentClassification =
+                        "PAST_DUE";
+
+            } else {
+
+                repaymentClassification =
+                        "CURRENT";
+            }
+
 
             Integer creditScore =
-                    loan.getCreditScoreSnapshot() != null
-
+                    loan.getCreditScoreSnapshot() !=
+                            null
                             ? loan.getCreditScoreSnapshot()
-
                             : borrower != null
                             ? borrower.getCreditScore()
                             : null;
 
 
-            // ----------------------------------------------------
-            // BUILD RECORD
-            // ----------------------------------------------------
-
-            records.add(
-
+            output.add(
                     CreditBureauRecord.builder()
 
                             .borrowerId(
@@ -1882,7 +2589,11 @@ public class RegulatoryReportingService {
                             )
 
                             .fullName(
-                                    fullName
+                                    borrower != null
+                                            ? buildFullName(
+                                                    borrower
+                                            )
+                                            : null
                             )
 
                             .nationalId(
@@ -1914,27 +2625,41 @@ public class RegulatoryReportingService {
                             )
 
                             .loanType(
-                                    loan.getLoanType() != null
-                                            ? loan.getLoanType().name()
+                                    loan.getLoanType() !=
+                                            null
+                                            ? loan.getLoanType()
+                                            .name()
                                             : null
                             )
 
                             .loanStatus(
-                                    loan.getStatus() != null
-                                            ? loan.getStatus().name()
+                                    loan.getStatus() !=
+                                            null
+                                            ? loan.getStatus()
+                                            .name()
                                             : null
                             )
 
                             .loanAmount(
-                                    loanAmount
+                                    number(
+                                            loan.getDisbursedAmount()
+                                    ) > 0
+                                            ? number(
+                                                    loan.getDisbursedAmount()
+                                            )
+                                            : number(
+                                                    loan.getAmount()
+                                            )
                             )
 
                             .outstandingBalance(
-                                    loan.getOutstandingBalance()
+                                    number(
+                                            loan.getOutstandingBalance()
+                                    )
                             )
 
                             .daysPastDue(
-                                    loan.getDaysOverdue()
+                                    daysPastDue
                             )
 
                             .creditScore(
@@ -1942,7 +2667,8 @@ public class RegulatoryReportingService {
                             )
 
                             .dateOpened(
-                                    loan.getDisbursedAt() != null
+                                    loan.getDisbursedAt() !=
+                                            null
                                             ? loan.getDisbursedAt()
                                             : loan.getStartDate()
                             )
@@ -1962,8 +2688,10 @@ public class RegulatoryReportingService {
                             )
 
                             .branchName(
-                                    loan.getBranch() != null
-                                            ? loan.getBranch().getName()
+                                    loan.getBranch() !=
+                                            null
+                                            ? loan.getBranch()
+                                            .getName()
                                             : null
                             )
 
@@ -1976,6 +2704,503 @@ public class RegulatoryReportingService {
         }
 
 
-        return records;
+        return output;
+    }
+
+
+    // ============================================================
+    // NPL
+    // ============================================================
+
+    private boolean isNpl(
+            Loan loan
+    ) {
+
+        if (loan == null) {
+
+            return false;
+        }
+
+
+        LoanStatus status =
+                loan.getStatus();
+
+
+        if (
+                status ==
+                        LoanStatus.DEFAULTED
+                        ||
+                status ==
+                        LoanStatus.WRITTEN_OFF
+        ) {
+
+            return true;
+        }
+
+
+        Integer days =
+                loan.getDaysOverdue();
+
+
+        return days != null &&
+                days > 90;
+    }
+
+
+    // ============================================================
+    // CREDIT CHECK
+    // ============================================================
+
+    private long countCreditChecked(
+            List<Loan> loans
+    ) {
+
+        Set<Long> borrowerIds =
+                new HashSet<>();
+
+
+        for (Loan loan : loans) {
+
+            if (
+                    loan == null ||
+                    loan.getBorrower() == null
+            ) {
+
+                continue;
+            }
+
+
+            Borrower borrower =
+                    loan.getBorrower();
+
+
+            if (
+                    borrower.getId() != null
+                            &&
+                    borrower.getCreditReportDate() !=
+                            null
+            ) {
+
+                borrowerIds.add(
+                        borrower.getId()
+                );
+            }
+        }
+
+
+        return borrowerIds.size();
+    }
+
+
+    // ============================================================
+    // DEFAULT HISTORY
+    // ============================================================
+
+    private long
+    countBorrowersWithDefaultHistory(
+            List<Loan> loans
+    ) {
+
+        Set<Long> borrowerIds =
+                new HashSet<>();
+
+
+        for (Loan loan : loans) {
+
+            if (
+                    loan == null ||
+                    loan.getBorrower() == null ||
+                    loan.getBorrower().getId() == null
+            ) {
+
+                continue;
+            }
+
+
+            if (
+                    loan.getStatus() ==
+                            LoanStatus.DEFAULTED
+
+                            ||
+
+                    loan.getStatus() ==
+                            LoanStatus.WRITTEN_OFF
+
+                            ||
+
+                    (
+                            loan.getDaysOverdue() !=
+                                    null
+
+                                    &&
+
+                            loan.getDaysOverdue() > 90
+                    )
+            ) {
+
+                borrowerIds.add(
+                        loan.getBorrower()
+                                .getId()
+                );
+            }
+        }
+
+
+        return borrowerIds.size();
+    }
+
+
+    // ============================================================
+    // BRANCH NAME
+    // ============================================================
+
+    private String resolveBranchName(
+            List<Loan> loans,
+            Long branchId
+    ) {
+
+        if (branchId == null) {
+
+            return null;
+        }
+
+
+        return loans.stream()
+
+                .filter(
+                        loan ->
+                                loan != null
+                                        &&
+                                loan.getBranch() !=
+                                        null
+                                        &&
+                                branchId.equals(
+                                        loan.getBranch()
+                                                .getId()
+                                )
+                )
+
+                .map(
+                        loan ->
+                                loan.getBranch()
+                                        .getName()
+                )
+
+                .filter(
+                        name ->
+                                name != null
+                                        &&
+                                !name.isBlank()
+                )
+
+                .findFirst()
+
+                .orElse(null);
+    }
+
+
+    // ============================================================
+    // FINANCIAL STATEMENT BRANCH
+    // ============================================================
+
+    private String
+    resolveBranchNameForFinancialStatement(
+
+            Long organizationId,
+
+            Long branchId
+
+    ) {
+
+        if (branchId == null) {
+
+            return null;
+        }
+
+
+        List<Loan> loans =
+                fetchPortfolio(
+                        organizationId,
+                        branchId,
+                        LocalDate.now()
+                );
+
+
+        return loans.stream()
+
+                .filter(
+                        loan ->
+                                loan != null
+                                        &&
+                                loan.getBranch() !=
+                                        null
+                                        &&
+                                branchId.equals(
+                                        loan.getBranch()
+                                                .getId()
+                                )
+                )
+
+                .map(
+                        loan ->
+                                loan.getBranch()
+                                        .getName()
+                )
+
+                .filter(
+                        name ->
+                                name != null
+                                        &&
+                                !name.isBlank()
+                )
+
+                .findFirst()
+
+                .orElse(null);
+    }
+
+
+    // ============================================================
+    // MAP HELPER
+    // ============================================================
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getMap(
+            Map<String, Object> source,
+            String key
+    ) {
+
+        if (source == null) {
+
+            return new LinkedHashMap<>();
+        }
+
+
+        Object value =
+                source.get(key);
+
+
+        if (value instanceof Map<?, ?> map) {
+
+            return (Map<String, Object>) map;
+        }
+
+
+        return new LinkedHashMap<>();
+    }
+
+
+    // ============================================================
+    // LIST HELPER
+    // ============================================================
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getList(
+            Map<String, Object> source,
+            String key
+    ) {
+
+        if (source == null) {
+
+            return new ArrayList<>();
+        }
+
+
+        Object value =
+                source.get(key);
+
+
+        if (value instanceof List<?> list) {
+
+            return (List<Map<String, Object>>) list;
+        }
+
+
+        return new ArrayList<>();
+    }
+
+
+    // ============================================================
+    // DOUBLE VALUE
+    // ============================================================
+
+    private double doubleValue(
+            Object value
+    ) {
+
+        if (value == null) {
+
+            return 0.0;
+        }
+
+
+        if (value instanceof Number number) {
+
+            return number.doubleValue();
+        }
+
+
+        try {
+
+            return Double.parseDouble(
+                    value.toString()
+            );
+
+        } catch (
+                NumberFormatException exception
+        ) {
+
+            return 0.0;
+        }
+    }
+
+
+    // ============================================================
+    // BOOLEAN VALUE
+    // ============================================================
+
+    private boolean booleanValue(
+            Object value
+    ) {
+
+        if (value == null) {
+
+            return false;
+        }
+
+
+        if (value instanceof Boolean bool) {
+
+            return bool;
+        }
+
+
+        return Boolean.parseBoolean(
+                value.toString()
+        );
+    }
+
+
+    // ============================================================
+    // NUMBER
+    // ============================================================
+
+    private double number(
+            Number value
+    ) {
+
+        if (value == null) {
+
+            return 0.0;
+        }
+
+
+        return value.doubleValue();
+    }
+
+
+    // ============================================================
+    // RATIO
+    // ============================================================
+
+    private double ratio(
+            double numerator,
+            double denominator
+    ) {
+
+        if (
+                denominator == 0.0
+        ) {
+
+            return 0.0;
+        }
+
+
+        return numerator /
+                denominator;
+    }
+
+
+    // ============================================================
+    // NORMALIZE
+    // ============================================================
+
+    private String normalize(
+            String value
+    ) {
+
+        if (value == null) {
+
+            return "";
+        }
+
+
+        return value
+                .trim()
+                .toUpperCase();
+    }
+
+
+    // ============================================================
+    // FULL NAME
+    // ============================================================
+
+    private String buildFullName(
+            Borrower borrower
+    ) {
+
+        if (borrower == null) {
+
+            return null;
+        }
+
+
+        String first =
+                borrower.getFirstName() == null
+                        ? ""
+                        : borrower
+                        .getFirstName()
+                        .trim();
+
+
+        String last =
+                borrower.getLastName() == null
+                        ? ""
+                        : borrower
+                        .getLastName()
+                        .trim();
+
+
+        return (
+                first
+                        +
+                " "
+                        +
+                last
+        ).trim();
+    }
+
+
+    // ============================================================
+    // REPORT REFERENCE
+    // ============================================================
+
+    private String buildReportReference(
+            Long organizationId,
+            LocalDate from,
+            LocalDate to
+    ) {
+
+        return "BNR-"
+                +
+                organizationId
+                +
+                "-"
+                +
+                from
+                +
+                "-"
+                +
+                to;
     }
 }

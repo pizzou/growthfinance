@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
@@ -6,13 +7,16 @@ import com.patrick.fintech.loan_backend.service.AuditService;
 import com.patrick.fintech.loan_backend.service.RegulatoryReportingService;
 import com.patrick.fintech.loan_backend.service.ReportExportService;
 import com.patrick.fintech.loan_backend.util.CurrentUserUtil;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
@@ -20,12 +24,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Staff-facing Credit Bureau export screen. Borrower-level credit data (identity +
- * repayment status) — access is intentionally narrower than BNR reports since this is
- * PII, not aggregate statistics: ADMIN and MANAGER only, no AUDITOR.
+ * Staff-facing Credit Bureau export screen.
  *
- * The feed an actual credit bureau consumes programmatically lives at
- * /api/regulatory/external/credit-bureau/**, protected by API key.
+ * Provides:
+ * - Preview
+ * - CSV export
+ * - PDF export
+ * - Excel export
+ *
+ * Access:
+ * ADMIN and MANAGER only.
+ *
+ * Organization scope is obtained from the authenticated user.
  */
 @RestController
 @RequestMapping("/api/regulatory/credit-bureau")
@@ -39,77 +49,431 @@ public class CreditBureauExportController {
     private final CurrentUserUtil currentUserUtil;
 
     private static final List<String> COLUMNS = List.of(
-        "National ID", "Full Name", "Date of Birth", "Gender", "Phone",
-        "Loan Number", "Loan Type", "Loan Amount", "Outstanding Balance",
-        "Status", "Days Past Due", "Credit Score", "Date Opened", "Last Payment", "Date Closed", "Branch"
+            "National ID",
+            "Full Name",
+            "Date of Birth",
+            "Gender",
+            "Phone",
+            "Loan Number",
+            "Loan Type",
+            "Loan Amount",
+            "Outstanding Balance",
+            "Status",
+            "Days Past Due",
+            "Credit Score",
+            "Date Opened",
+            "Last Payment",
+            "Date Closed",
+            "Branch",
+            "Currency"
     );
+
+    // ============================================================
+    // PREVIEW
+    // ============================================================
 
     @GetMapping("/preview")
     public ResponseEntity<ApiResponse<List<CreditBureauRecord>>> preview(
-            @RequestParam(required = false) Long branchId,
-            @RequestParam(required = false) String from,
-            @RequestParam(required = false) String to) {
-        Long orgId = currentUserUtil.getCurrentOrganizationId();
-        List<CreditBureauRecord> records = reportingService.buildCreditBureauExport(orgId, branchId, parseDate(from), parseDate(to));
-        auditService.log(currentUserUtil.getCurrentUser().getOrganization(), currentUserUtil.getCurrentUser(),
-            "VIEW", "CreditBureauExport", "preview", "Previewed credit bureau export (" + records.size() + " records)",
-            null, null, "Regulatory Reporting");
-        return ResponseEntity.ok(ApiResponse.ok(records));
+
+            @RequestParam(required = false)
+            Long branchId,
+
+            @RequestParam(required = false)
+            String from,
+
+            @RequestParam(required = false)
+            String to
+    ) {
+
+        Long orgId =
+                currentUserUtil.getCurrentOrganizationId();
+
+        List<CreditBureauRecord> records =
+                reportingService.buildCreditBureauExport(
+                        orgId,
+                        branchId,
+                        parseDate(from),
+                        parseDate(to)
+                );
+
+        auditService.log(
+                currentUserUtil.getCurrentUser().getOrganization(),
+                currentUserUtil.getCurrentUser(),
+                "VIEW",
+                "CreditBureauExport",
+                "preview",
+                "Previewed credit bureau export (" +
+                        records.size() +
+                        " records)",
+                null,
+                null,
+                "Regulatory Reporting"
+        );
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(records)
+        );
     }
+
+    // ============================================================
+    // EXPORT
+    // ============================================================
 
     @GetMapping("/export")
     public ResponseEntity<byte[]> export(
-            @RequestParam(defaultValue = "xlsx") String format,
-            @RequestParam(required = false) Long branchId,
-            @RequestParam(required = false) String from,
-            @RequestParam(required = false) String to) {
-        Long orgId = currentUserUtil.getCurrentOrganizationId();
-        List<CreditBureauRecord> records = reportingService.buildCreditBureauExport(orgId, branchId, parseDate(from), parseDate(to));
-        String orgName = currentUserUtil.getCurrentUser().getOrganization().getName();
-        List<Map<String, Object>> rows = records.stream().map(this::toRow).toList();
-        String filename = "Credit-Bureau-Export-" + LocalDate.now().format(DateTimeFormatter.ISO_DATE);
 
-        auditService.log(currentUserUtil.getCurrentUser().getOrganization(), currentUserUtil.getCurrentUser(),
-            "EXPORT", "CreditBureauExport", "export",
-            "Exported credit bureau data as " + format.toUpperCase() + " (" + records.size() + " borrower records)",
-            null, null, "Regulatory Reporting");
+            @RequestParam(
+                    defaultValue = "xlsx"
+            )
+            String format,
+
+            @RequestParam(required = false)
+            Long branchId,
+
+            @RequestParam(required = false)
+            String from,
+
+            @RequestParam(required = false)
+            String to
+    ) {
+
+        Long orgId =
+                currentUserUtil.getCurrentOrganizationId();
+
+        List<CreditBureauRecord> records =
+                reportingService.buildCreditBureauExport(
+                        orgId,
+                        branchId,
+                        parseDate(from),
+                        parseDate(to)
+                );
+
+        String orgName =
+                currentUserUtil
+                        .getCurrentUser()
+                        .getOrganization()
+                        .getName();
+
+        List<Map<String, Object>> rows =
+                records.stream()
+                        .map(this::toRow)
+                        .toList();
+
+        String filename =
+                "Credit-Bureau-Export-" +
+                        LocalDate.now()
+                                .format(DateTimeFormatter.ISO_DATE);
+
+        auditService.log(
+                currentUserUtil.getCurrentUser().getOrganization(),
+                currentUserUtil.getCurrentUser(),
+                "EXPORT",
+                "CreditBureauExport",
+                "export",
+                "Exported credit bureau data as " +
+                        format.toUpperCase() +
+                        " (" +
+                        records.size() +
+                        " borrower records)",
+                null,
+                null,
+                "Regulatory Reporting"
+        );
+
+        return createFileResponse(
+                format,
+                filename,
+                "Credit Bureau Export",
+                COLUMNS,
+                rows,
+                orgName
+        );
+    }
+
+    // ============================================================
+    // ROW CONVERSION
+    // ============================================================
+
+    private Map<String, Object> toRow(
+            CreditBureauRecord r
+    ) {
+
+        Map<String, Object> row =
+                new LinkedHashMap<>();
+
+        row.put(
+                "National ID",
+                r.getNationalId()
+        );
+
+        row.put(
+                "Full Name",
+                r.getFullName()
+        );
+
+        row.put(
+                "Date of Birth",
+                r.getDateOfBirth()
+        );
+
+        row.put(
+                "Gender",
+                r.getGender()
+        );
+
+        row.put(
+                "Phone",
+                r.getPhone()
+        );
+
+        row.put(
+                "Loan Number",
+                r.getLoanNumber()
+        );
+
+        row.put(
+                "Loan Type",
+                r.getLoanType()
+        );
+
+        row.put(
+                "Loan Amount",
+                r.getLoanAmount()
+        );
+
+        row.put(
+                "Outstanding Balance",
+                r.getOutstandingBalance()
+        );
+
+        row.put(
+                "Status",
+                r.getLoanStatus()
+        );
+
+        row.put(
+                "Days Past Due",
+                r.getDaysPastDue()
+        );
+
+        row.put(
+                "Credit Score",
+                r.getCreditScore()
+        );
+
+        row.put(
+                "Date Opened",
+                r.getDateOpened()
+        );
+
+        row.put(
+                "Last Payment",
+                r.getLastPaymentDate()
+        );
+
+        row.put(
+                "Date Closed",
+                r.getDateClosed()
+        );
+
+        row.put(
+                "Branch",
+                r.getBranchName()
+        );
+
+        row.put(
+                "Currency",
+                r.getCurrency()
+        );
+
+        return row;
+    }
+
+    // ============================================================
+    // FILE RESPONSE
+    // ============================================================
+
+    private ResponseEntity<byte[]> createFileResponse(
+
+            String format,
+
+            String filename,
+
+            String title,
+
+            List<String> columns,
+
+            List<Map<String, Object>> rows,
+
+            String organizationName
+    ) {
+
+        if (format == null ||
+                format.isBlank()) {
+
+            format = "xlsx";
+        }
 
         byte[] bytes;
+
         MediaType contentType;
-        String ext;
+
+        String extension;
+
         switch (format.toLowerCase()) {
-            case "csv" -> { bytes = BnrReportController.toCsv(COLUMNS, rows); contentType = MediaType.parseMediaType("text/csv"); ext = "csv"; }
-            case "pdf" -> { bytes = exportService.toPdf("Credit Bureau Export", COLUMNS, rows, orgName); contentType = MediaType.APPLICATION_PDF; ext = "pdf"; }
-            default -> { bytes = exportService.toExcel("Credit Bureau Export", COLUMNS, rows); contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); ext = "xlsx"; }
+
+            case "csv" -> {
+
+                bytes =
+                        toCsv(
+                                columns,
+                                rows
+                        );
+
+                contentType =
+                        MediaType.parseMediaType(
+                                "text/csv"
+                        );
+
+                extension = "csv";
+            }
+
+            case "pdf" -> {
+
+                bytes =
+                        exportService.toPdf(
+                                title,
+                                columns,
+                                rows,
+                                organizationName
+                        );
+
+                contentType =
+                        MediaType.APPLICATION_PDF;
+
+                extension = "pdf";
+            }
+
+            case "xlsx" -> {
+
+                bytes =
+                        exportService.toExcel(
+                                title,
+                                columns,
+                                rows
+                        );
+
+                contentType =
+                        MediaType.parseMediaType(
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        );
+
+                extension = "xlsx";
+            }
+
+            default -> {
+
+                throw new IllegalArgumentException(
+                        "Unsupported export format: " +
+                                format +
+                                ". Supported formats: csv, pdf, xlsx."
+                );
+            }
         }
+
         return ResponseEntity.ok()
-            .contentType(contentType)
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "." + ext + "\"")
-            .body(bytes);
+                .contentType(contentType)
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" +
+                                filename +
+                                "." +
+                                extension +
+                                "\""
+                )
+                .body(bytes);
     }
 
-    private Map<String, Object> toRow(CreditBureauRecord r) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("National ID", r.getNationalId());
-        m.put("Full Name", r.getFullName());
-        m.put("Date of Birth", r.getDateOfBirth());
-        m.put("Gender", r.getGender());
-        m.put("Phone", r.getPhone());
-        m.put("Loan Number", r.getLoanNumber());
-        m.put("Loan Type", r.getLoanType());
-        m.put("Loan Amount", r.getLoanAmount());
-        m.put("Outstanding Balance", r.getOutstandingBalance());
-        m.put("Status", r.getLoanStatus());
-        m.put("Days Past Due", r.getDaysPastDue());
-        m.put("Credit Score", r.getCreditScore());
-        m.put("Date Opened", r.getDateOpened());
-        m.put("Last Payment", r.getLastPaymentDate());
-        m.put("Date Closed", r.getDateClosed());
-        m.put("Branch", r.getBranchName());
-        return m;
+    // ============================================================
+    // CSV
+    // ============================================================
+
+    private byte[] toCsv(
+
+            List<String> columns,
+
+            List<Map<String, Object>> rows
+    ) {
+
+        StringBuilder csv =
+                new StringBuilder();
+
+        csv.append(
+                String.join(",", columns)
+        );
+
+        csv.append("\n");
+
+        for (Map<String, Object> row : rows) {
+
+            for (int i = 0;
+                 i < columns.size();
+                 i++) {
+
+                Object value =
+                        row.get(
+                                columns.get(i)
+                        );
+
+                String cell =
+                        value == null
+                                ? ""
+                                : value.toString();
+
+                cell =
+                        cell.replace(
+                                "\"",
+                                "\"\""
+                        );
+
+                if (cell.contains(",") ||
+                        cell.contains("\"") ||
+                        cell.contains("\n")) {
+
+                    cell =
+                            "\"" +
+                                    cell +
+                                    "\"";
+                }
+
+                csv.append(cell);
+
+                if (i < columns.size() - 1) {
+                    csv.append(",");
+                }
+            }
+
+            csv.append("\n");
+        }
+
+        return csv.toString()
+                .getBytes(StandardCharsets.UTF_8);
     }
 
-    private LocalDate parseDate(String s) {
-        return (s == null || s.isBlank()) ? null : LocalDate.parse(s);
+    // ============================================================
+    // DATE
+    // ============================================================
+
+    private LocalDate parseDate(
+            String value
+    ) {
+
+        if (value == null ||
+                value.isBlank()) {
+
+            return null;
+        }
+
+        return LocalDate.parse(value);
     }
 }
