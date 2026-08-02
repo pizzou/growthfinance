@@ -90,19 +90,24 @@ export const expenseApi = {
   ) => {
     const q = new URLSearchParams();
 
+
     q.set('page', String(params.page ?? 0));
     q.set('size', String(params.size ?? 20));
+
 
     if (params.category) q.set('category', params.category);
     if (params.branchId) q.set('branchId', String(params.branchId));
     if (params.from) q.set('from', params.from);
     if (params.to) q.set('to', params.to);
 
+
     return get(`/expenses?${q.toString()}`);
   },
 
+
   get: (id: number) =>
     get(`/expenses/${id}`),
+
 
   summary: (from?: string, to?: string) =>
     get(
@@ -111,11 +116,14 @@ export const expenseApi = {
       }`
     ),
 
+
   void: (id: number, reason?: string) =>
     post(`/expenses/${id}/void`, { reason }),
 
+
   receiptUrl: (id: number) =>
     `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'}/expenses/${id}/receipt`,
+
 
   create: (data: {
     expenseDate: string;
@@ -124,7 +132,9 @@ export const expenseApi = {
     paymentAccountId: number;
     branchId?: number;
 
+
     description?: string;
+
 
     paymentMethod: string;
     paymentProvider?: string;
@@ -132,39 +142,49 @@ export const expenseApi = {
     paymentTransactionReference?: string;
     paymentCode?: string;
 
+
     cardBrand?: string;
     cardLastFour?: string;
     cardAuthorizationCode?: string;
 
+
     chequeNumber?: string;
     paymentNotes?: string;
+
 
     receipt?: File | null;
   }) => {
     const form = new FormData();
+
 
     form.append('expenseDate', data.expenseDate);
     form.append('category', data.category);
     form.append('amount', String(data.amount));
     form.append('paymentAccountId', String(data.paymentAccountId));
 
+
     if (data.branchId) {
       form.append('branchId', String(data.branchId));
     }
+
 
     if (data.description) {
       form.append('description', data.description);
     }
 
+
     form.append('paymentMethod', data.paymentMethod);
+
 
     if (data.paymentProvider) {
       form.append('paymentProvider', data.paymentProvider);
     }
 
+
     if (data.paymentPhoneNumber) {
       form.append('paymentPhoneNumber', data.paymentPhoneNumber);
     }
+
 
     if (data.paymentTransactionReference) {
       form.append(
@@ -173,17 +193,21 @@ export const expenseApi = {
       );
     }
 
+
     if (data.paymentCode) {
       form.append('paymentCode', data.paymentCode);
     }
+
 
     if (data.cardBrand) {
       form.append('cardBrand', data.cardBrand);
     }
 
+
     if (data.cardLastFour) {
       form.append('cardLastFour', data.cardLastFour);
     }
+
 
     if (data.cardAuthorizationCode) {
       form.append(
@@ -192,17 +216,21 @@ export const expenseApi = {
       );
     }
 
+
     if (data.chequeNumber) {
       form.append('chequeNumber', data.chequeNumber);
     }
+
 
     if (data.paymentNotes) {
       form.append('paymentNotes', data.paymentNotes);
     }
 
+
     if (data.receipt) {
       form.append('receipt', data.receipt);
     }
+
 
     return API.post('/expenses', form, {
       headers: {
@@ -213,6 +241,7 @@ export const expenseApi = {
     );
   },
 };
+
 
 export const paymentApi = {
   record:   (loanId: number, data: unknown, idempotencyKey?: string) =>
