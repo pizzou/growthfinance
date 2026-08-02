@@ -37,7 +37,9 @@ public class ExpenseController {
     // CREATE EXPENSE
     // ============================================================
 
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
     public ResponseEntity<ApiResponse<Expense>> create(
 
             @RequestParam("expenseDate")
@@ -52,209 +54,209 @@ public class ExpenseController {
             @RequestParam("paymentAccountId")
             Long paymentAccountId,
 
-            @RequestParam(value = "branchId", required = false)
+            @RequestParam(
+                    value = "branchId",
+                    required = false
+            )
             Long branchId,
 
-            @RequestParam(value = "description", required = false)
+            @RequestParam(
+                    value = "description",
+                    required = false
+            )
             String description,
 
-            /*
-             * Payment method:
-             *
-             * BANK_ACCOUNT
-             * CASH
-             * MOBILE_MONEY
-             * MOMO_PAY
-             * CARD
-             * CHEQUE
-             * OTHER
-             */
-            @RequestParam(value = "paymentMethod", required = false)
+            @RequestParam(
+                    value = "paymentMethod",
+                    required = false
+            )
             String paymentMethod,
 
-            /*
-             * Payment provider:
-             *
-             * MTN
-             * AIRTEL
-             * BANK NAME
-             * VISA
-             * MASTERCARD
-             * etc.
-             */
-            @RequestParam(value = "paymentProvider", required = false)
+            @RequestParam(
+                    value = "paymentProvider",
+                    required = false
+            )
             String paymentProvider,
 
-            /*
-             * Phone number used for Mobile Money / MoMo Pay.
-             */
-            @RequestParam(value = "paymentPhoneNumber", required = false)
+            @RequestParam(
+                    value = "paymentPhoneNumber",
+                    required = false
+            )
             String paymentPhoneNumber,
 
-            /*
-             * Mobile Money / MoMo Pay transaction reference.
-             */
-            @RequestParam(value = "paymentTransactionReference", required = false)
+            @RequestParam(
+                    value = "paymentTransactionReference",
+                    required = false
+            )
             String paymentTransactionReference,
 
-            /*
-             * MoMo Pay merchant/reference code.
-             */
-            @RequestParam(value = "paymentCode", required = false)
+            @RequestParam(
+                    value = "paymentCode",
+                    required = false
+            )
             String paymentCode,
 
-            /*
-             * Card information.
-             *
-             * We do NOT store the full card number.
-             */
-            @RequestParam(value = "cardBrand", required = false)
+            @RequestParam(
+                    value = "cardBrand",
+                    required = false
+            )
             String cardBrand,
 
-            @RequestParam(value = "cardLastFour", required = false)
+            @RequestParam(
+                    value = "cardLastFour",
+                    required = false
+            )
             String cardLastFour,
 
-            @RequestParam(value = "cardAuthorizationCode", required = false)
+            @RequestParam(
+                    value = "cardAuthorizationCode",
+                    required = false
+            )
             String cardAuthorizationCode,
 
-            /*
-             * Cheque information.
-             */
-            @RequestParam(value = "chequeNumber", required = false)
+            @RequestParam(
+                    value = "chequeNumber",
+                    required = false
+            )
             String chequeNumber,
 
-            /*
-             * Additional payment information.
-             */
-            @RequestParam(value = "paymentNotes", required = false)
+            @RequestParam(
+                    value = "paymentNotes",
+                    required = false
+            )
             String paymentNotes,
 
-            /*
-             * Receipt / supporting document.
-             */
-            @RequestParam(value = "receipt", required = false)
+            @RequestParam(
+                    value = "receipt",
+                    required = false
+            )
             MultipartFile receipt
 
     ) throws Exception {
 
-        // ------------------------------------------------------------
-        // Get current organization
-        // ------------------------------------------------------------
 
-        Organization org = orgRepo
-                .findById(currentUserUtil.getCurrentOrganizationId())
+        // ========================================================
+        // ORGANIZATION
+        // ========================================================
+
+        Organization org =
+                orgRepo.findById(
+                        currentUserUtil
+                                .getCurrentOrganizationId()
+                )
                 .orElseThrow(() ->
-                        new RuntimeException("Organization not found")
+                        new RuntimeException(
+                                "Organization not found"
+                        )
                 );
 
 
-        // ------------------------------------------------------------
-        // Convert payment method
-        // ------------------------------------------------------------
+        // ========================================================
+        // PAYMENT METHOD
+        // ========================================================
 
         Expense.PaymentMethod method = null;
 
-        if (paymentMethod != null && !paymentMethod.isBlank()) {
+        if (paymentMethod != null
+                && !paymentMethod.isBlank()) {
+
             try {
-                method = Expense.PaymentMethod.valueOf(
-                        paymentMethod.trim().toUpperCase()
-                );
+
+                method =
+                        Expense.PaymentMethod.valueOf(
+                                paymentMethod
+                                        .trim()
+                                        .toUpperCase()
+                        );
+
             } catch (IllegalArgumentException ex) {
+
                 throw new IllegalArgumentException(
-                        "Invalid payment method: " + paymentMethod
+                        "Invalid payment method: "
+                                + paymentMethod
                 );
             }
         }
 
 
-        // ------------------------------------------------------------
-        // Convert expense category
-        // ------------------------------------------------------------
+        // ========================================================
+        // CATEGORY
+        // ========================================================
 
         Expense.ExpenseCategory expenseCategory;
 
         try {
-            expenseCategory = Expense.ExpenseCategory.valueOf(
-                    category.trim().toUpperCase()
-            );
+
+            expenseCategory =
+                    Expense.ExpenseCategory.valueOf(
+                            category
+                                    .trim()
+                                    .toUpperCase()
+                    );
+
         } catch (IllegalArgumentException ex) {
+
             throw new IllegalArgumentException(
-                    "Invalid expense category: " + category
+                    "Invalid expense category: "
+                            + category
             );
         }
 
 
-        // ------------------------------------------------------------
-        // Create expense
-        //
-        // IMPORTANT:
-        // The order here MUST exactly match ExpenseService.create()
-        // ------------------------------------------------------------
+        // ========================================================
+        // CREATE
+        // ========================================================
 
-        Expense created = expenseService.create(
+        Expense created =
+                expenseService.create(
 
-                // 1
-                org,
+                        org,
 
-                // 2
-                LocalDate.parse(expenseDate),
+                        LocalDate.parse(
+                                expenseDate
+                        ),
 
-                // 3
-                expenseCategory,
+                        expenseCategory,
 
-                // 4
-                amount,
+                        amount,
 
-                // 5
-                paymentAccountId,
+                        paymentAccountId,
 
-                // 6
-                branchId,
+                        branchId,
 
-                // 7
-                description,
+                        description,
 
-                // 8
-                currentUserUtil.getCurrentUser().getName(),
+                        currentUserUtil
+                                .getCurrentUser()
+                                .getName(),
 
-                // 9
-                method,
+                        method,
 
-                // 10
-                paymentProvider,
+                        paymentProvider,
 
-                // 11
-                paymentPhoneNumber,
+                        paymentPhoneNumber,
 
-                // 12
-                paymentTransactionReference,
+                        paymentTransactionReference,
 
-                // 13
-                paymentCode,
+                        paymentCode,
 
-                // 14
-                cardBrand,
+                        cardBrand,
 
-                // 15
-                cardLastFour,
+                        cardLastFour,
 
-                // 16
-                cardAuthorizationCode,
+                        cardAuthorizationCode,
 
-                // 17
-                chequeNumber,
+                        chequeNumber,
 
-                // 18
-                paymentNotes,
+                        paymentNotes,
 
-                // 19
-                receipt
-        );
+                        receipt
+                );
 
 
-        // ------------------------------------------------------------
-        // Audit
-        // ------------------------------------------------------------
+        // ========================================================
+        // AUDIT
+        // ========================================================
 
         auditService.log(
                 org,
@@ -262,14 +264,12 @@ public class ExpenseController {
                 "EXPENSE_RECORDED",
                 "EXPENSE",
                 String.valueOf(created.getId()),
-
                 "Recorded "
                         + created.getCategory().getLabel()
                         + " expense of "
                         + created.getAmount()
                         + " "
                         + created.getCurrency(),
-
                 null,
                 null,
                 "Accounting"
@@ -292,86 +292,112 @@ public class ExpenseController {
     @GetMapping
     public ResponseEntity<ApiResponse<Page<Expense>>> list(
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String category,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             Long branchId,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String from,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String to,
 
-            @RequestParam(defaultValue = "0")
+            @RequestParam(
+                    defaultValue = "0"
+            )
             int page,
 
-            @RequestParam(defaultValue = "20")
+            @RequestParam(
+                    defaultValue = "20"
+            )
             int size
 
     ) {
 
         Long orgId =
-                currentUserUtil.getCurrentOrganizationId();
+                currentUserUtil
+                        .getCurrentOrganizationId();
 
 
-        Expense.ExpenseCategory cat = null;
+        if (page < 0) {
+            page = 0;
+        }
 
-        if (category != null && !category.isBlank()) {
+        if (size <= 0) {
+            size = 20;
+        }
+
+        if (size > 100) {
+            size = 100;
+        }
+
+
+        Expense.ExpenseCategory cat =
+                null;
+
+        if (category != null
+                && !category.isBlank()) {
+
             try {
-                cat = Expense.ExpenseCategory.valueOf(
-                        category.trim().toUpperCase()
-                );
+
+                cat =
+                        Expense.ExpenseCategory.valueOf(
+                                category
+                                        .trim()
+                                        .toUpperCase()
+                        );
+
             } catch (IllegalArgumentException ex) {
+
                 throw new IllegalArgumentException(
-                        "Invalid expense category: " + category
+                        "Invalid expense category: "
+                                + category
                 );
             }
         }
 
 
         LocalDate fromDate =
-                from != null && !from.isBlank()
+                from != null
+                        && !from.isBlank()
                         ? LocalDate.parse(from)
                         : null;
 
+
         LocalDate toDate =
-                to != null && !to.isBlank()
+                to != null
+                        && !to.isBlank()
                         ? LocalDate.parse(to)
                         : null;
 
 
-        return ResponseEntity.ok(
-                ApiResponse.ok(
-                        expenseService.list(
-                                orgId,
-                                cat,
-                                branchId,
-                                fromDate,
-                                toDate,
-                                PageRequest.of(page, size)
+        Page<Expense> expenses =
+                expenseService.list(
+                        orgId,
+                        cat,
+                        branchId,
+                        fromDate,
+                        toDate,
+                        PageRequest.of(
+                                page,
+                                size
                         )
-                )
-        );
-    }
+                );
 
-
-    // ============================================================
-    // GET SINGLE EXPENSE
-    // ============================================================
-
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<Expense>> get(
-            @PathVariable Long id
-    ) {
-
-        Long orgId =
-                currentUserUtil.getCurrentOrganizationId();
 
         return ResponseEntity.ok(
                 ApiResponse.ok(
-                        expenseService.getForOrg(id, orgId)
+                        expenses
                 )
         );
     }
@@ -384,26 +410,34 @@ public class ExpenseController {
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<Map<String, Object>>> summary(
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String from,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String to
 
     ) {
 
         Long orgId =
-                currentUserUtil.getCurrentOrganizationId();
+                currentUserUtil
+                        .getCurrentOrganizationId();
 
 
         LocalDate fromDate =
-                from != null && !from.isBlank()
+                from != null
+                        && !from.isBlank()
                         ? LocalDate.parse(from)
-                        : LocalDate.now().withDayOfMonth(1);
+                        : LocalDate.now()
+                                .withDayOfMonth(1);
 
 
         LocalDate toDate =
-                to != null && !to.isBlank()
+                to != null
+                        && !to.isBlank()
                         ? LocalDate.parse(to)
                         : LocalDate.now();
 
@@ -421,22 +455,56 @@ public class ExpenseController {
 
 
     // ============================================================
+    // GET SINGLE EXPENSE
+    // ============================================================
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<Expense>> get(
+            @PathVariable Long id
+    ) {
+
+        Long orgId =
+                currentUserUtil
+                        .getCurrentOrganizationId();
+
+
+        Expense expense =
+                expenseService.getForOrg(
+                        id,
+                        orgId
+                );
+
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        expense
+                )
+        );
+    }
+
+
+    // ============================================================
     // VOID EXPENSE
     // ============================================================
 
     @PatchMapping("/{id}/void")
-    @PreAuthorize("hasAnyRole('ADMIN','ACCOUNTANT')")
+    @PreAuthorize(
+            "hasAnyRole('ADMIN','ACCOUNTANT')"
+    )
     public ResponseEntity<ApiResponse<Expense>> voidExpense(
 
             @PathVariable Long id,
 
-            @RequestBody(required = false)
+            @RequestBody(
+                    required = false
+            )
             Map<String, String> body
 
     ) {
 
         Long orgId =
-                currentUserUtil.getCurrentOrganizationId();
+                currentUserUtil
+                        .getCurrentOrganizationId();
 
 
         String reason =
@@ -449,7 +517,9 @@ public class ExpenseController {
                 expenseService.voidExpense(
                         id,
                         orgId,
-                        currentUserUtil.getCurrentUser().getName(),
+                        currentUserUtil
+                                .getCurrentUser()
+                                .getName(),
                         reason
                 );
 
@@ -460,15 +530,14 @@ public class ExpenseController {
                 "EXPENSE_VOIDED",
                 "EXPENSE",
                 String.valueOf(id),
-
                 "Voided expense #"
                         + id
                         + (
-                            reason != null && !reason.isBlank()
+                        reason != null
+                                && !reason.isBlank()
                                 ? ": " + reason
                                 : ""
-                        ),
-
+                ),
                 null,
                 null,
                 "Accounting"
@@ -494,14 +563,19 @@ public class ExpenseController {
     ) {
 
         Long orgId =
-                currentUserUtil.getCurrentOrganizationId();
+                currentUserUtil
+                        .getCurrentOrganizationId();
 
 
         Expense expense =
-                expenseService.getForOrg(id, orgId);
+                expenseService.getForOrg(
+                        id,
+                        orgId
+                );
 
 
         if (!expense.hasReceipt()) {
+
             throw new RuntimeException(
                     "No receipt attached to this expense"
             );
@@ -521,16 +595,17 @@ public class ExpenseController {
 
 
         return ResponseEntity.ok()
-
                 .contentType(
-                        MediaType.parseMediaType(contentType)
+                        MediaType.parseMediaType(
+                                contentType
+                        )
                 )
-
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
-                        "inline; filename=\"" + fileName + "\""
+                        "inline; filename=\""
+                                + fileName
+                                + "\""
                 )
-
                 .body(
                         expense.getReceiptData()
                 );

@@ -3,6 +3,7 @@ package com.patrick.fintech.loan_backend.repository;
 import com.patrick.fintech.loan_backend.model.Expense;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,23 +12,36 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-public interface ExpenseRepository extends JpaRepository<Expense, Long> {
+public interface ExpenseRepository
+        extends JpaRepository<Expense, Long> {
 
-    /**
-     * Find one expense belonging to a specific organization.
-     *
-     * Important for multi-tenant security:
-     * an expense from another organization cannot be accessed
-     * simply by knowing its ID.
-     */
+
+    
+    @EntityGraph(
+            attributePaths = {
+                    "organization",
+                    "branch",
+                    "paymentAccount",
+                    "paymentAccount.glAccount",
+                    "paymentAccount.branch"
+            }
+    )
     Optional<Expense> findByIdAndOrganization_Id(
             Long id,
             Long orgId
     );
 
-    /**
-     * Paginated expense listing with optional filters.
-     */
+
+    
+    @EntityGraph(
+            attributePaths = {
+                    "organization",
+                    "branch",
+                    "paymentAccount",
+                    "paymentAccount.glAccount",
+                    "paymentAccount.branch"
+            }
+    )
     @Query("""
         SELECT e
         FROM Expense e
@@ -47,15 +61,8 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
             Pageable pageable
     );
 
-    /**
-     * Total posted expenses grouped by expense category.
-     *
-     * Used for:
-     * - expense reports
-     * - P&L
-     * - dashboard charts
-     * - accounting summaries
-     */
+
+    
     @Query("""
         SELECT e.category, COALESCE(SUM(e.amount), 0)
         FROM Expense e
@@ -72,9 +79,8 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
             @Param("to") LocalDate to
     );
 
-    /**
-     * Total posted expenses for a date range.
-     */
+
+    
     @Query("""
         SELECT COALESCE(SUM(e.amount), 0)
         FROM Expense e
@@ -89,16 +95,8 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
             @Param("to") LocalDate to
     );
 
-    /**
-     * Total posted expenses paid from a specific bank/cash/mobile-money
-     * account.
-     *
-     * Useful for:
-     * - bank reconciliation
-     * - cash reconciliation
-     * - mobile-money reconciliation
-     * - account statements
-     */
+
+   
     @Query("""
         SELECT COALESCE(SUM(e.amount), 0)
         FROM Expense e
@@ -115,9 +113,17 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
             @Param("to") LocalDate to
     );
 
-    /**
-     * Find posted expenses paid from a particular account.
-     */
+
+    
+    @EntityGraph(
+            attributePaths = {
+                    "organization",
+                    "branch",
+                    "paymentAccount",
+                    "paymentAccount.glAccount",
+                    "paymentAccount.branch"
+            }
+    )
     @Query("""
         SELECT e
         FROM Expense e
@@ -135,14 +141,13 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
             @Param("to") LocalDate to
     );
 
-    /**
-     * Count expenses for an organization.
-     */
-    long countByOrganization_Id(Long orgId);
 
-    /**
-     * Count posted expenses for an organization.
-     */
+    
+    long countByOrganization_Id(
+            Long orgId
+    );
+
+
     long countByOrganization_IdAndStatus(
             Long orgId,
             Expense.Status status
