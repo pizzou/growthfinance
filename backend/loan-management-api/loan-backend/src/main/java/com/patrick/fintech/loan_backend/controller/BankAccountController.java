@@ -50,11 +50,6 @@ public class BankAccountController {
                                 )
                         );
 
-
-        /*
-         * branchId MUST be final/effectively final before
-         * using it inside lambda expressions.
-         */
         final Long branchId =
                 body.get("branchId") != null
                         && !body.get("branchId").toString().trim().isEmpty()
@@ -79,14 +74,6 @@ public class BankAccountController {
                                     )
                             );
 
-            /*
-             * Security check:
-             * make sure the selected branch belongs to the
-             * current organization.
-             *
-             * Adjust this condition if your Branch entity uses
-             * a different organization relationship.
-             */
             if (branch.getOrganization() != null
                     && branch.getOrganization().getId() != null
                     && !branch.getOrganization()
@@ -193,10 +180,7 @@ public class BankAccountController {
                 );
 
 
-        // ========================================================
-        // AUDIT
-        // ========================================================
-
+      
         auditService.log(
                 org,
                 currentUserUtil.getCurrentUser(),
@@ -222,10 +206,16 @@ public class BankAccountController {
     }
 
 
-    // ============================================================
-    // RECORD DEPOSIT / WITHDRAWAL
-    // ============================================================
-
+    @GetMapping 
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> list() { 
+        Long orgId = 
+        currentUserUtil.getCurrentOrganizationId();
+         return ResponseEntity.ok( 
+            ApiResponse.ok( 
+                bankAccountService.listForApi(orgId) 
+            
+            ) ); }
+    
     @PostMapping("/{id}/transactions")
     @PreAuthorize("hasAnyRole('ADMIN','ACCOUNTANT','MANAGER')")
     public ResponseEntity<ApiResponse<JournalEntry>> recordTransaction(
