@@ -68,13 +68,7 @@ public class BankAccountService {
                 accountType.toUpperCase().trim();
 
 
-        /*
-         * Generate a GL code belonging to this organization.
-         *
-         * Do not use only bankAccountRepo.count()
-         * because different organizations can have different
-         * sequences and deleted records can create collisions.
-         */
+       
         long seq =
                 bankAccountRepo.count() + 1;
 

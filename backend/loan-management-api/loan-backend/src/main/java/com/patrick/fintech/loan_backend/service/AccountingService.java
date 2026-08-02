@@ -10,6 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.transaction.annotation.Transactional;
+
+
 import java.time.LocalDate;
 import java.util.*;
 
@@ -444,21 +447,7 @@ public class AccountingService {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // INTEREST ACCRUAL
-    // -------------------------------------------------------------------------
-
-    /**
-     * Accrual posting:
-     *
-     * DR Interest Receivable
-     * CR Interest Income
-     *
-     * PaymentService is responsible for deciding how much interest is actually
-     * due for a payment cycle.
-     *
-     * This method is intended for a daily EOD accrual process.
-     */
+    
     @Transactional
     public void postInterestAccrual(
         Loan loan,
@@ -519,60 +508,7 @@ public class AccountingService {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // PAYMENT RECEIVED
-    // -------------------------------------------------------------------------
-
-    /**
-     * Records one individual borrower payment in the general ledger.
-     *
-     * IMPORTANT:
-     *
-     * PaymentService has already determined the allocation:
-     *
-     *     payment amount
-     *          |
-     *          +---- interest
-     *          |
-     *          +---- principal
-     *          |
-     *          +---- penalty
-     *
-     * AccountingService must NOT recalculate that allocation.
-     *
-     * This is particularly important because a borrower can make multiple
-     * payments during the same monthly cycle.
-     *
-     * Example:
-     *
-     * Monthly interest = 10,000
-     *
-     * First payment = 4,000
-     *
-     *     Interest = 4,000
-     *     Principal = 0
-     *
-     * Second payment = 8,000
-     *
-     *     Remaining interest = 6,000
-     *     Principal = 2,000
-     *
-     * Accounting therefore records:
-     *
-     * First payment:
-     *
-     *     DR Cash             4,000
-     *     CR Interest Income  4,000
-     *
-     * Second payment:
-     *
-     *     DR Cash             8,000
-     *     CR Interest Income  6,000
-     *     CR Loans Receivable 2,000
-     *
-     * No second monthly interest is created simply because another payment
-     * was made in the same cycle.
-     */
+    
     @Transactional
     public JournalEntry postPaymentReceived(
         Payment payment,
@@ -614,54 +550,24 @@ public class AccountingService {
         double penalty =
             Math.max(0.0, penaltyAmount);
 
-        /*
-         * The accounting entry must balance.
-         *
-         * If PaymentService gives us:
-         *
-         * total = 10,000
-         * interest = 6,000
-         * principal = 4,000
-         * penalty = 0
-         *
-         * then:
-         *
-         * DR Cash 10,000
-         * CR Interest Income 6,000
-         * CR Loans Receivable 4,000
-         */
+        
 
         double allocated =
             interest +
             principal +
             penalty;
 
-        /*
-         * Small rounding differences are allowed.
-         *
-         * If there is an unallocated amount, treat it as principal.
-         *
-         * This protects the ledger from becoming unbalanced because of
-         * two-decimal rounding.
-         */
+        
         double difference = total - allocated;
 
         if (Math.abs(difference) > 0.01) {
 
-            /*
-             * A positive difference means PaymentService supplied an amount
-             * which has not yet been allocated.
-             *
-             * For the lending model, that remaining amount reduces principal.
-             */
+            
             if (difference > 0) {
                 principal += difference;
             } else {
 
-                /*
-                 * If the components exceed the actual payment amount,
-                 * this is a genuine accounting inconsistency.
-                 */
+                
                 throw new IllegalStateException(
                     String.format(
                         "Payment allocation exceeds payment amount: " +
@@ -686,9 +592,7 @@ public class AccountingService {
 
         List<JournalLine> lines = new ArrayList<>();
 
-        // -------------------------------------------------------------
-        // CASH
-        // -------------------------------------------------------------
+        
 
         lines.add(
             JournalLine.builder()
@@ -702,9 +606,7 @@ public class AccountingService {
                 .build()
         );
 
-        // -------------------------------------------------------------
-        // PRINCIPAL
-        // -------------------------------------------------------------
+        
 
         if (principal > 0.009) {
 
@@ -721,19 +623,11 @@ public class AccountingService {
             );
         }
 
-        // -------------------------------------------------------------
-        // INTEREST
-        // -------------------------------------------------------------
+       
 
         if (interest > 0.009) {
 
-            /*
-             * Normally interest is recognized directly here because
-             * PaymentService is using monthly payment-cycle interest.
-             *
-             * If an interest receivable accrual exists, clear that
-             * receivable instead of recognizing the same income twice.
-             */
+           
             double accrued =
                 accruedInterestReceivable(
                     org,
@@ -781,9 +675,7 @@ public class AccountingService {
             }
         }
 
-        // -------------------------------------------------------------
-        // PENALTY / FEE
-        // -------------------------------------------------------------
+       
 
         if (penalty > 0.009) {
 
@@ -800,10 +692,7 @@ public class AccountingService {
             );
         }
 
-        /*
-         * Use the Payment's own reference so every accounting transaction
-         * can be traced back to the individual payment.
-         */
+        
         String reference =
             payment.getPaymentReference() != null
                 ? payment.getPaymentReference()
@@ -821,15 +710,7 @@ public class AccountingService {
         );
     }
 
-    /**
-     * Backwards-compatible overload.
-     *
-     * This prevents older callers from breaking immediately.
-     *
-     * IMPORTANT:
-     * New payment code should use the full method above so that accounting
-     * receives the exact allocation calculated by PaymentService.
-     */
+    
     @Transactional
     public JournalEntry postPaymentReceived(Payment payment) {
 
@@ -864,20 +745,7 @@ public class AccountingService {
         );
     }
 
-    // -------------------------------------------------------------------------
-    // ACCRUED INTEREST
-    // -------------------------------------------------------------------------
-
-    /**
-     * Finds net interest receivable for a particular loan.
-     *
-     * Debit = interest accrued
-     * Credit = interest already cleared
-     *
-     * Therefore:
-     *
-     *     net receivable = debit - credit
-     */
+   
     private double accruedInterestReceivable(
         Organization org,
         String loanReference
@@ -914,16 +782,7 @@ public class AccountingService {
             .sum();
     }
 
-    // -------------------------------------------------------------------------
-    // WRITE-OFF
-    // -------------------------------------------------------------------------
-
-    /**
-     * Writes off an outstanding loan:
-     *
-     * DR Loan Loss Expense
-     * CR Loans Receivable
-     */
+    
     @Transactional
     public void postWriteOff(Loan loan) {
 
@@ -985,16 +844,7 @@ public class AccountingService {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // EXPENSES
-    // -------------------------------------------------------------------------
-
-    /**
-     * Posts an operating expense:
-     *
-     * DR Expense
-     * CR Cash/Bank
-     */
+    
     @Transactional
     public JournalEntry postExpense(Expense expense) {
 
@@ -1076,16 +926,7 @@ public class AccountingService {
         );
     }
 
-    // -------------------------------------------------------------------------
-    // REVERSALS
-    // -------------------------------------------------------------------------
-
-    /**
-     * Reverses an existing journal entry.
-     *
-     * Original history is preserved.
-     * The reversal is a separate journal entry.
-     */
+    
     @Transactional
     public JournalEntry reverseEntry(
         Long orgId,
@@ -1187,13 +1028,7 @@ public class AccountingService {
         return reversal;
     }
 
-    // -------------------------------------------------------------------------
-    // GENERAL LEDGER
-    // -------------------------------------------------------------------------
-
-    /**
-     * Returns chronological transaction history for one account.
-     */
+    
     public Map<String, Object> getLedger(
         Long orgId,
         Long accountId
@@ -1292,15 +1127,8 @@ public class AccountingService {
         return result;
     }
 
-    // -------------------------------------------------------------------------
-    // TRIAL BALANCE
-    // -------------------------------------------------------------------------
-
-    /**
-     * Trial balance as of now.
-     *
-     * Total debit balances must equal total credit balances.
-     */
+    
+   
     public Map<String, Object> getTrialBalance(
         Long orgId
     ) {
@@ -1395,17 +1223,7 @@ public class AccountingService {
         return result;
     }
 
-    // -------------------------------------------------------------------------
-    // BALANCE SHEET
-    // -------------------------------------------------------------------------
-
-    /**
-     * Balance Sheet:
-     *
-     * Assets = Liabilities + Equity
-     *
-     * Current-period net income is folded into equity.
-     */
+    @Transactional(readOnly = true)
     public Map<String, Object> getBalanceSheet(
         Long orgId
     ) {
@@ -1540,13 +1358,7 @@ public class AccountingService {
         return result;
     }
 
-    // -------------------------------------------------------------------------
-    // PROFIT & LOSS
-    // -------------------------------------------------------------------------
-
-    /**
-     * Profit and Loss for a date range.
-     */
+    @Transactional(readOnly = true)
     public Map<String, Object> getProfitAndLoss(
         Long orgId,
         LocalDate from,
@@ -1706,13 +1518,7 @@ public class AccountingService {
         return result;
     }
 
-    // -------------------------------------------------------------------------
-    // CASH FLOW
-    // -------------------------------------------------------------------------
-
-    /**
-     * Direct-method cash flow statement.
-     */
+    @Transactional(readOnly = true)
     public Map<String, Object> getCashFlow(
         Long orgId,
         LocalDate from,
@@ -1826,13 +1632,7 @@ public class AccountingService {
         return result;
     }
 
-    // -------------------------------------------------------------------------
-    // BRANCH SUMMARY
-    // -------------------------------------------------------------------------
-
-    /**
-     * Branch-level lending summary.
-     */
+   @Transactional(readOnly = true)
     public List<Map<String, Object>> getBranchSummary(
         Long orgId,
         LocalDate from,
@@ -1938,13 +1738,7 @@ public class AccountingService {
         return rows;
     }
 
-    // -------------------------------------------------------------------------
-    // ACCOUNT BALANCE
-    // -------------------------------------------------------------------------
-
-    /**
-     * Calculates an account's balance according to its normal balance.
-     */
+    
     private double netBalance(
         ChartOfAccount acc
     ) {
