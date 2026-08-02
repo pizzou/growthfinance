@@ -24,11 +24,12 @@ public class BankAccount {
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "branch_id")
-    private Branch branch; // null = organization-wide (head office) account
+    private Branch branch; 
+@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = "chart_of_account_id", nullable = false)
+@JsonIgnore
+private ChartOfAccount glAccount;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "chart_of_account_id", nullable = false)
-    private ChartOfAccount glAccount; // the dedicated sub-ledger account backing this bank/cash account
 
     private String name;          // e.g. "Kigali Branch Petty Cash", "Bank of Kigali - Main Account"
     private String accountType;   // CASH or BANK

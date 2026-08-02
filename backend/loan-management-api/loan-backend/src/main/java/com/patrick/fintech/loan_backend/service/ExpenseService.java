@@ -616,9 +616,8 @@ public class ExpenseService {
     }
 
 
-    // ============================================================
-    // LIST EXPENSES
-    // ============================================================
+    
+@Transactional(readOnly = true)
 
     public Page<Expense> list(
             Long orgId,
