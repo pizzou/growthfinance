@@ -45,11 +45,7 @@ API.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-/**
- * ============================================================
- * RESPONSE INTERCEPTOR
- * ============================================================
- */
+
 
 API.interceptors.response.use(
   (response) => response,
