@@ -141,9 +141,7 @@ function getErrorMessage(
 }
 
 
-// ============================================================
-// MAIN PAGE
-// ============================================================
+
 
 export default function RegulatoryReportsPage() {
 
