@@ -25,10 +25,7 @@ public class AccountingService {
     private final JournalEntryRepository journalRepo;
     private final JournalLineRepository lineRepo;
 
-    // -------------------------------------------------------------------------
-    // DEFAULT CHART OF ACCOUNTS
-    // -------------------------------------------------------------------------
-
+    
     private static final String[][] DEFAULT_ACCOUNTS = {
 
         // code, name, type, normalBalance
@@ -1028,7 +1025,7 @@ public class AccountingService {
         return reversal;
     }
 
-    
+    @Transactional(readOnly = true)
     public Map<String, Object> getLedger(
         Long orgId,
         Long accountId
@@ -1128,7 +1125,7 @@ public class AccountingService {
     }
 
     
-   
+   @Transactional(readOnly = true)
     public Map<String, Object> getTrialBalance(
         Long orgId
     ) {
@@ -1659,9 +1656,9 @@ public class AccountingService {
             }
 
             String branchName =
-                entry.getBranchName() != null
-                    ? entry.getBranchName()
-                    : "Unassigned";
+        entry.getBranch() != null && entry.getBranch().getName() != null
+            ? entry.getBranch().getName()
+            : "Unassigned";
 
             double[] totals =
                 byBranch.computeIfAbsent(
