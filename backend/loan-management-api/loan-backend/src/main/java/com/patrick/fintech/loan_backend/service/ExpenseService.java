@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.model.BankAccount;
@@ -9,6 +10,7 @@ import com.patrick.fintech.loan_backend.repository.BankAccountRepository;
 import com.patrick.fintech.loan_backend.repository.BranchRepository;
 import com.patrick.fintech.loan_backend.repository.ExpenseRepository;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -39,7 +43,8 @@ public class ExpenseService {
         "image/webp"
     );
 
-    private static final long MAX_RECEIPT_BYTES = 8L * 1024 * 1024;
+    private static final long MAX_RECEIPT_BYTES =
+        8L * 1024 * 1024;
 
 
     // ============================================================
@@ -59,14 +64,6 @@ public class ExpenseService {
     // CREATE EXPENSE
     // ============================================================
 
-    /**
-     * Creates and posts an operating expense.
-     *
-     * The expense itself is the primary accounting transaction.
-     *
-     * If accountingService.postExpense() fails, the entire transaction
-     * is rolled back because this method is transactional.
-     */
     @Transactional
     public Expense create(
             Organization org,
@@ -109,6 +106,24 @@ public class ExpenseService {
             );
         }
 
+        /*
+         * Keep the database column as DOUBLE PRECISION.
+         *
+         * BigDecimal is used ONLY here to avoid binary floating-point
+         * rounding problems before the Double value is stored.
+         *
+         * Example:
+         *
+         * 20000       -> 20000.00 -> 20000.0
+         * 19999.999   -> 20000.00
+         * 19999.994   -> 19999.99
+         */
+        amount =
+            BigDecimal.valueOf(amount)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
+
+
         if (category == null) {
             throw new IllegalArgumentException(
                 "Expense category is required"
@@ -134,23 +149,35 @@ public class ExpenseService {
                 )
                 .orElseThrow(() ->
                     new IllegalArgumentException(
-                        "Payment account not found: " +
-                        paymentAccountId
+                        "Payment account not found: "
+                            + paymentAccountId
                     )
                 );
 
 
         // ========================================================
-        // VERIFY PAYMENT ACCOUNT IS ACTIVE
+        // VERIFY PAYMENT ACCOUNT
         // ========================================================
 
-        if (paymentAccount.getActive() != null &&
-            !paymentAccount.getActive()) {
+        if (paymentAccount.getActive() != null
+                && !paymentAccount.getActive()) {
 
             throw new IllegalArgumentException(
                 "Payment account is inactive and cannot be used"
             );
         }
+
+
+        /*
+         * Make sure the required BankAccount relationships are
+         * initialized while the Hibernate session is still open.
+         *
+         * This prevents:
+         *
+         * LazyInitializationException:
+         * could not initialize proxy [BankAccount#X] - no Session
+         */
+        initializeBankAccount(paymentAccount);
 
 
         // ========================================================
@@ -172,6 +199,8 @@ public class ExpenseService {
                             "Branch not found: " + branchId
                         )
                     );
+
+            Hibernate.initialize(branch);
         }
 
 
@@ -180,7 +209,8 @@ public class ExpenseService {
         // ========================================================
 
         if (paymentMethod == null) {
-            paymentMethod = Expense.PaymentMethod.CASH;
+            paymentMethod =
+                Expense.PaymentMethod.CASH;
         }
 
 
@@ -217,7 +247,7 @@ public class ExpenseService {
 
 
         // ========================================================
-        // VALIDATE PAYMENT-SPECIFIC INFORMATION
+        // VALIDATE PAYMENT INFORMATION
         // ========================================================
 
         validatePaymentDetails(
@@ -238,64 +268,69 @@ public class ExpenseService {
         // CREATE EXPENSE
         // ========================================================
 
-        Expense expense = Expense.builder()
+        Expense expense =
+            Expense.builder()
 
-            // Organization
-            .organization(org)
+                // Organization
+                .organization(org)
 
-            // Branch
-            .branch(branch)
+                // Branch
+                .branch(branch)
 
-            // Payment account
-            .paymentAccount(paymentAccount)
+                // Payment account
+                .paymentAccount(paymentAccount)
 
-            // Basic expense information
-            .expenseDate(
-                expenseDate != null
-                    ? expenseDate
-                    : LocalDate.now()
-            )
+                // Expense date
+                .expenseDate(
+                    expenseDate != null
+                        ? expenseDate
+                        : LocalDate.now()
+                )
 
-            .category(category)
+                // Category
+                .category(category)
 
-            .amount(amount)
+                // Amount
+                .amount(amount)
 
-            .currency("RWF")
+                // Currency
+                .currency("RWF")
 
-            .description(description)
+                // Description
+                .description(description)
 
-            // Payment information
-            .paymentMethod(paymentMethod)
+                // Payment information
+                .paymentMethod(paymentMethod)
 
-            .paymentProvider(paymentProvider)
+                .paymentProvider(paymentProvider)
 
-            .paymentPhoneNumber(paymentPhoneNumber)
+                .paymentPhoneNumber(paymentPhoneNumber)
 
-            .paymentTransactionReference(
-                paymentTransactionReference
-            )
+                .paymentTransactionReference(
+                    paymentTransactionReference
+                )
 
-            .paymentCode(paymentCode)
+                .paymentCode(paymentCode)
 
-            .cardBrand(cardBrand)
+                .cardBrand(cardBrand)
 
-            .cardLastFour(cardLastFour)
+                .cardLastFour(cardLastFour)
 
-            .cardAuthorizationCode(
-                cardAuthorizationCode
-            )
+                .cardAuthorizationCode(
+                    cardAuthorizationCode
+                )
 
-            .chequeNumber(chequeNumber)
+                .chequeNumber(chequeNumber)
 
-            .paymentNotes(paymentNotes)
+                .paymentNotes(paymentNotes)
 
-            // Status
-            .status(Expense.Status.POSTED)
+                // Status
+                .status(Expense.Status.POSTED)
 
-            // Audit
-            .createdByName(createdByName)
+                // Audit
+                .createdByName(createdByName)
 
-            .build();
+                .build();
 
 
         // ========================================================
@@ -320,21 +355,6 @@ public class ExpenseService {
         // POST TO GENERAL LEDGER
         // ========================================================
 
-        /*
-         * Example:
-         *
-         * Expense:
-         *     Rent = 100,000 RWF
-         *
-         * Accounting:
-         *
-         *     DR Rent Expense       100,000
-         *     CR Bank/Cash          100,000
-         *
-         * AccountingService determines the actual
-         * debit and credit accounts.
-         */
-
         JournalEntry entry =
             accountingService.postExpense(expense);
 
@@ -344,6 +364,7 @@ public class ExpenseService {
         // ========================================================
 
         if (entry != null) {
+
             expense.setJournalEntryId(
                 entry.getId()
             );
@@ -354,7 +375,124 @@ public class ExpenseService {
         // SAVE AGAIN
         // ========================================================
 
-        return expenseRepository.save(expense);
+        expense =
+            expenseRepository.save(expense);
+
+
+        /*
+         * Initialize relationships before leaving the transaction.
+         *
+         * The controller will eventually serialize this Expense as JSON.
+         * At that point the Hibernate session may already be closed.
+         */
+        initializeExpense(expense);
+
+
+        return expense;
+    }
+
+
+    // ============================================================
+    // INITIALIZE EXPENSE RELATIONSHIPS
+    // ============================================================
+
+    /**
+     * Initializes relationships that may be lazy-loaded before
+     * the Expense object is serialized by Jackson.
+     *
+     * This is especially important for:
+     *
+     * Expense
+     *   -> paymentAccount
+     *       -> glAccount
+     */
+    private void initializeExpense(
+            Expense expense
+    ) {
+
+        if (expense == null) {
+            return;
+        }
+
+        // Payment account
+        BankAccount paymentAccount =
+            expense.getPaymentAccount();
+
+        if (paymentAccount != null) {
+
+            initializeBankAccount(
+                paymentAccount
+            );
+        }
+
+
+        // Branch
+        if (expense.getBranch() != null) {
+
+            Hibernate.initialize(
+                expense.getBranch()
+            );
+        }
+
+
+        // Organization
+        if (expense.getOrganization() != null) {
+
+            Hibernate.initialize(
+                expense.getOrganization()
+            );
+        }
+    }
+
+
+    // ============================================================
+    // INITIALIZE BANK ACCOUNT
+    // ============================================================
+
+    /**
+     * Initializes the BankAccount and its GL account while
+     * Hibernate session is active.
+     *
+     * This fixes:
+     *
+     * LazyInitializationException:
+     *
+     * could not initialize proxy
+     * [BankAccount#X] - no Session
+     */
+    private void initializeBankAccount(
+            BankAccount account
+    ) {
+
+        if (account == null) {
+            return;
+        }
+
+        Hibernate.initialize(account);
+
+
+        if (account.getGlAccount() != null) {
+
+            Hibernate.initialize(
+                account.getGlAccount()
+            );
+        }
+
+
+        if (account.getBranch() != null) {
+
+            Hibernate.initialize(
+                account.getBranch()
+            );
+        }
+
+
+        if (account.getOrganization() != null) {
+
+            Hibernate.initialize(
+                account.getOrganization()
+            );
+        }
     }
 
 
@@ -362,18 +500,18 @@ public class ExpenseService {
     // PAYMENT VALIDATION
     // ============================================================
 
-   private void validatePaymentDetails(
-        Expense.PaymentMethod paymentMethod,
-        String paymentProvider,
-        String paymentPhoneNumber,
-        String paymentTransactionReference,
-        String paymentCode,
-        String cardBrand,
-        String cardLastFour,
-        String cardAuthorizationCode,
-        String chequeNumber,
-        String paymentNotes
-) {
+    private void validatePaymentDetails(
+            Expense.PaymentMethod paymentMethod,
+            String paymentProvider,
+            String paymentPhoneNumber,
+            String paymentTransactionReference,
+            String paymentCode,
+            String cardBrand,
+            String cardLastFour,
+            String cardAuthorizationCode,
+            String chequeNumber,
+            String paymentNotes
+    ) {
 
         switch (paymentMethod) {
 
@@ -384,11 +522,8 @@ public class ExpenseService {
             case CASH:
 
                 /*
-                 * The payment account identifies the cash account.
-                 *
-                 * No external transaction number is required.
+                 * Payment account identifies the cash account.
                  */
-
                 break;
 
 
@@ -398,7 +533,9 @@ public class ExpenseService {
 
             case BANK_TRANSFER:
 
-                if (isBlank(paymentTransactionReference)) {
+                if (isBlank(
+                    paymentTransactionReference
+                )) {
 
                     throw new IllegalArgumentException(
                         "Bank transaction/reference number is required"
@@ -428,7 +565,9 @@ public class ExpenseService {
                     );
                 }
 
-                if (isBlank(paymentTransactionReference)) {
+                if (isBlank(
+                    paymentTransactionReference
+                )) {
 
                     throw new IllegalArgumentException(
                         "Mobile money transaction number is required"
@@ -458,7 +597,9 @@ public class ExpenseService {
                     );
                 }
 
-                if (isBlank(paymentTransactionReference)) {
+                if (isBlank(
+                    paymentTransactionReference
+                )) {
 
                     throw new IllegalArgumentException(
                         "MoMo Pay transaction number is required"
@@ -495,8 +636,10 @@ public class ExpenseService {
                     );
                 }
 
-                if (isBlank(cardAuthorizationCode) &&
-                    isBlank(paymentTransactionReference)) {
+                if (isBlank(cardAuthorizationCode)
+                        && isBlank(
+                            paymentTransactionReference
+                        )) {
 
                     throw new IllegalArgumentException(
                         "Card authorization code or transaction reference is required"
@@ -528,13 +671,10 @@ public class ExpenseService {
 
             case OTHER:
 
-                /*
-                 * For OTHER, payment notes or transaction reference
-                 * can explain the payment.
-                 */
-
-                if (isBlank(paymentNotes) &&
-                    isBlank(paymentTransactionReference)) {
+                if (isBlank(paymentNotes)
+                        && isBlank(
+                            paymentTransactionReference
+                        )) {
 
                     throw new IllegalArgumentException(
                         "Payment reference or payment notes are required"
@@ -555,8 +695,8 @@ public class ExpenseService {
             MultipartFile receipt
     ) throws IOException {
 
-        if (receipt == null ||
-            receipt.isEmpty()) {
+        if (receipt == null
+                || receipt.isEmpty()) {
 
             return;
         }
@@ -566,7 +706,8 @@ public class ExpenseService {
         // FILE SIZE
         // --------------------------------------------------------
 
-        if (receipt.getSize() > MAX_RECEIPT_BYTES) {
+        if (receipt.getSize()
+                > MAX_RECEIPT_BYTES) {
 
             throw new IllegalArgumentException(
                 "Maximum receipt file size is 8MB."
@@ -582,14 +723,14 @@ public class ExpenseService {
             receipt.getContentType();
 
 
-        if (contentType == null ||
-            !ALLOWED_RECEIPT_TYPES.contains(
-                contentType.toLowerCase()
-            )) {
+        if (contentType == null
+                || !ALLOWED_RECEIPT_TYPES.contains(
+                    contentType.toLowerCase()
+                )) {
 
             throw new IllegalArgumentException(
-                "Unsupported receipt type. " +
-                "Allowed: PDF, JPG, PNG, WEBP."
+                "Unsupported receipt type. "
+                    + "Allowed: PDF, JPG, PNG, WEBP."
             );
         }
 
@@ -616,9 +757,11 @@ public class ExpenseService {
     }
 
 
-    
-@Transactional(readOnly = true)
+    // ============================================================
+    // LIST EXPENSES
+    // ============================================================
 
+    @Transactional(readOnly = true)
     public Page<Expense> list(
             Long orgId,
             Expense.ExpenseCategory category,
@@ -628,20 +771,52 @@ public class ExpenseService {
             Pageable pageable
     ) {
 
+        // ========================================================
+        // VALIDATION
+        // ========================================================
+
         if (orgId == null) {
+
             throw new IllegalArgumentException(
                 "Organization ID is required"
             );
         }
 
-        return expenseRepository.findByFilters(
-            orgId,
-            category,
-            branchId,
-            from,
-            to,
-            pageable
-        );
+
+        // ========================================================
+        // QUERY
+        // ========================================================
+
+        Page<Expense> page =
+            expenseRepository.findByFilters(
+                orgId,
+                category,
+                branchId,
+                from,
+                to,
+                pageable
+            );
+
+
+        // ========================================================
+        // INITIALIZE LAZY RELATIONSHIPS
+        // ========================================================
+
+        /*
+         * IMPORTANT:
+         *
+         * Jackson serializes the Page AFTER this service method
+         * returns.
+         *
+         * Therefore, simply having @Transactional on the method
+         * is not enough unless we initialize the lazy relationships
+         * before returning.
+         */
+        page.getContent()
+            .forEach(this::initializeExpense);
+
+
+        return page;
     }
 
 
@@ -649,33 +824,44 @@ public class ExpenseService {
     // GET ONE EXPENSE
     // ============================================================
 
+    @Transactional(readOnly = true)
     public Expense getForOrg(
             Long id,
             Long orgId
     ) {
 
         if (id == null) {
+
             throw new IllegalArgumentException(
                 "Expense ID is required"
             );
         }
 
         if (orgId == null) {
+
             throw new IllegalArgumentException(
                 "Organization ID is required"
             );
         }
 
-        return expenseRepository
-            .findByIdAndOrganization_Id(
-                id,
-                orgId
-            )
-            .orElseThrow(() ->
-                new IllegalArgumentException(
-                    "Expense not found: " + id
+
+        Expense expense =
+            expenseRepository
+                .findByIdAndOrganization_Id(
+                    id,
+                    orgId
                 )
-            );
+                .orElseThrow(() ->
+                    new IllegalArgumentException(
+                        "Expense not found: " + id
+                    )
+                );
+
+
+        initializeExpense(expense);
+
+
+        return expense;
     }
 
 
@@ -692,20 +878,23 @@ public class ExpenseService {
     ) {
 
         Expense expense =
-            getForOrg(id, orgId);
+            getForOrg(
+                id,
+                orgId
+            );
 
 
         // --------------------------------------------------------
         // ALREADY VOID
         // --------------------------------------------------------
 
-        if (expense.getStatus() ==
-            Expense.Status.VOID) {
+        if (expense.getStatus()
+                == Expense.Status.VOID) {
 
             throw new IllegalStateException(
-                "Expense " +
-                id +
-                " is already void"
+                "Expense "
+                    + id
+                    + " is already void"
             );
         }
 
@@ -742,9 +931,16 @@ public class ExpenseService {
         );
 
 
-        return expenseRepository.save(
-            expense
-        );
+        expense =
+            expenseRepository.save(
+                expense
+            );
+
+
+        initializeExpense(expense);
+
+
+        return expense;
     }
 
 
@@ -752,6 +948,7 @@ public class ExpenseService {
     // EXPENSE SUMMARY
     // ============================================================
 
+    @Transactional(readOnly = true)
     public Map<String, Object> summary(
             Long orgId,
             LocalDate from,
@@ -759,20 +956,27 @@ public class ExpenseService {
     ) {
 
         if (orgId == null) {
+
             throw new IllegalArgumentException(
                 "Organization ID is required"
             );
         }
 
+
         if (from == null) {
+
             from =
                 LocalDate.now()
                     .withDayOfMonth(1);
         }
 
+
         if (to == null) {
-            to = LocalDate.now();
+
+            to =
+                LocalDate.now();
         }
+
 
         if (from.isAfter(to)) {
 
@@ -806,6 +1010,27 @@ public class ExpenseService {
             Object total =
                 row[1];
 
+
+            /*
+             * Normalize summary values to two decimal places
+             * when they are numeric.
+             */
+            if (total instanceof Number) {
+
+                total =
+                    BigDecimal
+                        .valueOf(
+                            ((Number) total)
+                                .doubleValue()
+                        )
+                        .setScale(
+                            2,
+                            RoundingMode.HALF_UP
+                        )
+                        .doubleValue();
+            }
+
+
             byCategory.put(
                 category.getLabel(),
                 total
@@ -819,6 +1044,7 @@ public class ExpenseService {
 
         Map<String, Object> result =
             new LinkedHashMap<>();
+
 
         result.put(
             "from",
@@ -835,13 +1061,34 @@ public class ExpenseService {
             byCategory
         );
 
-        result.put(
-            "total",
+
+        Object total =
             expenseRepository.sumTotal(
                 orgId,
                 from,
                 to
-            )
+            );
+
+
+        if (total instanceof Number) {
+
+            total =
+                BigDecimal
+                    .valueOf(
+                        ((Number) total)
+                            .doubleValue()
+                    )
+                    .setScale(
+                        2,
+                        RoundingMode.HALF_UP
+                    )
+                    .doubleValue();
+        }
+
+
+        result.put(
+            "total",
+            total
         );
 
 
@@ -853,14 +1100,18 @@ public class ExpenseService {
     // STRING HELPERS
     // ============================================================
 
-    private String clean(String value) {
+    private String clean(
+            String value
+    ) {
 
         if (value == null) {
             return null;
         }
 
+
         String cleaned =
             value.trim();
+
 
         return cleaned.isEmpty()
             ? null
@@ -868,9 +1119,11 @@ public class ExpenseService {
     }
 
 
-    private boolean isBlank(String value) {
+    private boolean isBlank(
+            String value
+    ) {
 
-        return value == null ||
-               value.trim().isEmpty();
+        return value == null
+            || value.trim().isEmpty();
     }
 }
