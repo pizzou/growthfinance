@@ -23,6 +23,9 @@ public class BankAccountService {
     private final AccountingService accountingService;
 
 
+    // ============================================================
+    // CREATE
+    // ============================================================
 
     @Transactional
     public BankAccount create(
@@ -216,8 +219,16 @@ public List<Map<String, Object>> listForApi(Long orgId) {
                 row.put("accountType", account.getAccountType());
                 row.put("bankName", account.getBankName());
                 row.put("accountNumber", account.getAccountNumber());
-                row.put("active", account.getActive());
 
+                // Boolean -> getActive(), NOT isActive()
+                row.put(
+                        "active",
+                        account.getActive() != null
+                                ? account.getActive()
+                                : Boolean.FALSE
+                );
+
+                // Branch
                 if (account.getBranch() != null) {
                     row.put("branchId", account.getBranch().getId());
                     row.put("branchName", account.getBranch().getName());
@@ -226,6 +237,7 @@ public List<Map<String, Object>> listForApi(Long orgId) {
                     row.put("branchName", "Unassigned");
                 }
 
+                // Chart of Account
                 if (account.getGlAccount() != null) {
                     row.put("glAccountId", account.getGlAccount().getId());
                     row.put("glAccountCode", account.getGlAccount().getCode());
@@ -240,7 +252,6 @@ public List<Map<String, Object>> listForApi(Long orgId) {
             })
             .toList();
 }
-
 
 
    
