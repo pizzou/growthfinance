@@ -56,30 +56,11 @@ public class Expense {
     private Branch branch;
 
 
-    // ============================================================
-    // PAYMENT ACCOUNT
-    // ============================================================
 
-    /**
-     * The institution's accounting account that actually paid
-     * for the expense.
-     *
-     * Examples:
-     *
-     * - Cash on Hand
-     * - Bank Account
-     * - Mobile Money Account
-     * - Card Clearing Account
-     */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "payment_account_id", nullable = false)
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private BankAccount paymentAccount;
-
-
-    // ============================================================
-    // BASIC EXPENSE INFORMATION
-    // ============================================================
 
     @Column(name = "expense_date", nullable = false)
     private LocalDate expenseDate;
@@ -88,9 +69,7 @@ public class Expense {
     @Column(nullable = false, length = 50)
     private ExpenseCategory category;
 
-    /**
-     * Keep Double as requested.
-     */
+   
     @Column(nullable = false)
     private Double amount;
 
@@ -102,125 +81,49 @@ public class Expense {
     private String description;
 
 
-    // ============================================================
-    // PAYMENT METHOD
-    // ============================================================
-
-    /**
-     * How the expense was actually paid.
-     */
+   
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", nullable = false, length = 30)
     @Builder.Default
     private PaymentMethod paymentMethod = PaymentMethod.CASH;
 
 
-    /**
-     * Payment provider.
-     *
-     * Examples:
-     *
-     * - MTN
-     * - Airtel
-     * - Bank of Kigali
-     * - Equity Bank
-     * - Visa
-     * - Mastercard
-     */
     @Column(name = "payment_provider", length = 100)
     private String paymentProvider;
 
 
-    /**
-     * Phone number involved in a mobile-money payment.
-     *
-     * Example:
-     * 0788123456
-     */
     @Column(name = "payment_phone_number", length = 30)
     private String paymentPhoneNumber;
 
 
-    /**
-     * External transaction/reference number.
-     *
-     * Examples:
-     *
-     * Mobile Money:
-     * TXN123456789
-     *
-     * Bank:
-     * BANK-REF-12345
-     *
-     * Card:
-     * POS-123456
-     */
     @Column(name = "payment_transaction_reference", length = 150)
     private String paymentTransactionReference;
 
 
-    /**
-     * Merchant code / MoMo Pay code / payment code.
-     *
-     * Example:
-     * 123456
-     */
+   
     @Column(name = "payment_code", length = 100)
     private String paymentCode;
 
 
-    // ============================================================
-    // CARD INFORMATION
-    // ============================================================
-
-    /**
-     * Card brand.
-     *
-     * Examples:
-     * VISA
-     * MASTERCARD
-     */
     @Column(name = "card_brand", length = 30)
     private String cardBrand;
 
 
-    /**
-     * ONLY the last four digits of the card.
-     *
-     * Example:
-     * 4821
-     *
-     * Never store the complete card number.
-     */
+   
     @Column(name = "card_last_four", length = 4)
     private String cardLastFour;
 
 
-    /**
-     * Card authorization code/reference.
-     */
+   
     @Column(name = "card_authorization_code", length = 100)
     private String cardAuthorizationCode;
 
 
-    // ============================================================
-    // CHEQUE
-    // ============================================================
-
-    /**
-     * Cheque number when payment method is CHEQUE.
-     */
     @Column(name = "cheque_number", length = 100)
     private String chequeNumber;
 
 
-    // ============================================================
-    // PAYMENT NOTES
-    // ============================================================
-
-    /**
-     * Additional payment information.
-     */
+    
     @Column(name = "payment_notes", columnDefinition = "TEXT")
     private String paymentNotes;
 

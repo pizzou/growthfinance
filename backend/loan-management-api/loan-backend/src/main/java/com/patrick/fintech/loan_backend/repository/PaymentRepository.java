@@ -25,9 +25,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByPaymentReference(String ref);
 
-    /**
-     * Used to prevent the same external transaction from being recorded
-     * twice for the same organization.
+    /*
+     * Used to prevent the same gateway/mobile-money/bank transaction
+     * from being recorded twice for the same organization.
      */
     Optional<Payment> findByOrganization_IdAndTransactionId(
         Long organizationId,
