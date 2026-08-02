@@ -93,21 +93,10 @@ export const expenseApi = {
     q.set('page', String(params.page ?? 0));
     q.set('size', String(params.size ?? 20));
 
-    if (params.category) {
-      q.set('category', params.category);
-    }
-
-    if (params.branchId) {
-      q.set('branchId', String(params.branchId));
-    }
-
-    if (params.from) {
-      q.set('from', params.from);
-    }
-
-    if (params.to) {
-      q.set('to', params.to);
-    }
+    if (params.category) q.set('category', params.category);
+    if (params.branchId) q.set('branchId', String(params.branchId));
+    if (params.from) q.set('from', params.from);
+    if (params.to) q.set('to', params.to);
 
     return get(`/expenses?${q.toString()}`);
   },
@@ -118,9 +107,7 @@ export const expenseApi = {
   summary: (from?: string, to?: string) =>
     get(
       `/expenses/summary${
-        from && to
-          ? `?from=${from}&to=${to}`
-          : ''
+        from && to ? `?from=${from}&to=${to}` : ''
       }`
     ),
 
@@ -128,147 +115,56 @@ export const expenseApi = {
     post(`/expenses/${id}/void`, { reason }),
 
   receiptUrl: (id: number) =>
-    `${
-      process.env.NEXT_PUBLIC_API_URL ||
-      'http://localhost:8080/api'
-    }/expenses/${id}/receipt`,
+    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'}/expenses/${id}/receipt`,
 
   create: (data: {
-
-    // ============================================================
-    // EXPENSE
-    // ============================================================
-
     expenseDate: string;
-
     category: string;
-
     amount: number;
-
     paymentAccountId: number;
-
     branchId?: number;
 
     description?: string;
 
-
-    // ============================================================
-    // PAYMENT METHOD
-    // ============================================================
-
     paymentMethod: string;
-
     paymentProvider?: string;
-
     paymentPhoneNumber?: string;
-
     paymentTransactionReference?: string;
-
     paymentCode?: string;
 
-
-    // ============================================================
-    // CARD PAYMENT
-    // ============================================================
-
     cardBrand?: string;
-
     cardLastFour?: string;
-
     cardAuthorizationCode?: string;
 
-
-    // ============================================================
-    // CHEQUE PAYMENT
-    // ============================================================
-
     chequeNumber?: string;
-
-
-    // ============================================================
-    // ADDITIONAL PAYMENT NOTES
-    // ============================================================
-
     paymentNotes?: string;
 
-
-    // ============================================================
-    // RECEIPT
-    // ============================================================
-
     receipt?: File | null;
-
   }) => {
-
     const form = new FormData();
 
+    form.append('expenseDate', data.expenseDate);
+    form.append('category', data.category);
+    form.append('amount', String(data.amount));
+    form.append('paymentAccountId', String(data.paymentAccountId));
 
-    // ============================================================
-    // EXPENSE INFORMATION
-    // ============================================================
-
-    form.append(
-      'expenseDate',
-      data.expenseDate
-    );
-
-    form.append(
-      'category',
-      data.category
-    );
-
-    form.append(
-      'amount',
-      String(data.amount)
-    );
-
-    form.append(
-      'paymentAccountId',
-      String(data.paymentAccountId)
-    );
-
-
-    if (data.branchId !== undefined) {
-      form.append(
-        'branchId',
-        String(data.branchId)
-      );
+    if (data.branchId) {
+      form.append('branchId', String(data.branchId));
     }
-
 
     if (data.description) {
-      form.append(
-        'description',
-        data.description
-      );
+      form.append('description', data.description);
     }
 
-
-    // ============================================================
-    // PAYMENT METHOD
-    // ============================================================
-
-    form.append(
-      'paymentMethod',
-      data.paymentMethod
-    );
-
+    form.append('paymentMethod', data.paymentMethod);
 
     if (data.paymentProvider) {
-      form.append(
-        'paymentProvider',
-        data.paymentProvider
-      );
+      form.append('paymentProvider', data.paymentProvider);
     }
-
 
     if (data.paymentPhoneNumber) {
-      form.append(
-        'paymentPhoneNumber',
-        data.paymentPhoneNumber
-      );
+      form.append('paymentPhoneNumber', data.paymentPhoneNumber);
     }
-
 
     if (data.paymentTransactionReference) {
       form.append(
@@ -277,31 +173,16 @@ export const expenseApi = {
       );
     }
 
-
     if (data.paymentCode) {
-      form.append(
-        'paymentCode',
-        data.paymentCode
-      );
+      form.append('paymentCode', data.paymentCode);
     }
 
-
-    // ============================================================
-    // CARD INFORMATION
-    // ============================================================
-
     if (data.cardBrand) {
-      form.append(
-        'cardBrand',
-        data.cardBrand
-      );
+      form.append('cardBrand', data.cardBrand);
     }
 
     if (data.cardLastFour) {
-      form.append(
-        'cardLastFour',
-        data.cardLastFour
-      );
+      form.append('cardLastFour', data.cardLastFour);
     }
 
     if (data.cardAuthorizationCode) {
@@ -311,56 +192,23 @@ export const expenseApi = {
       );
     }
 
-
-    // ============================================================
-    // CHEQUE INFORMATION
-    // ============================================================
-
     if (data.chequeNumber) {
-      form.append(
-        'chequeNumber',
-        data.chequeNumber
-      );
+      form.append('chequeNumber', data.chequeNumber);
     }
-
-
-    // ============================================================
-    // PAYMENT NOTES
-    // ============================================================
 
     if (data.paymentNotes) {
-      form.append(
-        'paymentNotes',
-        data.paymentNotes
-      );
+      form.append('paymentNotes', data.paymentNotes);
     }
-
-
-    // ============================================================
-    // RECEIPT
-    // ============================================================
 
     if (data.receipt) {
-      form.append(
-        'receipt',
-        data.receipt
-      );
+      form.append('receipt', data.receipt);
     }
 
-
-    // ============================================================
-    // SEND REQUEST
-    // ============================================================
-
-    return API.post(
-      '/expenses',
-      form,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      }
-    ).then(
+    return API.post('/expenses', form, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }).then(
       r => (r.data as any)?.data ?? r.data
     );
   },
