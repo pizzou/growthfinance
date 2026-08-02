@@ -1,7 +1,10 @@
-
 package com.patrick.fintech.loan_backend.controller;
+
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
-import com.patrick.fintech.loan_backend.model.*;
+import com.patrick.fintech.loan_backend.model.BankAccount;
+import com.patrick.fintech.loan_backend.model.Branch;
+import com.patrick.fintech.loan_backend.model.JournalEntry;
+import com.patrick.fintech.loan_backend.model.Organization;
 import com.patrick.fintech.loan_backend.repository.BranchRepository;
 import com.patrick.fintech.loan_backend.repository.OrganizationRepository;
 import com.patrick.fintech.loan_backend.service.AuditService;
@@ -28,6 +31,7 @@ public class BankAccountController {
     private final CurrentUserUtil currentUserUtil;
     private final AuditService auditService;
 
+
     // ============================================================
     // LIST BANK / CASH ACCOUNTS
     // ============================================================
@@ -37,43 +41,61 @@ public class BankAccountController {
 
         Long orgId = currentUserUtil.getCurrentOrganizationId();
 
+        List<BankAccount> accounts =
+                bankAccountService.list(orgId);
+
         List<Map<String, Object>> out =
-                bankAccountService.list(orgId)
-                        .stream()
-                        .map(a -> {
+                accounts.stream()
+                        .map(account -> {
 
                             Map<String, Object> m =
                                     new LinkedHashMap<>();
 
-                            m.put("id", a.getId());
-                            m.put("name", a.getName());
-                            m.put("accountType", a.getAccountType());
-                            m.put("bankName", a.getBankName());
-                            m.put("accountNumber", a.getAccountNumber());
+                            m.put("id", account.getId());
+                            m.put("name", account.getName());
+                            m.put("accountType", account.getAccountType());
+                            m.put("bankName", account.getBankName());
+                            m.put("accountNumber", account.getAccountNumber());
 
                             m.put(
                                     "branchName",
-                                    a.getBranch() != null
-                                            ? a.getBranch().getName()
+                                    account.getBranch() != null
+                                            ? account.getBranch().getName()
                                             : null
                             );
 
-                            m.put(
-                                    "glAccountCode",
-                                    a.getGlAccount() != null
-                                            ? a.getGlAccount().getCode()
-                                            : null
-                            );
+                            /*
+                             * Do NOT blindly call getGlAccount().getCode().
+                             *
+                             * Existing records may have a missing GL
+                             * relationship. Returning null allows the
+                             * frontend to continue loading instead of
+                             * generating a 500 response.
+                             */
+                            if (account.getGlAccount() != null) {
+                                m.put(
+                                        "glAccountCode",
+                                        account.getGlAccount().getCode()
+                                );
+                            } else {
+                                m.put("glAccountCode", null);
+                            }
 
-                            m.put("active", a.getActive());
+                            m.put("active", account.getActive());
 
-                            m.put(
-                                    "balance",
-                                    bankAccountService.getBalance(a)
-                            );
+                            /*
+                             * Calculate balance only when a GL account exists.
+                             */
+                            if (account.getGlAccount() != null) {
+                                m.put(
+                                        "balance",
+                                        bankAccountService.getBalance(account)
+                                );
+                            } else {
+                                m.put("balance", 0.0);
+                            }
 
                             return m;
-
                         })
                         .toList();
 
@@ -90,7 +112,8 @@ public class BankAccountController {
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN','ACCOUNTANT')")
     public ResponseEntity<ApiResponse<BankAccount>> create(
-            @RequestBody Map<String, Object> body) {
+            @RequestBody Map<String, Object> body
+    ) {
 
         Long orgId =
                 currentUserUtil.getCurrentOrganizationId();
@@ -104,74 +127,62 @@ public class BankAccountController {
                         );
 
 
-        // --------------------------------------------------------
-        // BRANCH
-        // --------------------------------------------------------
+        /*
+         * branchId MUST be final/effectively final before
+         * using it inside lambda expressions.
+         */
+        final Long branchId =
+                body.get("branchId") != null
+                        && !body.get("branchId").toString().trim().isEmpty()
+                        ? Long.valueOf(
+                                body.get("branchId").toString()
+                        )
+                        : null;
 
-        Long branchId = null;
 
-        if (body.get("branchId") != null) {
-
-            String branchValue =
-                    body.get("branchId").toString().trim();
-
-            if (!branchValue.isEmpty()) {
-
-                try {
-
-                    branchId =
-                            Long.valueOf(branchValue);
-
-                } catch (NumberFormatException ex) {
-
-                    throw new IllegalArgumentException(
-                            "Invalid branchId: " + branchValue
-                    );
-                }
-            }
-        }
-
-        Branch branch = null;
+        /*
+         * Branch is optional.
+         */
+        final Branch branch;
 
         if (branchId != null) {
 
-            /*
-             * IMPORTANT:
-             *
-             * branchId is copied into a final variable before
-             * being referenced by the lambda.
-             */
-            final Long finalBranchId = branchId;
-
             branch =
-                    branchRepo.findById(finalBranchId)
+                    branchRepo.findById(branchId)
                             .orElseThrow(() ->
                                     new IllegalArgumentException(
-                                            "Branch not found: "
-                                                    + finalBranchId
+                                            "Branch not found: " + branchId
                                     )
                             );
 
             /*
-             * Prevent a user from assigning another
-             * organization's branch to this account.
+             * Security check:
+             * make sure the selected branch belongs to the
+             * current organization.
+             *
+             * Adjust this condition if your Branch entity uses
+             * a different organization relationship.
              */
-            if (branch.getOrganization() == null
-                    || branch.getOrganization().getId() == null
-                    || !branch.getOrganization()
-                            .getId()
-                            .equals(orgId)) {
+            if (branch.getOrganization() != null
+                    && branch.getOrganization().getId() != null
+                    && !branch.getOrganization()
+                             .getId()
+                             .equals(orgId)) {
 
                 throw new IllegalArgumentException(
                         "Branch does not belong to the current organization"
                 );
             }
+
+        } else {
+
+            branch = null;
         }
 
 
-        // --------------------------------------------------------
-        // BASIC FIELDS
-        // --------------------------------------------------------
+        // ========================================================
+        // READ REQUEST DATA
+        // ========================================================
 
         String name =
                 body.get("name") != null
@@ -180,42 +191,23 @@ public class BankAccountController {
 
         String accountType =
                 body.get("accountType") != null
-                        ? body.get("accountType")
-                                .toString()
-                                .trim()
-                                .toUpperCase()
+                        ? body.get("accountType").toString().trim().toUpperCase()
                         : null;
 
         String bankName =
                 body.get("bankName") != null
-                        ? body.get("bankName")
-                                .toString()
-                                .trim()
+                        ? body.get("bankName").toString().trim()
                         : null;
 
         String accountNumber =
                 body.get("accountNumber") != null
-                        ? body.get("accountNumber")
-                                .toString()
-                                .trim()
+                        ? body.get("accountNumber").toString().trim()
                         : null;
 
 
-        // --------------------------------------------------------
-        // VALIDATION
-        // --------------------------------------------------------
-
         if (name == null || name.isBlank()) {
-
             throw new IllegalArgumentException(
                     "Account name is required"
-            );
-        }
-
-        if (accountType == null || accountType.isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "Account type is required"
             );
         }
 
@@ -228,47 +220,39 @@ public class BankAccountController {
         }
 
 
-        // --------------------------------------------------------
-        // OPENING BALANCE
-        // --------------------------------------------------------
-
         double openingBalance = 0.0;
 
-        if (body.get("openingBalance") != null) {
+        if (body.get("openingBalance") != null
+                && !body.get("openingBalance").toString().trim().isEmpty()) {
 
-            String openingValue =
-                    body.get("openingBalance")
-                            .toString()
-                            .trim();
+            try {
 
-            if (!openingValue.isEmpty()) {
+                openingBalance =
+                        Double.parseDouble(
+                                body.get("openingBalance")
+                                        .toString()
+                                        .trim()
+                        );
 
-                try {
+            } catch (NumberFormatException ex) {
 
-                    openingBalance =
-                            Double.parseDouble(openingValue);
-
-                } catch (NumberFormatException ex) {
-
-                    throw new IllegalArgumentException(
-                            "Invalid openingBalance: "
-                                    + openingValue
-                    );
-                }
+                throw new IllegalArgumentException(
+                        "openingBalance must be a valid number"
+                );
             }
         }
 
-        if (openingBalance < 0) {
 
+        if (openingBalance < 0) {
             throw new IllegalArgumentException(
                     "Opening balance cannot be negative"
             );
         }
 
 
-        // --------------------------------------------------------
-        // CREATE ACCOUNT
-        // --------------------------------------------------------
+        // ========================================================
+        // CREATE
+        // ========================================================
 
         BankAccount created =
                 bankAccountService.create(
@@ -285,9 +269,9 @@ public class BankAccountController {
                 );
 
 
-        // --------------------------------------------------------
+        // ========================================================
         // AUDIT
-        // --------------------------------------------------------
+        // ========================================================
 
         auditService.log(
                 org,
@@ -322,7 +306,8 @@ public class BankAccountController {
     @PreAuthorize("hasAnyRole('ADMIN','ACCOUNTANT','MANAGER')")
     public ResponseEntity<ApiResponse<JournalEntry>> recordTransaction(
             @PathVariable Long id,
-            @RequestBody Map<String, Object> body) {
+            @RequestBody Map<String, Object> body
+    ) {
 
         Long orgId =
                 currentUserUtil.getCurrentOrganizationId();
@@ -335,20 +320,11 @@ public class BankAccountController {
                                 )
                         );
 
+
         String type =
                 body.get("type") != null
-                        ? body.get("type")
-                                .toString()
-                                .trim()
-                                .toUpperCase()
+                        ? body.get("type").toString().trim().toUpperCase()
                         : null;
-
-        if (type == null || type.isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "Transaction type is required"
-            );
-        }
 
         if (!"DEPOSIT".equals(type)
                 && !"WITHDRAWAL".equals(type)) {
@@ -359,16 +335,12 @@ public class BankAccountController {
         }
 
 
-        // --------------------------------------------------------
-        // AMOUNT
-        // --------------------------------------------------------
-
         if (body.get("amount") == null) {
-
             throw new IllegalArgumentException(
-                    "Amount is required"
+                    "amount is required"
             );
         }
+
 
         double amount;
 
@@ -378,34 +350,29 @@ public class BankAccountController {
                     Double.parseDouble(
                             body.get("amount")
                                     .toString()
-                                    .trim()
                     );
 
         } catch (NumberFormatException ex) {
 
             throw new IllegalArgumentException(
-                    "Invalid amount"
+                    "amount must be a valid number"
             );
         }
 
-        if (amount <= 0) {
 
+        if (amount <= 0) {
             throw new IllegalArgumentException(
                     "Amount must be positive"
             );
         }
 
 
-        // --------------------------------------------------------
-        // COUNTER ACCOUNT
-        // --------------------------------------------------------
-
         if (body.get("counterAccountId") == null) {
-
             throw new IllegalArgumentException(
                     "counterAccountId is required"
             );
         }
+
 
         Long counterAccountId;
 
@@ -415,38 +382,21 @@ public class BankAccountController {
                     Long.valueOf(
                             body.get("counterAccountId")
                                     .toString()
-                                    .trim()
                     );
 
         } catch (NumberFormatException ex) {
 
             throw new IllegalArgumentException(
-                    "Invalid counterAccountId"
+                    "counterAccountId must be a valid ID"
             );
         }
 
 
-        // --------------------------------------------------------
-        // DESCRIPTION
-        // --------------------------------------------------------
-
         String description =
                 body.get("description") != null
-                        ? body.get("description")
-                                .toString()
-                                .trim()
+                        ? body.get("description").toString()
                         : type + " on bank account " + id;
 
-        if (description.isBlank()) {
-
-            description =
-                    type + " on bank account " + id;
-        }
-
-
-        // --------------------------------------------------------
-        // RECORD TRANSACTION
-        // --------------------------------------------------------
 
         JournalEntry entry =
                 bankAccountService.recordTransaction(
@@ -461,10 +411,6 @@ public class BankAccountController {
                                 .getName()
                 );
 
-
-        // --------------------------------------------------------
-        // AUDIT
-        // --------------------------------------------------------
 
         auditService.log(
                 org,
@@ -489,13 +435,14 @@ public class BankAccountController {
 
 
     // ============================================================
-    // TRANSFER BETWEEN BANK / CASH ACCOUNTS
+    // TRANSFER
     // ============================================================
 
     @PostMapping("/transfer")
     @PreAuthorize("hasAnyRole('ADMIN','ACCOUNTANT','MANAGER')")
     public ResponseEntity<ApiResponse<JournalEntry>> transfer(
-            @RequestBody Map<String, Object> body) {
+            @RequestBody Map<String, Object> body
+    ) {
 
         Long orgId =
                 currentUserUtil.getCurrentOrganizationId();
@@ -509,118 +456,54 @@ public class BankAccountController {
                         );
 
 
-        // --------------------------------------------------------
-        // FROM ACCOUNT
-        // --------------------------------------------------------
-
         if (body.get("fromAccountId") == null) {
-
             throw new IllegalArgumentException(
                     "fromAccountId is required"
             );
         }
 
-        Long fromId;
-
-        try {
-
-            fromId =
-                    Long.valueOf(
-                            body.get("fromAccountId")
-                                    .toString()
-                                    .trim()
-                    );
-
-        } catch (NumberFormatException ex) {
-
-            throw new IllegalArgumentException(
-                    "Invalid fromAccountId"
-            );
-        }
-
-
-        // --------------------------------------------------------
-        // TO ACCOUNT
-        // --------------------------------------------------------
-
         if (body.get("toAccountId") == null) {
-
             throw new IllegalArgumentException(
                     "toAccountId is required"
             );
         }
 
-        Long toId;
-
-        try {
-
-            toId =
-                    Long.valueOf(
-                            body.get("toAccountId")
-                                    .toString()
-                                    .trim()
-                    );
-
-        } catch (NumberFormatException ex) {
-
-            throw new IllegalArgumentException(
-                    "Invalid toAccountId"
-            );
-        }
-
-
-        // --------------------------------------------------------
-        // AMOUNT
-        // --------------------------------------------------------
-
         if (body.get("amount") == null) {
-
             throw new IllegalArgumentException(
-                    "Amount is required"
+                    "amount is required"
             );
         }
 
-        double amount;
 
-        try {
+        Long fromId =
+                Long.valueOf(
+                        body.get("fromAccountId").toString()
+                );
 
-            amount =
-                    Double.parseDouble(
-                            body.get("amount")
-                                    .toString()
-                                    .trim()
-                    );
+        Long toId =
+                Long.valueOf(
+                        body.get("toAccountId").toString()
+                );
 
-        } catch (NumberFormatException ex) {
 
-            throw new IllegalArgumentException(
-                    "Invalid amount"
-            );
-        }
+        double amount =
+                Double.parseDouble(
+                        body.get("amount").toString()
+                );
+
 
         if (amount <= 0) {
-
             throw new IllegalArgumentException(
                     "Amount must be positive"
             );
         }
 
 
-        // --------------------------------------------------------
-        // DESCRIPTION
-        // --------------------------------------------------------
-
         String description =
                 body.get("description") != null
-                        ? body.get("description")
-                                .toString()
-                                .trim()
+                        ? body.get("description").toString()
                         : "Internal transfer";
 
-
-        // --------------------------------------------------------
-        // TRANSFER
-        // --------------------------------------------------------
 
         JournalEntry entry =
                 bankAccountService.transfer(
@@ -634,10 +517,6 @@ public class BankAccountController {
                                 .getName()
                 );
 
-
-        // --------------------------------------------------------
-        // AUDIT
-        // --------------------------------------------------------
 
         auditService.log(
                 org,

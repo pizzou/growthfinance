@@ -3,11 +3,14 @@ package com.patrick.fintech.loan_backend.exception;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.http.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -17,11 +20,16 @@ import java.util.Map;
 @Slf4j
 public class GlobalExceptionHandler {
 
-   
+
+    // ============================================================
+    // DUPLICATE BORROWER
+    // ============================================================
 
     @ExceptionHandler(DuplicateBorrowerException.class)
-    public ResponseEntity<Map<String, Object>> handleDuplicateBorrower(
-            DuplicateBorrowerException ex) {
+    public ResponseEntity<Map<String, Object>>
+    handleDuplicateBorrower(
+            DuplicateBorrowerException ex
+    ) {
 
         Map<String, Object> body =
                 new LinkedHashMap<>();
@@ -36,11 +44,13 @@ public class GlobalExceptionHandler {
                 ex.getMessage()
         );
 
+
         Map<String, Object> existing =
                 new LinkedHashMap<>();
 
         var b =
                 ex.getExistingBorrower();
+
 
         if (b != null) {
 
@@ -51,15 +61,18 @@ public class GlobalExceptionHandler {
             existing.put("phone", b.getPhone());
         }
 
+
         existing.put(
                 "matchedOn",
                 ex.getMatchedOn()
         );
 
+
         body.put(
                 "existingBorrower",
                 existing
         );
+
 
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
@@ -71,22 +84,23 @@ public class GlobalExceptionHandler {
     // VALIDATION
     // ============================================================
 
-    @ExceptionHandler(
-            MethodArgumentNotValidException.class
-    )
-    public ResponseEntity<Map<String, Object>> handleValidation(
-            MethodArgumentNotValidException ex) {
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>>
+    handleValidation(
+            MethodArgumentNotValidException ex
+    ) {
 
         Map<String, String> errors =
                 new LinkedHashMap<>();
+
 
         ex.getBindingResult()
                 .getAllErrors()
                 .forEach(error -> {
 
                     String field =
-                            error instanceof FieldError fe
-                                    ? fe.getField()
+                            error instanceof FieldError fieldError
+                                    ? fieldError.getField()
                                     : "error";
 
                     errors.put(
@@ -94,6 +108,7 @@ public class GlobalExceptionHandler {
                             error.getDefaultMessage()
                     );
                 });
+
 
         return bad(
                 "Validation failed",
@@ -106,11 +121,17 @@ public class GlobalExceptionHandler {
     // ACCESS DENIED
     // ============================================================
 
-    @ExceptionHandler(
-            AccessDeniedException.class
-    )
-    public ResponseEntity<Map<String, Object>> handleAccess(
-            AccessDeniedException ex) {
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>>
+    handleAccess(
+            AccessDeniedException ex
+    ) {
+
+        log.warn(
+                "Access denied: {}",
+                ex.getMessage()
+        );
+
 
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
@@ -127,48 +148,55 @@ public class GlobalExceptionHandler {
     // DATA INTEGRITY
     // ============================================================
 
-    @ExceptionHandler(
-            DataIntegrityViolationException.class
-    )
-    public ResponseEntity<Map<String, Object>> handleDataIntegrity(
-            DataIntegrityViolationException ex) {
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>>
+    handleDataIntegrity(
+            DataIntegrityViolationException ex
+    ) {
 
         log.error(
                 "Data integrity violation",
                 ex
         );
 
+
+        String cause =
+                ex.getMostSpecificCause() != null
+                        ? ex.getMostSpecificCause().getMessage()
+                        : ex.getMessage();
+
+
         String friendly =
                 "This action conflicts with existing data. "
-                        + "Please refresh the page and try again.";
+                        + "Please refresh and try again.";
+
 
         return ResponseEntity
-                .status(HttpStatus.CONFLICT)
+                .badRequest()
                 .body(
                         error(
                                 friendly,
-                                null
+                                cause
                         )
                 );
     }
 
 
     // ============================================================
-    // FILE TOO LARGE
+    // MAX UPLOAD
     // ============================================================
 
-    @ExceptionHandler(
-            org.springframework.web.multipart
-                    .MaxUploadSizeExceededException.class
-    )
-    public ResponseEntity<Map<String, Object>> handleMaxUpload(
-            org.springframework.web.multipart
-                    .MaxUploadSizeExceededException ex) {
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>>
+    handleMaxUpload(
+            MaxUploadSizeExceededException ex
+    ) {
 
         log.warn(
                 "Upload rejected: {}",
                 ex.getMessage()
         );
+
 
         return ResponseEntity
                 .badRequest()
@@ -186,16 +214,17 @@ public class GlobalExceptionHandler {
     // ILLEGAL ARGUMENT
     // ============================================================
 
-    @ExceptionHandler(
-            IllegalArgumentException.class
-    )
-    public ResponseEntity<Map<String, Object>> handleIllegalArgument(
-            IllegalArgumentException ex) {
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>>
+    handleIllegalArgument(
+            IllegalArgumentException ex
+    ) {
 
         log.warn(
-                "Bad request: {}",
+                "Business validation error: {}",
                 ex.getMessage()
         );
+
 
         return ResponseEntity
                 .badRequest()
@@ -209,27 +238,28 @@ public class GlobalExceptionHandler {
 
 
     // ============================================================
-    // ILLEGAL STATE / BUSINESS STATE
+    // ILLEGAL STATE
     // ============================================================
 
-    @ExceptionHandler(
-            IllegalStateException.class
-    )
-    public ResponseEntity<Map<String, Object>> handleIllegalState(
-            IllegalStateException ex) {
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, Object>>
+    handleIllegalState(
+            IllegalStateException ex
+    ) {
 
         log.error(
-                "Application state error",
+                "Illegal application state",
                 ex
         );
 
+
         return ResponseEntity
-                .status(
-                        HttpStatus.INTERNAL_SERVER_ERROR
-                )
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(
                         error(
-                                "The server could not complete this operation.",
+                                ex.getMessage() != null
+                                        ? ex.getMessage()
+                                        : "Application state error",
                                 null
                         )
                 );
@@ -240,56 +270,58 @@ public class GlobalExceptionHandler {
     // OTHER RUNTIME EXCEPTIONS
     // ============================================================
 
-    @ExceptionHandler(
-            RuntimeException.class
-    )
-    public ResponseEntity<Map<String, Object>> handleRuntime(
-            RuntimeException ex) {
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<Map<String, Object>>
+    handleRuntime(
+            RuntimeException ex
+    ) {
 
         /*
          * IMPORTANT:
+         * Log the complete stack trace.
          *
-         * Do not hide programming/database errors as HTTP 400.
-         * Log the complete stack trace so production debugging
-         * shows the real cause.
+         * Previously only ex.getMessage() was logged,
+         * which makes production debugging much harder.
          */
         log.error(
                 "Unhandled runtime exception",
                 ex
         );
 
+
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(
                         error(
-                                "Internal server error",
-                                null
+                                "An unexpected server error occurred.",
+                                ex.getMessage()
                         )
                 );
     }
 
 
     // ============================================================
-    // EVERYTHING ELSE
+    // GENERAL EXCEPTION
     // ============================================================
 
-    @ExceptionHandler(
-            Exception.class
-    )
-    public ResponseEntity<Map<String, Object>> handleGeneral(
-            Exception ex) {
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>>
+    handleGeneral(
+            Exception ex
+    ) {
 
         log.error(
                 "Unhandled error",
                 ex
         );
 
+
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(
                         error(
                                 "Internal server error",
-                                null
+                                ex.getMessage()
                         )
                 );
     }
@@ -299,9 +331,11 @@ public class GlobalExceptionHandler {
     // HELPERS
     // ============================================================
 
-    private ResponseEntity<Map<String, Object>> bad(
+    private ResponseEntity<Map<String, Object>>
+    bad(
             String message,
-            Object detail) {
+            Object detail
+    ) {
 
         return ResponseEntity
                 .badRequest()
@@ -314,12 +348,15 @@ public class GlobalExceptionHandler {
     }
 
 
-    private Map<String, Object> error(
+    private Map<String, Object>
+    error(
             String message,
-            Object detail) {
+            Object detail
+    ) {
 
         Map<String, Object> body =
                 new LinkedHashMap<>();
+
 
         body.put(
                 "timestamp",
@@ -331,12 +368,15 @@ public class GlobalExceptionHandler {
                 message
         );
 
+
         if (detail != null) {
+
             body.put(
                     "detail",
                     detail
             );
         }
+
 
         return body;
     }

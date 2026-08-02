@@ -14,72 +14,83 @@ public class CurrentUserUtil {
 
     private final UserRepository userRepository;
 
-    /**
-     * Returns the currently authenticated application user.
-     */
+
+    // ============================================================
+    // CURRENT USER
+    // ============================================================
+
     public User getCurrentUser() {
 
         Authentication auth =
-                SecurityContextHolder.getContext().getAuthentication();
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
 
-        if (auth == null) {
-            throw new IllegalStateException("No authenticated user");
-        }
 
-        if (!auth.isAuthenticated()) {
-            throw new IllegalStateException("User is not authenticated");
-        }
+        if (auth == null
+                || !auth.isAuthenticated()
+                || auth.getName() == null
+                || auth.getName().isBlank()) {
 
-        String email = auth.getName();
-
-        if (email == null || email.isBlank()) {
             throw new IllegalStateException(
-                    "Authenticated user email is missing"
+                    "No authenticated user found"
             );
         }
 
-        return userRepository.findByEmail(email)
+
+        return userRepository
+                .findByEmail(auth.getName())
                 .orElseThrow(() ->
                         new IllegalStateException(
-                                "Current user not found: " + email
+                                "Current user not found: "
+                                        + auth.getName()
                         )
                 );
     }
 
-    /**
-     * Returns the organization belonging to the current user.
-     *
-     * This is the tenant boundary used by accounting,
-     * loans, borrowers, banking and other organization-scoped APIs.
-     */
+
+    // ============================================================
+    // ORGANIZATION
+    // ============================================================
+
     public Long getCurrentOrganizationId() {
 
-        User user = getCurrentUser();
+        User user =
+                getCurrentUser();
 
-        if (user.getOrganization() == null) {
+
+        if (user.getOrganization() == null
+                || user.getOrganization().getId() == null) {
+
             throw new IllegalStateException(
                     "Current user is not assigned to an organization"
             );
         }
 
-        if (user.getOrganization().getId() == null) {
-            throw new IllegalStateException(
-                    "Current user's organization has no ID"
-            );
-        }
 
-        return user.getOrganization().getId();
+        return user
+                .getOrganization()
+                .getId();
     }
+
+
+    // ============================================================
+    // USER ID
+    // ============================================================
 
     public Long getCurrentUserId() {
 
-        User user = getCurrentUser();
+        User user =
+                getCurrentUser();
+
 
         if (user.getId() == null) {
+
             throw new IllegalStateException(
                     "Current user has no ID"
             );
         }
+
 
         return user.getId();
     }
