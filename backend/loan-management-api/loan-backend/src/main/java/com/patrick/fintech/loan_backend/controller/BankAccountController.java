@@ -36,73 +36,19 @@ public class BankAccountController {
     // LIST BANK / CASH ACCOUNTS
     // ============================================================
 
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> list() {
+    
+@GetMapping
+public ResponseEntity<ApiResponse<List<Map<String, Object>>>> list() {
 
-        Long orgId = currentUserUtil.getCurrentOrganizationId();
+    Long orgId = currentUserUtil.getCurrentOrganizationId();
 
-        List<BankAccount> accounts =
-                bankAccountService.list(orgId);
+    return ResponseEntity.ok(
+            ApiResponse.ok(
+                    bankAccountService.listForApi(orgId)
+            )
+    );
+}
 
-        List<Map<String, Object>> out =
-                accounts.stream()
-                        .map(account -> {
-
-                            Map<String, Object> m =
-                                    new LinkedHashMap<>();
-
-                            m.put("id", account.getId());
-                            m.put("name", account.getName());
-                            m.put("accountType", account.getAccountType());
-                            m.put("bankName", account.getBankName());
-                            m.put("accountNumber", account.getAccountNumber());
-
-                            m.put(
-                                    "branchName",
-                                    account.getBranch() != null
-                                            ? account.getBranch().getName()
-                                            : null
-                            );
-
-                            /*
-                             * Do NOT blindly call getGlAccount().getCode().
-                             *
-                             * Existing records may have a missing GL
-                             * relationship. Returning null allows the
-                             * frontend to continue loading instead of
-                             * generating a 500 response.
-                             */
-                            if (account.getGlAccount() != null) {
-                                m.put(
-                                        "glAccountCode",
-                                        account.getGlAccount().getCode()
-                                );
-                            } else {
-                                m.put("glAccountCode", null);
-                            }
-
-                            m.put("active", account.getActive());
-
-                            /*
-                             * Calculate balance only when a GL account exists.
-                             */
-                            if (account.getGlAccount() != null) {
-                                m.put(
-                                        "balance",
-                                        bankAccountService.getBalance(account)
-                                );
-                            } else {
-                                m.put("balance", 0.0);
-                            }
-
-                            return m;
-                        })
-                        .toList();
-
-        return ResponseEntity.ok(
-                ApiResponse.ok(out)
-        );
-    }
 
 
     // ============================================================
