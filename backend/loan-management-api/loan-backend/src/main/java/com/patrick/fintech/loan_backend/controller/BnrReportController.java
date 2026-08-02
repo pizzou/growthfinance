@@ -200,7 +200,7 @@ public class BnrReportController {
 
    
 
-    @GetMapping("/breakdown/by-loan-type")
+    @GetMapping("/breakdown/loan-type")
     public ResponseEntity<
             ApiResponse<
                     List<com.patrick.fintech.loan_backend.dto.regulatory.BnrBreakdownRow>
@@ -257,7 +257,7 @@ public class BnrReportController {
     // BRANCH BREAKDOWN
     // ============================================================
 
-    @GetMapping("/breakdown/by-branch")
+    @GetMapping("/breakdown/branch")
     public ResponseEntity<
             ApiResponse<
                     List<com.patrick.fintech.loan_backend.dto.regulatory.BnrBreakdownRow>
@@ -308,7 +308,7 @@ public class BnrReportController {
     // GENDER BREAKDOWN
     // ============================================================
 
-    @GetMapping("/breakdown/by-gender")
+    @GetMapping("/breakdown/gender")
     public ResponseEntity<
             ApiResponse<
                     List<com.patrick.fintech.loan_backend.dto.regulatory.BnrBreakdownRow>
