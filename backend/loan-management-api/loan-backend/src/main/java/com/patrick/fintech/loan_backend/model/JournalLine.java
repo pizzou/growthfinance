@@ -2,23 +2,30 @@ package com.patrick.fintech.loan_backend.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.*;
+
 import lombok.*;
 
-@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+@JsonIgnoreProperties({
+        "hibernateLazyInitializer",
+        "handler"
+})
 @Entity
 @Table(
-    name = "journal_lines",
-    indexes = {
-        @Index(
-            name = "idx_journal_line_entry",
-            columnList = "journal_entry_id"
-        ),
-        @Index(
-            name = "idx_journal_line_account",
-            columnList = "account_id"
-        )
-    }
+        name = "journal_lines",
+        indexes = {
+
+                @Index(
+                        name = "idx_journal_line_entry",
+                        columnList = "journal_entry_id"
+                ),
+
+                @Index(
+                        name = "idx_journal_line_account",
+                        columnList = "account_id"
+                )
+        }
 )
 @Data
 @NoArgsConstructor
@@ -27,78 +34,80 @@ import lombok.*;
 public class JournalLine {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(
+            strategy = GenerationType.IDENTITY
+    )
     private Long id;
 
-    /**
-     * Parent journal entry.
-     *
-     * Example:
-     *
-     * Journal Entry #125
-     *      |
-     *      ├── Line 1: DR Loans Receivable
-     *      └── Line 2: CR Cash and Bank
-     */
+
+    // ============================================================
+    // JOURNAL ENTRY
+    // ============================================================
+
     @JsonIgnore
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(
+            fetch = FetchType.LAZY,
+            optional = false
+    )
     @JoinColumn(
-        name = "journal_entry_id",
-        nullable = false
+            name = "journal_entry_id",
+            nullable = false
     )
     private JournalEntry journalEntry;
 
-    /**
-     * Chart of account affected by this line.
-     *
-     * Examples:
-     *
-     * 1000 Cash and Bank
-     * 1100 Loans Receivable
-     * 4000 Interest Income
-     * 5100 Operating Expenses
-     */
+
+    // ============================================================
+    // ACCOUNT
+    // ============================================================
+
     @JsonIgnore
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(
+            fetch = FetchType.LAZY,
+            optional = false
+    )
     @JoinColumn(
-        name = "account_id",
-        nullable = false
+            name = "account_id",
+            nullable = false
     )
     private ChartOfAccount account;
 
-    /**
-     * Debit amount.
-     *
-     * A journal line should contain either a debit
-     * or a credit, not both.
-     */
+
+    // ============================================================
+    // DEBIT
+    // ============================================================
+
     @Builder.Default
     @Column(
-        nullable = false
+            nullable = false
     )
     private Double debit = 0.0;
 
-    /**
-     * Credit amount.
-     *
-     * A journal line should contain either a debit
-     * or a credit, not both.
-     */
+
+    // ============================================================
+    // CREDIT
+    // ============================================================
+
     @Builder.Default
     @Column(
-        nullable = false
+            nullable = false
     )
     private Double credit = 0.0;
 
-    /**
-     * Explanation of what this individual line represents.
-     */
-    @Column(length = 500)
+
+    // ============================================================
+    // DESCRIPTION
+    // ============================================================
+
+    @Column(
+            length = 500
+    )
     private String description;
 
-    /**
-     * Makes sure null values never reach the accounting calculations.
-     */
+
+    // ============================================================
+    // NORMALIZE
+    // ============================================================
+
     @PrePersist
     @PreUpdate
     protected void normalizeAmounts() {
@@ -112,34 +121,49 @@ public class JournalLine {
         }
     }
 
-    /**
-     * Returns true when this line is a debit.
-     */
+
+    // ============================================================
+    // DEBIT CHECK
+    // ============================================================
+
     @Transient
     public boolean isDebit() {
-        return debit != null && debit > 0.0;
+
+        return debit != null
+                && debit > 0.0;
     }
 
-    /**
-     * Returns true when this line is a credit.
-     */
+
+    // ============================================================
+    // CREDIT CHECK
+    // ============================================================
+
     @Transient
     public boolean isCredit() {
-        return credit != null && credit > 0.0;
+
+        return credit != null
+                && credit > 0.0;
     }
 
-    /**
-     * Returns the amount represented by this line.
-     */
+
+   
+
     @Transient
     public double getAmount() {
 
         double debitAmount =
-            debit != null ? debit : 0.0;
+                debit != null
+                        ? debit
+                        : 0.0;
 
         double creditAmount =
-            credit != null ? credit : 0.0;
+                credit != null
+                        ? credit
+                        : 0.0;
 
-        return Math.max(debitAmount, creditAmount);
+        return Math.max(
+                debitAmount,
+                creditAmount
+        );
     }
 }

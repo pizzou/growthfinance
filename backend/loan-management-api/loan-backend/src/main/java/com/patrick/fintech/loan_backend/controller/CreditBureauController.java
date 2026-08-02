@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
@@ -23,37 +24,162 @@ public class CreditBureauController {
     private final BorrowerRepository borrowerRepository;
     private final CurrentUserUtil currentUserUtil;
 
+
+    // ============================================================
+    // RUN CREDIT BUREAU CHECK
+    // ============================================================
+
     @PostMapping("/borrowers/{id}/check")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','LOAN_OFFICER','CREDIT_ANALYST')")
-    public ResponseEntity<ApiResponse<CreditBureauCheck>> check(@PathVariable Long id) {
-        CreditBureauCheck result = creditBureauService.runCheck(
-            id, currentUserUtil.getCurrentOrganizationId(), currentUserUtil.getCurrentUser().getName());
-        return ResponseEntity.ok(ApiResponse.ok("Credit bureau check completed", result));
+    @PreAuthorize(
+            "hasAnyRole('ADMIN','MANAGER','LOAN_OFFICER','CREDIT_ANALYST')"
+    )
+    public ResponseEntity<ApiResponse<CreditBureauCheck>> check(
+            @PathVariable Long id
+    ) {
+
+        Long orgId =
+                currentUserUtil
+                        .getCurrentOrganizationId();
+
+
+        String requestedBy =
+                currentUserUtil
+                        .getCurrentUser()
+                        .getName();
+
+
+        CreditBureauCheck result =
+                creditBureauService.runCheck(
+                        id,
+                        orgId,
+                        requestedBy
+                );
+
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        "Credit bureau check completed",
+                        result
+                )
+        );
     }
+
+
+    // ============================================================
+    // CREDIT BUREAU HISTORY
+    // ============================================================
 
     @GetMapping("/borrowers/{id}/history")
-    public ResponseEntity<ApiResponse<List<CreditBureauCheck>>> history(@PathVariable Long id) {
-        assertOwnedByCallerOrg(id);
-        return ResponseEntity.ok(ApiResponse.ok(creditBureauService.getHistory(id)));
+    @PreAuthorize(
+            "hasAnyRole('ADMIN','MANAGER','LOAN_OFFICER','CREDIT_ANALYST')"
+    )
+    public ResponseEntity<ApiResponse<List<CreditBureauCheck>>> history(
+            @PathVariable Long id
+    ) {
+
+        Long orgId =
+                currentUserUtil
+                        .getCurrentOrganizationId();
+
+
+        List<CreditBureauCheck> history =
+                creditBureauService.getHistory(
+                        id,
+                        orgId
+                );
+
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        history
+                )
+        );
     }
+
+
+    // ============================================================
+    // LATEST CREDIT BUREAU REPORT
+    // ============================================================
 
     @GetMapping("/borrowers/{id}/latest")
-    public ResponseEntity<ApiResponse<CreditBureauCheck>> latest(@PathVariable Long id) {
-        assertOwnedByCallerOrg(id);
-        Optional<CreditBureauCheck> latest = creditBureauService.getLatest(id);
-        return ResponseEntity.ok(latest.map(ApiResponse::ok)
-            .orElseGet(() -> ApiResponse.error("No credit bureau check on file for this borrower")));
+    @PreAuthorize(
+            "hasAnyRole('ADMIN','MANAGER','LOAN_OFFICER','CREDIT_ANALYST')"
+    )
+    public ResponseEntity<ApiResponse<CreditBureauCheck>> latest(
+            @PathVariable Long id
+    ) {
+
+        Long orgId =
+                currentUserUtil
+                        .getCurrentOrganizationId();
+
+
+        Optional<CreditBureauCheck> latest =
+                creditBureauService.getLatest(
+                        id,
+                        orgId
+                );
+
+
+        if (latest.isEmpty()) {
+
+            return ResponseEntity.ok(
+                    ApiResponse.error(
+                            "No credit bureau check on file "
+                                    + "for this borrower"
+                    )
+            );
+        }
+
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        latest.get()
+                )
+        );
     }
 
-    /** Confirms the borrower belongs to the caller's own organization before returning any
-     *  bureau data for them — credit history, default status, and outstanding debt are
-     *  sensitive enough that a borrower ID alone must not be sufficient to read them. */
-    private void assertOwnedByCallerOrg(Long borrowerId) {
-        Borrower borrower = borrowerRepository.findById(borrowerId)
-            .orElseThrow(() -> new RuntimeException("Borrower not found: " + borrowerId));
-        Long callerOrgId = currentUserUtil.getCurrentOrganizationId();
-        if (borrower.getOrganization() == null || !borrower.getOrganization().getId().equals(callerOrgId)) {
-            throw new RuntimeException("Access denied");
+
+    // ============================================================
+    // BORROWER OWNERSHIP CHECK
+    // ============================================================
+    //
+    // Kept here because this controller may later expose
+    // additional borrower-specific endpoints.
+    //
+    // The actual CreditBureauService also validates ownership,
+    // so tenant isolation is enforced at both layers.
+    // ============================================================
+
+    private void assertOwnedByCallerOrg(
+            Long borrowerId
+    ) {
+
+        Borrower borrower =
+                borrowerRepository
+                        .findById(borrowerId)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "Borrower not found: "
+                                                + borrowerId
+                                )
+                        );
+
+
+        Long callerOrgId =
+                currentUserUtil
+                        .getCurrentOrganizationId();
+
+
+        if (borrower.getOrganization() == null ||
+                borrower.getOrganization().getId() == null ||
+                !borrower.getOrganization()
+                        .getId()
+                        .equals(callerOrgId)) {
+
+            throw new SecurityException(
+                    "Access denied"
+            );
         }
     }
 }

@@ -1,20 +1,32 @@
+
 package com.patrick.fintech.loan_backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.patrick.fintech.loan_backend.model.*;
+import com.patrick.fintech.loan_backend.model.Borrower;
+import com.patrick.fintech.loan_backend.model.CreditBureauCheck;
+import com.patrick.fintech.loan_backend.model.Loan;
 import com.patrick.fintech.loan_backend.repository.BorrowerRepository;
 import com.patrick.fintech.loan_backend.repository.CreditBureauCheckRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.*;
-
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Random;
 
 @Service
 @RequiredArgsConstructor
@@ -27,204 +39,1276 @@ public class CreditBureauService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
-    @Value("${app.credit-bureau.enabled:false}")     private boolean bureauEnabled;
-    @Value("${app.credit-bureau.provider:INTERNAL_SIMULATED}") private String providerName;
-    @Value("${app.credit-bureau.base-url:}")          private String baseUrl;
-    @Value("${app.credit-bureau.api-key:}")           private String apiKey;
+    @Value("${app.credit-bureau.enabled:false}")
+    private boolean bureauEnabled;
+
+    @Value("${app.credit-bureau.provider:INTERNAL_SIMULATED}")
+    private String providerName;
+
+    @Value("${app.credit-bureau.base-url:}")
+    private String baseUrl;
+
+    @Value("${app.credit-bureau.api-key:}")
+    private String apiKey;
+
+
+    // ============================================================
+    // CREDIT BUREAU CHECK
+    // ============================================================
 
     @Transactional
-    public CreditBureauCheck runCheck(Long borrowerId, Long orgId, String requestedBy) {
-        Borrower borrower = borrowerRepo.findById(borrowerId)
-            .orElseThrow(() -> new RuntimeException("Borrower not found: " + borrowerId));
+    public CreditBureauCheck runCheck(
+            Long borrowerId,
+            Long orgId,
+            String requestedBy
+    ) {
+
+        if (borrowerId == null) {
+            throw new IllegalArgumentException(
+                    "Borrower ID is required"
+            );
+        }
+
+        if (orgId == null) {
+            throw new IllegalArgumentException(
+                    "Organization ID is required"
+            );
+        }
+
+
+        Borrower borrower =
+                borrowerRepo.findById(borrowerId)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Borrower not found: " + borrowerId
+                                )
+                        );
+
+
+        // ========================================================
+        // TENANT SECURITY
+        // ========================================================
+
+        if (borrower.getOrganization() == null ||
+                borrower.getOrganization().getId() == null ||
+                !borrower.getOrganization()
+                        .getId()
+                        .equals(orgId)) {
+
+            throw new SecurityException(
+                    "Access denied: borrower does not belong to your organization"
+            );
+        }
+
 
         CreditBureauCheck check;
-        if (bureauEnabled && apiKey != null && !apiKey.isBlank()) {
+
+
+        // ========================================================
+        // LIVE PROVIDER
+        // ========================================================
+
+        if (bureauEnabled &&
+                apiKey != null &&
+                !apiKey.isBlank() &&
+                baseUrl != null &&
+                !baseUrl.isBlank()) {
+
             check = tryLiveProvider(borrower);
+
         } else {
+
+            // ====================================================
+            // INTERNAL SIMULATION
+            // ====================================================
+
             check = simulate(borrower);
         }
+
+
+        // ========================================================
+        // COMMON INFORMATION
+        // ========================================================
+
         check.setBorrower(borrower);
-        check.setOrganization(borrower.getOrganization());
-        check.setRequestedBy(requestedBy);
-        check.setNationalIdChecked(borrower.getNationalId());
-        check.setReference("CRB-" + (borrower.getOrganization() != null && borrower.getOrganization().getCountry() != null
-            ? borrower.getOrganization().getCountry() : "XX") + "-" + System.currentTimeMillis());
 
-        check = checkRepo.save(check);
+        check.setOrganization(
+                borrower.getOrganization()
+        );
 
-        // Sync borrower's headline credit fields so the rest of the app (risk
-        // scoring, underwriting views) reflects the freshest bureau pull.
-        if (check.getStatus() == CreditBureauCheck.CheckStatus.COMPLETED && check.getCreditScore() != null) {
-            borrower.setCreditScore(check.getCreditScore());
-            borrower.setCreditBureau(check.getProvider());
-            borrower.setCreditReportDate(java.time.LocalDate.now());
+        check.setRequestedBy(
+                clean(requestedBy)
+        );
+
+        check.setNationalIdChecked(
+                clean(borrower.getNationalId())
+        );
+
+        check.setReference(
+                generateReference(
+                        borrower.getOrganization().getId()
+                )
+        );
+
+
+        // ========================================================
+        // SAVE CHECK
+        // ========================================================
+
+        check =
+                checkRepo.save(check);
+
+
+        // ========================================================
+        // UPDATE BORROWER CREDIT INFORMATION
+        // ========================================================
+
+        if (check.getStatus() ==
+                    CreditBureauCheck.CheckStatus.COMPLETED &&
+                check.getCreditScore() != null) {
+
+            borrower.setCreditScore(
+                    check.getCreditScore()
+            );
+
+            borrower.setCreditBureau(
+                    check.getProvider()
+            );
+
+            borrower.setCreditReportDate(
+                    LocalDate.now()
+            );
+
             borrowerRepo.save(borrower);
         }
 
-        auditService.log(borrower.getOrganization(), null, "CREDIT_BUREAU_CHECK", "BORROWER",
-            String.valueOf(borrowerId),
-            "Credit bureau check run via " + check.getProvider() + " -> " + check.getStatus()
-                + (check.getCreditScore() != null ? " (score " + check.getCreditScore() + ")" : ""));
+
+        // ========================================================
+        // AUDIT
+        // ========================================================
+
+        StringBuilder description =
+                new StringBuilder();
+
+        description.append(
+                "Credit bureau check run via "
+        );
+
+        description.append(
+                check.getProvider()
+        );
+
+        description.append(
+                " -> "
+        );
+
+        description.append(
+                check.getStatus()
+        );
+
+        if (check.getCreditScore() != null) {
+
+            description.append(
+                    " (score "
+            );
+
+            description.append(
+                    check.getCreditScore()
+            );
+
+            description.append(
+                    ")"
+            );
+        }
+
+
+        auditService.log(
+                borrower.getOrganization(),
+                null,
+                "CREDIT_BUREAU_CHECK",
+                "BORROWER",
+                String.valueOf(borrowerId),
+                description.toString(),
+                null,
+                null,
+                "Credit Bureau"
+        );
+
 
         return check;
     }
 
+
+    // ============================================================
+    // REPORT DISBURSED LOAN
+    // ============================================================
+
     @Transactional
-public void reportDisbursedLoan(Loan loan, String reportedBy) {
+    public void reportDisbursedLoan(
+            Loan loan,
+            String reportedBy
+    ) {
 
-    Borrower borrower = loan.getBorrower();
-
-    if (borrower == null) {
-        throw new RuntimeException("Borrower not found for loan.");
-    }
-
-    if (bureauEnabled && apiKey != null && !apiKey.isBlank()) {
-
-        try {
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(apiKey);
-            headers.setContentType(MediaType.APPLICATION_JSON);
-
-            Map<String, Object> payload = new HashMap<>();
-
-            payload.put("loanNumber", loan.getReferenceNumber());
-            payload.put("nationalId", borrower.getNationalId());
-            payload.put("borrowerName",
-                    borrower.getFirstName() + " " + borrower.getLastName());
-            payload.put("loanAmount", loan.getAmount());
-            payload.put("outstandingBalance", loan.getAmount());
-            payload.put("currency", loan.getCurrency());
-            payload.put("status", loan.getStatus().name());
-            payload.put("disbursedDate", loan.getDisbursedAt());
-            payload.put("nextPaymentDate", loan.getNextPaymentDate());
-
-            HttpEntity<Map<String, Object>> entity =
-                    new HttpEntity<>(payload, headers);
-
-            restTemplate.postForEntity(
-                    baseUrl + "/v1/loan-report",
-                    entity,
-                    String.class
+        if (loan == null) {
+            throw new IllegalArgumentException(
+                    "Loan is required"
             );
-
-            log.info("Loan {} reported to Credit Bureau.",
-                    loan.getReferenceNumber());
-
-        } catch (Exception ex) {
-
-            log.error("Credit Bureau reporting failed.", ex);
-
-            throw ex;
         }
 
-    } else {
+        Borrower borrower =
+                loan.getBorrower();
 
-        log.info(
-                "Credit Bureau integration disabled. Loan {} not reported.",
-                loan.getReferenceNumber());
-
-    }
-}
-
-    private CreditBureauCheck tryLiveProvider(Borrower borrower) {
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(apiKey);
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            Map<String, Object> payload = Map.of(
-                "nationalId", borrower.getNationalId() != null ? borrower.getNationalId() : "",
-                "firstName", borrower.getFirstName(),
-                "lastName", borrower.getLastName() != null ? borrower.getLastName() : ""
+        if (borrower == null) {
+            throw new IllegalArgumentException(
+                    "Borrower not found for loan"
             );
-            ResponseEntity<Map> resp = restTemplate.exchange(
-                baseUrl + "/v1/credit-report", HttpMethod.POST, new HttpEntity<>(payload, headers), Map.class);
+        }
 
-            Map<?, ?> body = resp.getBody();
-            if (body == null) throw new RuntimeException("Empty bureau response");
+        if (loan.getOrganization() == null) {
+            throw new IllegalArgumentException(
+                    "Loan organization is required"
+            );
+        }
+
+
+        // ========================================================
+        // LIVE CREDIT BUREAU
+        // ========================================================
+
+        if (bureauEnabled &&
+                apiKey != null &&
+                !apiKey.isBlank() &&
+                baseUrl != null &&
+                !baseUrl.isBlank()) {
+
+            try {
+
+                HttpHeaders headers =
+                        new HttpHeaders();
+
+                headers.setBearerAuth(
+                        apiKey
+                );
+
+                headers.setContentType(
+                        MediaType.APPLICATION_JSON
+                );
+
+
+                Map<String, Object> payload =
+                        new LinkedHashMap<>();
+
+
+                payload.put(
+                        "loanNumber",
+                        loan.getReferenceNumber()
+                );
+
+                payload.put(
+                        "nationalId",
+                        borrower.getNationalId()
+                );
+
+                payload.put(
+                        "borrowerName",
+                        buildBorrowerName(borrower)
+                );
+
+                payload.put(
+                        "loanAmount",
+                        loan.getAmount()
+                );
+
+
+                /*
+                 * IMPORTANT:
+                 *
+                 * Do NOT assume the outstanding balance
+                 * is equal to the original loan amount.
+                 *
+                 * If the Loan entity has an outstanding balance,
+                 * use that value.
+                 */
+                payload.put(
+                        "outstandingBalance",
+                        loan.getOutstandingBalance()
+                );
+
+
+                payload.put(
+                        "currency",
+                        loan.getCurrency()
+                );
+
+
+                payload.put(
+                        "status",
+                        loan.getStatus() != null
+                                ? loan.getStatus().name()
+                                : null
+                );
+
+
+                payload.put(
+                        "disbursedDate",
+                        loan.getDisbursedAt()
+                );
+
+
+                payload.put(
+                        "nextPaymentDate",
+                        loan.getNextPaymentDate()
+                );
+
+
+                payload.put(
+                        "reportedBy",
+                        reportedBy
+                );
+
+
+                HttpEntity<Map<String, Object>> entity =
+                        new HttpEntity<>(
+                                payload,
+                                headers
+                        );
+
+
+                ResponseEntity<String> response =
+                        restTemplate.postForEntity(
+                                normalizeBaseUrl(baseUrl)
+                                        + "/v1/loan-report",
+                                entity,
+                                String.class
+                        );
+
+
+                if (!response.getStatusCode()
+                        .is2xxSuccessful()) {
+
+                    throw new IllegalStateException(
+                            "Credit Bureau returned HTTP "
+                                    + response.getStatusCode().value()
+                    );
+                }
+
+
+                log.info(
+                        "Loan {} successfully reported to Credit Bureau.",
+                        loan.getReferenceNumber()
+                );
+
+
+                auditService.log(
+                        loan.getOrganization(),
+                        null,
+                        "CREDIT_BUREAU_LOAN_REPORTED",
+                        "LOAN",
+                        String.valueOf(loan.getId()),
+                        "Disbursed loan "
+                                + loan.getReferenceNumber()
+                                + " reported to "
+                                + providerName,
+                        null,
+                        null,
+                        "Credit Bureau"
+                );
+
+
+            } catch (Exception ex) {
+
+                log.error(
+                        "Credit Bureau reporting failed for loan {}",
+                        loan.getReferenceNumber(),
+                        ex
+                );
+
+
+                auditService.log(
+                        loan.getOrganization(),
+                        null,
+                        "CREDIT_BUREAU_REPORT_FAILED",
+                        "LOAN",
+                        String.valueOf(loan.getId()),
+                        "Failed to report loan "
+                                + loan.getReferenceNumber()
+                                + " to "
+                                + providerName
+                                + ": "
+                                + ex.getMessage(),
+                        null,
+                        null,
+                        "Credit Bureau"
+                );
+
+
+                throw new IllegalStateException(
+                        "Credit Bureau reporting failed: "
+                                + ex.getMessage(),
+                        ex
+                );
+            }
+
+
+        } else {
+
+            // ====================================================
+            // INTEGRATION DISABLED
+            // ====================================================
+
+            log.info(
+                    "Credit Bureau integration disabled. "
+                            + "Loan {} was not externally reported.",
+                    loan.getReferenceNumber()
+            );
+
+
+            auditService.log(
+                    loan.getOrganization(),
+                    null,
+                    "CREDIT_BUREAU_REPORT_SKIPPED",
+                    "LOAN",
+                    String.valueOf(loan.getId()),
+                    "Credit Bureau integration disabled; loan "
+                            + loan.getReferenceNumber()
+                            + " was not externally reported.",
+                    null,
+                    null,
+                    "Credit Bureau"
+            );
+        }
+    }
+
+
+    // ============================================================
+    // LIVE CREDIT BUREAU CHECK
+    // ============================================================
+
+    private CreditBureauCheck tryLiveProvider(
+            Borrower borrower
+    ) {
+
+        try {
+
+            HttpHeaders headers =
+                    new HttpHeaders();
+
+            headers.setBearerAuth(
+                    apiKey
+            );
+
+            headers.setContentType(
+                    MediaType.APPLICATION_JSON
+            );
+
+
+            Map<String, Object> payload =
+                    new LinkedHashMap<>();
+
+
+            payload.put(
+                    "nationalId",
+                    borrower.getNationalId() != null
+                            ? borrower.getNationalId()
+                            : ""
+            );
+
+            payload.put(
+                    "firstName",
+                    borrower.getFirstName()
+            );
+
+            payload.put(
+                    "lastName",
+                    borrower.getLastName() != null
+                            ? borrower.getLastName()
+                            : ""
+            );
+
+
+            HttpEntity<Map<String, Object>> entity =
+                    new HttpEntity<>(
+                            payload,
+                            headers
+                    );
+
+
+            ResponseEntity<Map> response =
+                    restTemplate.exchange(
+                            normalizeBaseUrl(baseUrl)
+                                    + "/v1/credit-report",
+                            HttpMethod.POST,
+                            entity,
+                            Map.class
+                    );
+
+
+            if (!response.getStatusCode()
+                    .is2xxSuccessful()) {
+
+                throw new IllegalStateException(
+                        "Credit Bureau returned HTTP "
+                                + response.getStatusCode().value()
+                );
+            }
+
+
+            Map<?, ?> body =
+                    response.getBody();
+
+
+            if (body == null) {
+
+                throw new IllegalStateException(
+                        "Empty Credit Bureau response"
+                );
+            }
+
 
             return CreditBureauCheck.builder()
-                .provider(providerName)
-                .status(CreditBureauCheck.CheckStatus.COMPLETED)
-                .creditScore(toInt(body.get("creditScore")))
-                .riskGrade((String) body.get("riskGrade"))
-                .activeFacilities(toInt(body.get("activeFacilities")))
-                .delinquentAccounts(toInt(body.get("delinquentAccounts")))
-                .totalOutstandingDebt(toDouble(body.get("totalOutstandingDebt")))
-                .totalMonthlyObligations(toDouble(body.get("totalMonthlyObligations")))
-                .hasDefaultHistory(Boolean.TRUE.equals(body.get("hasDefaultHistory")))
-                .hasActiveListing(Boolean.TRUE.equals(body.get("hasActiveListing")))
-                .listingReason((String) body.get("listingReason"))
-                .rawResponse(toJson(body))
-                .build();
+
+                    .provider(
+                            providerName
+                    )
+
+                    .status(
+                            CreditBureauCheck.CheckStatus.COMPLETED
+                    )
+
+                    .creditScore(
+                            toInt(body.get("creditScore"))
+                    )
+
+                    .riskGrade(
+                            toStringValue(
+                                    body.get("riskGrade")
+                            )
+                    )
+
+                    .activeFacilities(
+                            toInt(
+                                    body.get("activeFacilities")
+                            )
+                    )
+
+                    .delinquentAccounts(
+                            toInt(
+                                    body.get("delinquentAccounts")
+                            )
+                    )
+
+                    .totalOutstandingDebt(
+                            toDouble(
+                                    body.get(
+                                            "totalOutstandingDebt"
+                                    )
+                            )
+                    )
+
+                    .totalMonthlyObligations(
+                            toDouble(
+                                    body.get(
+                                            "totalMonthlyObligations"
+                                    )
+                            )
+                    )
+
+                    .hasDefaultHistory(
+                            toBoolean(
+                                    body.get(
+                                            "hasDefaultHistory"
+                                    )
+                            )
+                    )
+
+                    .hasActiveListing(
+                            toBoolean(
+                                    body.get(
+                                            "hasActiveListing"
+                                    )
+                            )
+                    )
+
+                    .listingReason(
+                            toStringValue(
+                                    body.get(
+                                            "listingReason"
+                                    )
+                            )
+                    )
+
+                    .rawResponse(
+                            toJson(body)
+                    )
+
+                    .build();
+
+
         } catch (Exception e) {
-            log.warn("Live credit bureau provider failed ({}), falling back to simulation: {}", providerName, e.getMessage());
-            CreditBureauCheck fallback = simulate(borrower);
-            fallback.setFailureReason("Live provider unreachable, used internal estimate: " + e.getMessage());
+
+            /*
+             * We keep the simulator as a fallback for development.
+             *
+             * IMPORTANT:
+             * The failure is preserved in failureReason so the user
+             * can see that this was NOT an actual live bureau result.
+             */
+
+            log.warn(
+                    "Live Credit Bureau provider failed ({}). "
+                            + "Falling back to internal simulation. Reason: {}",
+                    providerName,
+                    e.getMessage()
+            );
+
+
+            CreditBureauCheck fallback =
+                    simulate(borrower);
+
+
+            fallback.setFailureReason(
+                    "Live provider unavailable; "
+                            + "internal simulation used. "
+                            + "Reason: "
+                            + e.getMessage()
+            );
+
+
             return fallback;
         }
     }
 
-   
-    private CreditBureauCheck simulate(Borrower b) {
-        long seed = (b.getNationalId() != null && !b.getNationalId().isBlank())
-            ? b.getNationalId().hashCode() : (b.getId() != null ? b.getId() : 1L);
-        Random rnd = new Random(seed);
 
-        int base = (b.getCreditScore() != null) ? b.getCreditScore() : 550 + rnd.nextInt(200);
-        int jitter = rnd.nextInt(41) - 20; // +/-20
-        int score = Math.max(300, Math.min(850, base + jitter));
+    // ============================================================
+    // INTERNAL SIMULATION
+    // ============================================================
+
+    private CreditBureauCheck simulate(
+            Borrower borrower
+    ) {
+
+        long seed;
+
+        if (borrower.getNationalId() != null &&
+                !borrower.getNationalId().isBlank()) {
+
+            seed =
+                    borrower.getNationalId()
+                            .hashCode();
+
+        } else if (borrower.getId() != null) {
+
+            seed =
+                    borrower.getId();
+
+        } else {
+
+            seed = 1L;
+        }
+
+
+        Random random =
+                new Random(seed);
+
+
+        int baseScore;
+
+        if (borrower.getCreditScore() != null) {
+
+            baseScore =
+                    borrower.getCreditScore();
+
+        } else {
+
+            baseScore =
+                    550 + random.nextInt(200);
+        }
+
+
+        int jitter =
+                random.nextInt(41) - 20;
+
+
+        int score =
+                Math.max(
+                        300,
+                        Math.min(
+                                850,
+                                baseScore + jitter
+                        )
+                );
+
 
         String grade;
-        if      (score >= 750) grade = "EXCELLENT";
-        else if (score >= 680) grade = "GOOD";
-        else if (score >= 600) grade = "FAIR";
-        else if (score >= 500) grade = "POOR";
-        else                   grade = "VERY_POOR";
 
-        int delinquent = score < 550 ? rnd.nextInt(3) + 1 : (score < 650 ? rnd.nextInt(2) : 0);
-        boolean defaulted = score < 480 && rnd.nextInt(3) == 0;
-        int facilities = rnd.nextInt(4);
-        double income = b.getMonthlyIncome() != null ? b.getMonthlyIncome() : 0;
-        double outstanding = facilities * (income > 0 ? income * (0.5 + rnd.nextDouble()) : 50_000 + rnd.nextInt(500_000));
-        double monthlyObligations = facilities > 0 ? outstanding / (12 + rnd.nextInt(24)) : 0;
+        if (score >= 750) {
 
-        Map<String, Object> snapshot = new LinkedHashMap<>();
-        snapshot.put("simulated", true);
-        snapshot.put("note", "No live BNR-licensed CRB credentials configured — internal estimate generated from borrower profile.");
-        snapshot.put("creditScore", score);
-        snapshot.put("riskGrade", grade);
-        snapshot.put("activeFacilities", facilities);
-        snapshot.put("delinquentAccounts", delinquent);
-        snapshot.put("hasDefaultHistory", defaulted);
+            grade = "EXCELLENT";
+
+        } else if (score >= 680) {
+
+            grade = "GOOD";
+
+        } else if (score >= 600) {
+
+            grade = "FAIR";
+
+        } else if (score >= 500) {
+
+            grade = "POOR";
+
+        } else {
+
+            grade = "VERY_POOR";
+        }
+
+
+        int delinquent;
+
+        if (score < 550) {
+
+            delinquent =
+                    random.nextInt(3) + 1;
+
+        } else if (score < 650) {
+
+            delinquent =
+                    random.nextInt(2);
+
+        } else {
+
+            delinquent = 0;
+        }
+
+
+        boolean defaulted =
+                score < 480 &&
+                        random.nextInt(3) == 0;
+
+
+        int facilities =
+                random.nextInt(4);
+
+
+        /*
+         * Keep Double.
+         *
+         * If monthlyIncome is Double,
+         * this works directly.
+         *
+         * If your Borrower entity uses another numeric type,
+         * change only this local conversion rather than changing
+         * the whole application.
+         */
+        double income =
+                borrower.getMonthlyIncome() != null
+                        ? borrower.getMonthlyIncome()
+                        : 0.0;
+
+
+        double outstanding;
+
+        if (facilities > 0) {
+
+            if (income > 0) {
+
+                outstanding =
+                        facilities *
+                                (
+                                    income *
+                                    (
+                                        0.5 +
+                                        random.nextDouble()
+                                    )
+                                );
+
+            } else {
+
+                outstanding =
+                        facilities *
+                                (
+                                    50_000 +
+                                    random.nextInt(500_000)
+                                );
+            }
+
+        } else {
+
+            outstanding = 0.0;
+        }
+
+
+        double monthlyObligations =
+                facilities > 0
+                        ? outstanding /
+                            (12 + random.nextInt(24))
+                        : 0.0;
+
+
+        Map<String, Object> snapshot =
+                new LinkedHashMap<>();
+
+
+        snapshot.put(
+                "simulated",
+                true
+        );
+
+        snapshot.put(
+                "provider",
+                "INTERNAL_SIMULATED"
+        );
+
+        snapshot.put(
+                "note",
+                "No live licensed Credit Bureau credentials "
+                        + "are configured. This is an internal "
+                        + "development estimate and must not be "
+                        + "treated as an official bureau report."
+        );
+
+        snapshot.put(
+                "creditScore",
+                score
+        );
+
+        snapshot.put(
+                "riskGrade",
+                grade
+        );
+
+        snapshot.put(
+                "activeFacilities",
+                facilities
+        );
+
+        snapshot.put(
+                "delinquentAccounts",
+                delinquent
+        );
+
+        snapshot.put(
+                "totalOutstandingDebt",
+                roundMoney(outstanding)
+        );
+
+        snapshot.put(
+                "totalMonthlyObligations",
+                roundMoney(monthlyObligations)
+        );
+
+        snapshot.put(
+                "hasDefaultHistory",
+                defaulted
+        );
+
+
+        boolean activeListing =
+                defaulted &&
+                        random.nextBoolean();
+
+
+        snapshot.put(
+                "hasActiveListing",
+                activeListing
+        );
+
+
+        if (activeListing) {
+
+            snapshot.put(
+                    "listingReason",
+                    "Historical default recorded "
+                            + "on internal ledger"
+            );
+        }
+
 
         return CreditBureauCheck.builder()
-            .provider("INTERNAL_SIMULATED")
-            .status(CreditBureauCheck.CheckStatus.COMPLETED)
-            .creditScore(score)
-            .riskGrade(grade)
-            .activeFacilities(facilities)
-            .delinquentAccounts(delinquent)
-            .totalOutstandingDebt(Math.round(outstanding * 100.0) / 100.0)
-            .totalMonthlyObligations(Math.round(monthlyObligations * 100.0) / 100.0)
-            .hasDefaultHistory(defaulted)
-            .hasActiveListing(defaulted && rnd.nextBoolean())
-            .listingReason(defaulted ? "Historical default recorded on internal ledger" : null)
-            .rawResponse(toJson(snapshot))
-            .build();
+
+                .provider(
+                        "INTERNAL_SIMULATED"
+                )
+
+                .status(
+                        CreditBureauCheck.CheckStatus.COMPLETED
+                )
+
+                .creditScore(
+                        score
+                )
+
+                .riskGrade(
+                        grade
+                )
+
+                .activeFacilities(
+                        facilities
+                )
+
+                .delinquentAccounts(
+                        delinquent
+                )
+
+                .totalOutstandingDebt(
+                        roundMoney(outstanding)
+                )
+
+                .totalMonthlyObligations(
+                        roundMoney(monthlyObligations)
+                )
+
+                .hasDefaultHistory(
+                        defaulted
+                )
+
+                .hasActiveListing(
+                        activeListing
+                )
+
+                .listingReason(
+                        activeListing
+                                ? "Historical default recorded "
+                                    + "on internal ledger"
+                                : null
+                )
+
+                .rawResponse(
+                        toJson(snapshot)
+                )
+
+                .build();
     }
 
-    public List<CreditBureauCheck> getHistory(Long borrowerId) {
-        return checkRepo.findByBorrower_IdOrderByCreatedAtDesc(borrowerId);
+
+    // ============================================================
+    // HISTORY
+    // ============================================================
+
+    @Transactional(readOnly = true)
+    public List<CreditBureauCheck> getHistory(
+            Long borrowerId,
+            Long orgId
+    ) {
+
+        assertBorrowerBelongsToOrganization(
+                borrowerId,
+                orgId
+        );
+
+
+        return checkRepo
+                .findByBorrower_IdOrderByCreatedAtDesc(
+                        borrowerId
+                );
     }
 
-    public Optional<CreditBureauCheck> getLatest(Long borrowerId) {
-        return checkRepo.findFirstByBorrower_IdOrderByCreatedAtDesc(borrowerId);
+
+    // ============================================================
+    // LATEST
+    // ============================================================
+
+    @Transactional(readOnly = true)
+    public Optional<CreditBureauCheck> getLatest(
+            Long borrowerId,
+            Long orgId
+    ) {
+
+        assertBorrowerBelongsToOrganization(
+                borrowerId,
+                orgId
+        );
+
+
+        return checkRepo
+                .findFirstByBorrower_IdOrderByCreatedAtDesc(
+                        borrowerId
+                );
     }
 
-    private String toJson(Object o) {
-        try { return objectMapper.writeValueAsString(o); } catch (Exception e) { return "{}"; }
+
+    // ============================================================
+    // TENANT VALIDATION
+    // ============================================================
+
+    private Borrower assertBorrowerBelongsToOrganization(
+            Long borrowerId,
+            Long orgId
+    ) {
+
+        if (borrowerId == null) {
+
+            throw new IllegalArgumentException(
+                    "Borrower ID is required"
+            );
+        }
+
+        if (orgId == null) {
+
+            throw new IllegalArgumentException(
+                    "Organization ID is required"
+            );
+        }
+
+
+        Borrower borrower =
+                borrowerRepo.findById(borrowerId)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Borrower not found: "
+                                                + borrowerId
+                                )
+                        );
+
+
+        if (borrower.getOrganization() == null ||
+                borrower.getOrganization().getId() == null ||
+                !borrower.getOrganization()
+                        .getId()
+                        .equals(orgId)) {
+
+            throw new SecurityException(
+                    "Access denied: borrower does not belong "
+                            + "to your organization"
+            );
+        }
+
+
+        return borrower;
     }
-    private Integer toInt(Object o) { return o == null ? null : (o instanceof Number n ? n.intValue() : Integer.parseInt(o.toString())); }
-    private Double  toDouble(Object o) { return o == null ? null : (o instanceof Number n ? n.doubleValue() : Double.parseDouble(o.toString())); }
+
+
+    // ============================================================
+    // REFERENCE GENERATOR
+    // ============================================================
+
+    private String generateReference(
+            Long organizationId
+    ) {
+
+        String country =
+                "RW";
+
+
+        String timestamp =
+                String.valueOf(
+                        System.currentTimeMillis()
+                );
+
+
+        String suffix =
+                timestamp.substring(
+                        Math.max(
+                                0,
+                                timestamp.length() - 8
+                        )
+                );
+
+
+        return "CRB-"
+                + country
+                + "-"
+                + organizationId
+                + "-"
+                + suffix;
+    }
+
+
+    // ============================================================
+    // BORROWER NAME
+    // ============================================================
+
+    private String buildBorrowerName(
+            Borrower borrower
+    ) {
+
+        String first =
+                borrower.getFirstName() != null
+                        ? borrower.getFirstName().trim()
+                        : "";
+
+        String last =
+                borrower.getLastName() != null
+                        ? borrower.getLastName().trim()
+                        : "";
+
+
+        return (
+                first + " " + last
+        ).trim();
+    }
+
+
+    // ============================================================
+    // NUMBER CONVERSION
+    // ============================================================
+
+    private Integer toInt(
+            Object value
+    ) {
+
+        if (value == null) {
+            return null;
+        }
+
+        if (value instanceof Number number) {
+
+            return number.intValue();
+        }
+
+        try {
+
+            return Integer.parseInt(
+                    value.toString()
+            );
+
+        } catch (NumberFormatException e) {
+
+            return null;
+        }
+    }
+
+
+    private Double toDouble(
+            Object value
+    ) {
+
+        if (value == null) {
+            return null;
+        }
+
+        if (value instanceof Number number) {
+
+            return number.doubleValue();
+        }
+
+        try {
+
+            return Double.parseDouble(
+                    value.toString()
+            );
+
+        } catch (NumberFormatException e) {
+
+            return null;
+        }
+    }
+
+
+    private Boolean toBoolean(
+            Object value
+    ) {
+
+        if (value == null) {
+            return null;
+        }
+
+        if (value instanceof Boolean bool) {
+
+            return bool;
+        }
+
+        return Boolean.parseBoolean(
+                value.toString()
+        );
+    }
+
+
+    private String toStringValue(
+            Object value
+    ) {
+
+        return value == null
+                ? null
+                : value.toString();
+    }
+
+
+    // ============================================================
+    // MONEY ROUNDING
+    // ============================================================
+
+    private double roundMoney(
+            double value
+    ) {
+
+        return Math.round(
+                value * 100.0
+        ) / 100.0;
+    }
+
+
+    // ============================================================
+    // STRING CLEANING
+    // ============================================================
+
+    private String clean(
+            String value
+    ) {
+
+        if (value == null) {
+            return null;
+        }
+
+        String cleaned =
+                value.trim();
+
+        return cleaned.isEmpty()
+                ? null
+                : cleaned;
+    }
+
+
+    // ============================================================
+    // BASE URL NORMALIZATION
+    // ============================================================
+
+    private String normalizeBaseUrl(
+            String url
+    ) {
+
+        if (url == null) {
+            return "";
+        }
+
+        String value =
+                url.trim();
+
+        while (value.endsWith("/")) {
+
+            value =
+                    value.substring(
+                            0,
+                            value.length() - 1
+                    );
+        }
+
+        return value;
+    }
+
+
+    // ============================================================
+    // JSON
+    // ============================================================
+
+    private String toJson(
+            Object object
+    ) {
+
+        try {
+
+            return objectMapper.writeValueAsString(
+                    object
+            );
+
+        } catch (Exception e) {
+
+            log.warn(
+                    "Unable to serialize Credit Bureau response",
+                    e
+            );
+
+            return "{}";
+        }
+    }
 }
