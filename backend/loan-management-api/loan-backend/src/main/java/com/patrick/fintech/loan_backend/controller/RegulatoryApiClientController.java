@@ -25,12 +25,7 @@ public class RegulatoryApiClientController {
     private final RegulatoryApiClientService service;
     private final CurrentUserUtil currentUserUtil;
 
-    /**
-     * List API clients belonging ONLY to the current organization.
-     *
-     * GET
-     * /api/regulatory/api-clients
-     */
+   
     @GetMapping
     public ResponseEntity<ApiResponse<List<ApiClientResponse>>> list() {
 
@@ -45,14 +40,7 @@ public class RegulatoryApiClientController {
         );
     }
 
-    /**
-     * Create a BNR or Credit Bureau API client.
-     *
-     * POST
-     * /api/regulatory/api-clients
-     *
-     * The response contains the raw API key exactly once.
-     */
+    
     @PostMapping
     public ResponseEntity<ApiResponse<ApiClientCreatedResponse>> create(
             @RequestBody CreateApiClientRequest request

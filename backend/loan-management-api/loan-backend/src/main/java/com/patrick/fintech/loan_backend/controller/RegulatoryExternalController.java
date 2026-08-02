@@ -11,12 +11,17 @@ import com.patrick.fintech.loan_backend.service.AuditService;
 import com.patrick.fintech.loan_backend.service.RegulatoryReportingService;
 import com.patrick.fintech.loan_backend.service.RegulatoryReportingService.ReportPeriod;
 import com.patrick.fintech.loan_backend.service.ReportExportService;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -25,27 +30,38 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+
 /**
  * External regulatory reporting API.
  *
- * Supports:
+ * Existing external URLs remain supported:
  *
- * BNR:
- * - Summary
- * - Loan type breakdown
- * - Branch breakdown
- * - Gender breakdown
- * - PAR aging breakdown
- * - Export
+ * /api/regulatory/external/bnr/summary
+ * /api/regulatory/external/bnr/breakdown/loan-type
+ * /api/regulatory/external/bnr/breakdown/branch
+ * /api/regulatory/external/bnr/breakdown/gender
+ * /api/regulatory/external/bnr/breakdown/par
+ * /api/regulatory/external/bnr/export
+ * /api/regulatory/external/credit-bureau/export
  *
- * Credit Bureau:
- * - Borrower-level export
+ * Frontend-compatible aliases are also supported:
+ *
+ * /api/regulatory/bnr/summary
+ * /api/regulatory/bnr/by-loan-type
+ * /api/regulatory/bnr/by-branch
+ * /api/regulatory/bnr/by-gender
+ * /api/regulatory/bnr/by-par
+ * /api/regulatory/bnr/export
+ * /api/regulatory/credit-bureau/export
  *
  * All requests are scoped to the organization associated
- * with the regulatory API key.
+ * with the Regulatory API principal.
  */
 @RestController
-@RequestMapping("/api/regulatory/external")
+@RequestMapping({
+        "/api/regulatory/external",
+        "/api/regulatory"
+})
 @RequiredArgsConstructor
 public class RegulatoryExternalController {
 
@@ -65,11 +81,49 @@ public class RegulatoryExternalController {
 
     private RegulatoryApiPrincipal principal() {
 
-        return (RegulatoryApiPrincipal)
+        Authentication authentication =
                 SecurityContextHolder
                         .getContext()
-                        .getAuthentication()
-                        .getPrincipal();
+                        .getAuthentication();
+
+        if (authentication == null) {
+
+            throw new IllegalStateException(
+                    "No authentication found."
+            );
+        }
+
+        Object principal =
+                authentication.getPrincipal();
+
+        if (!(principal instanceof RegulatoryApiPrincipal)) {
+
+            throw new IllegalStateException(
+                    "Authenticated principal is not a RegulatoryApiPrincipal."
+            );
+        }
+
+        return (RegulatoryApiPrincipal) principal;
+    }
+
+
+    // ============================================================
+    // ORGANIZATION ID
+    // ============================================================
+
+    private Long organizationId() {
+
+        Long organizationId =
+                principal().getOrganizationId();
+
+        if (organizationId == null) {
+
+            throw new IllegalStateException(
+                    "Regulatory API principal has no organization ID."
+            );
+        }
+
+        return organizationId;
     }
 
 
@@ -122,6 +176,13 @@ public class RegulatoryExternalController {
     // BNR SUMMARY
     // ============================================================
 
+    /**
+     * Supports:
+     *
+     * GET /api/regulatory/external/bnr/summary
+     *
+     * GET /api/regulatory/bnr/summary
+     */
     @GetMapping("/bnr/summary")
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<BnrSummaryReport>> bnrSummary(
@@ -141,8 +202,7 @@ public class RegulatoryExternalController {
     ) {
 
         Long orgId =
-                principal()
-                        .getOrganizationId();
+                organizationId();
 
 
         BnrSummaryReport report =
@@ -178,7 +238,27 @@ public class RegulatoryExternalController {
     // BNR - LOAN TYPE
     // ============================================================
 
-    @GetMapping("/bnr/breakdown/loan-type")
+    /**
+     * IMPORTANT:
+     *
+     * The frontend was requesting:
+     *
+     * /api/regulatory/bnr/by-loan-type
+     *
+     * Therefore this method explicitly supports that URL.
+     *
+     * The previous URL is also retained:
+     *
+     * /api/regulatory/external/bnr/breakdown/loan-type
+     *
+     * And:
+     *
+     * /api/regulatory/bnr/breakdown/loan-type
+     */
+    @GetMapping({
+            "/bnr/breakdown/loan-type",
+            "/bnr/by-loan-type"
+    })
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     bnrByLoanType(
@@ -198,8 +278,7 @@ public class RegulatoryExternalController {
     ) {
 
         Long orgId =
-                principal()
-                        .getOrganizationId();
+                organizationId();
 
 
         List<BnrBreakdownRow> rows =
@@ -235,7 +314,19 @@ public class RegulatoryExternalController {
     // BNR - BRANCH
     // ============================================================
 
-    @GetMapping("/bnr/breakdown/branch")
+    /**
+     * Supports:
+     *
+     * /api/regulatory/external/bnr/breakdown/branch
+     *
+     * /api/regulatory/bnr/breakdown/branch
+     *
+     * /api/regulatory/bnr/by-branch
+     */
+    @GetMapping({
+            "/bnr/breakdown/branch",
+            "/bnr/by-branch"
+    })
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     bnrByBranch(
@@ -255,8 +346,7 @@ public class RegulatoryExternalController {
     ) {
 
         Long orgId =
-                principal()
-                        .getOrganizationId();
+                organizationId();
 
 
         List<BnrBreakdownRow> rows =
@@ -290,7 +380,19 @@ public class RegulatoryExternalController {
     // BNR - GENDER
     // ============================================================
 
-    @GetMapping("/bnr/breakdown/gender")
+    /**
+     * Supports:
+     *
+     * /api/regulatory/external/bnr/breakdown/gender
+     *
+     * /api/regulatory/bnr/breakdown/gender
+     *
+     * /api/regulatory/bnr/by-gender
+     */
+    @GetMapping({
+            "/bnr/breakdown/gender",
+            "/bnr/by-gender"
+    })
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     bnrByGender(
@@ -310,8 +412,7 @@ public class RegulatoryExternalController {
     ) {
 
         Long orgId =
-                principal()
-                        .getOrganizationId();
+                organizationId();
 
 
         List<BnrBreakdownRow> rows =
@@ -347,7 +448,19 @@ public class RegulatoryExternalController {
     // BNR - PAR AGING
     // ============================================================
 
-    @GetMapping("/bnr/breakdown/par")
+    /**
+     * Supports:
+     *
+     * /api/regulatory/external/bnr/breakdown/par
+     *
+     * /api/regulatory/bnr/breakdown/par
+     *
+     * /api/regulatory/bnr/by-par
+     */
+    @GetMapping({
+            "/bnr/breakdown/par",
+            "/bnr/by-par"
+    })
     @PreAuthorize("hasAuthority('ROLE_BNR_API')")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     bnrByParBucket(
@@ -367,8 +480,7 @@ public class RegulatoryExternalController {
     ) {
 
         Long orgId =
-                principal()
-                        .getOrganizationId();
+                organizationId();
 
 
         List<BnrBreakdownRow> rows =
@@ -404,10 +516,17 @@ public class RegulatoryExternalController {
     // BNR EXPORT
     // ============================================================
 
+    /**
+     * Supports:
+     *
+     * /api/regulatory/external/bnr/export
+     *
+     * /api/regulatory/bnr/export
+     */
     @GetMapping(
             value = "/bnr/export",
             produces = {
-                    "application/json",
+                    MediaType.APPLICATION_JSON_VALUE,
                     "text/csv",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     MediaType.APPLICATION_PDF_VALUE
@@ -436,8 +555,7 @@ public class RegulatoryExternalController {
     ) {
 
         Long orgId =
-                principal()
-                        .getOrganizationId();
+                organizationId();
 
 
         BnrSummaryReport summary =
@@ -469,9 +587,7 @@ public class RegulatoryExternalController {
         // JSON
         // --------------------------------------------------------
 
-        if (
-                "json".equalsIgnoreCase(format)
-        ) {
+        if ("json".equalsIgnoreCase(format)) {
 
             return ResponseEntity.ok(
                     ApiResponse.ok(summary)
@@ -512,10 +628,17 @@ public class RegulatoryExternalController {
     // CREDIT BUREAU EXPORT
     // ============================================================
 
+    /**
+     * Supports:
+     *
+     * /api/regulatory/external/credit-bureau/export
+     *
+     * /api/regulatory/credit-bureau/export
+     */
     @GetMapping(
             value = "/credit-bureau/export",
             produces = {
-                    "application/json",
+                    MediaType.APPLICATION_JSON_VALUE,
                     "text/csv",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     MediaType.APPLICATION_PDF_VALUE
@@ -538,8 +661,7 @@ public class RegulatoryExternalController {
     ) {
 
         Long orgId =
-                principal()
-                        .getOrganizationId();
+                organizationId();
 
 
         List<CreditBureauRecord> records =
@@ -568,9 +690,7 @@ public class RegulatoryExternalController {
         // JSON
         // --------------------------------------------------------
 
-        if (
-                "json".equalsIgnoreCase(format)
-        ) {
+        if ("json".equalsIgnoreCase(format)) {
 
             return ResponseEntity.ok(
                     ApiResponse.ok(records)
@@ -731,6 +851,14 @@ public class RegulatoryExternalController {
 
     ) {
 
+        if (format == null || format.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Export format is required."
+            );
+        }
+
+
         byte[] bytes;
 
         MediaType contentType;
@@ -738,9 +866,7 @@ public class RegulatoryExternalController {
         String extension;
 
 
-        switch (
-                format.toLowerCase()
-        ) {
+        switch (format.trim().toLowerCase()) {
 
             case "csv":
 
