@@ -25,7 +25,7 @@ import java.util.Map;
 
 
 @RestController
-@RequestMapping("/api/regulatory/external")
+@RequestMapping("/api/regulatory")
 @RequiredArgsConstructor
 public class RegulatoryExternalController {
 
