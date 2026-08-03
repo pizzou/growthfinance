@@ -275,14 +275,114 @@ export type CreditBureauRecord = CreditRecord;
 
 
 // ============================================================
-// RESPONSE HELPERS
+// API ENVELOPE
 // ============================================================
 
-interface ApiEnvelope<T> {
-  data?: T;
-  message?: string;
+interface ApiEnvelope<T = unknown> {
   success?: boolean;
+  message?: string;
+  data?: T;
   content?: T;
+}
+
+
+// ============================================================
+// AXIOS RESPONSE-LIKE TYPE
+//
+// We intentionally don't import AxiosResponse here so this
+// service remains compatible with the existing api wrapper.
+// ============================================================
+
+interface ApiResponseLike<T = unknown> {
+  data?: T;
+  status?: number;
+  statusText?: string;
+  headers?: unknown;
+}
+
+
+// ============================================================
+// EXTRACT ACTUAL PAYLOAD
+//
+// Backend:
+// ResponseEntity<ApiResponse<T>>
+//
+// Axios:
+// AxiosResponse<ApiResponse<T>>
+//
+// Therefore:
+//
+// response
+//   -> response.data
+//       -> envelope.data
+//           -> actual payload
+// ============================================================
+
+function extractPayload<T>(
+  response: unknown
+): T {
+
+  let current: unknown =
+    response;
+
+
+  // ----------------------------------------------------------
+  // First unwrap Axios response
+  // ----------------------------------------------------------
+
+  if (
+    current &&
+    typeof current === 'object'
+  ) {
+
+    const axiosResponse =
+      current as ApiResponseLike;
+
+    if (
+      axiosResponse.data !== undefined
+    ) {
+
+      current =
+        axiosResponse.data;
+    }
+  }
+
+
+  // ----------------------------------------------------------
+  // Unwrap ApiResponse
+  // ----------------------------------------------------------
+
+  if (
+    current &&
+    typeof current === 'object'
+  ) {
+
+    const envelope =
+      current as ApiEnvelope<T>;
+
+
+    if (
+      envelope.data !== undefined
+    ) {
+
+      return envelope.data as T;
+    }
+
+
+    if (
+      envelope.content !== undefined
+    ) {
+
+      return envelope.content as T;
+    }
+  }
+
+
+  // ----------------------------------------------------------
+  // Already the actual payload
+  // ----------------------------------------------------------
+
+  return current as T;
 }
 
 
@@ -294,62 +394,122 @@ function unwrap<T>(
   response: unknown
 ): T {
 
-  if (
-    response &&
-    typeof response === 'object'
-  ) {
-
-    const value =
-      response as ApiEnvelope<T>;
-
-    if (
-      value.data !== undefined
-    ) {
-      return value.data as T;
-    }
-
-    if (
-      value.content !== undefined
-    ) {
-      return value.content as T;
-    }
-  }
-
-  return response as T;
+  return extractPayload<T>(
+    response
+  );
 }
 
 
 // ============================================================
 // NORMALIZE ARRAY
 //
-// IMPORTANT:
-// This prevents:
-// TypeError: a.map is not a function
+// Supports:
 //
-// It accepts:
-// []
-// { data: [] }
-// { content: [] }
-// { data: { content: [] } }
-// { items: [] }
-// { results: [] }
+// AxiosResponse<array>
+//
+// AxiosResponse<ApiResponse<array>>
+//
+// AxiosResponse<ApiResponse<Page<array>>>
+//
+// {
+//   data: []
+// }
+//
+// {
+//   data: {
+//     data: []
+//   }
+// }
+//
+// {
+//   data: {
+//     content: []
+//   }
+// }
+//
+// {
+//   content: []
+// }
+//
+// {
+//   items: []
+// }
+//
+// {
+//   results: []
+// }
+//
+// The important part is that this function ALWAYS returns
+// an array.
 // ============================================================
 
 function unwrapArray<T>(
   response: unknown
 ): T[] {
 
-  if (Array.isArray(response)) {
-    return response;
-  }
+  let current: unknown =
+    response;
+
+
+  // ----------------------------------------------------------
+  // Axios response
+  // ----------------------------------------------------------
 
   if (
-    response &&
-    typeof response === 'object'
+    current &&
+    typeof current === 'object'
   ) {
 
+    const axiosResponse =
+      current as ApiResponseLike;
+
+    if (
+      axiosResponse.data !== undefined
+    ) {
+
+      current =
+        axiosResponse.data;
+    }
+  }
+
+
+  // ----------------------------------------------------------
+  // Repeatedly unwrap common envelope structures
+  // ----------------------------------------------------------
+
+  for (
+    let depth = 0;
+    depth < 6;
+    depth++
+  ) {
+
+    // --------------------------------------------------------
+    // Already array
+    // --------------------------------------------------------
+
+    if (
+      Array.isArray(current)
+    ) {
+
+      return current as T[];
+    }
+
+
+    // --------------------------------------------------------
+    // Must be object to continue
+    // --------------------------------------------------------
+
+    if (
+      !current ||
+      typeof current !== 'object'
+    ) {
+
+      return [];
+    }
+
+
     const value =
-      response as {
+      current as {
         data?: unknown;
         content?: unknown;
         items?: unknown;
@@ -357,54 +517,97 @@ function unwrapArray<T>(
       };
 
 
-    if (Array.isArray(value.data)) {
+    // --------------------------------------------------------
+    // Direct array properties
+    // --------------------------------------------------------
+
+    if (
+      Array.isArray(value.data)
+    ) {
+
       return value.data as T[];
     }
 
 
-    if (Array.isArray(value.content)) {
+    if (
+      Array.isArray(value.content)
+    ) {
+
       return value.content as T[];
     }
 
 
-    if (Array.isArray(value.items)) {
+    if (
+      Array.isArray(value.items)
+    ) {
+
       return value.items as T[];
     }
 
 
-    if (Array.isArray(value.results)) {
+    if (
+      Array.isArray(value.results)
+    ) {
+
       return value.results as T[];
     }
 
+
+    // --------------------------------------------------------
+    // Nested objects
+    // --------------------------------------------------------
 
     if (
       value.data &&
       typeof value.data === 'object'
     ) {
 
-      const nested =
-        value.data as {
-          content?: unknown;
-          items?: unknown;
-          results?: unknown;
-        };
+      current =
+        value.data;
 
-
-      if (Array.isArray(nested.content)) {
-        return nested.content as T[];
-      }
-
-
-      if (Array.isArray(nested.items)) {
-        return nested.items as T[];
-      }
-
-
-      if (Array.isArray(nested.results)) {
-        return nested.results as T[];
-      }
+      continue;
     }
+
+
+    if (
+      value.content &&
+      typeof value.content === 'object'
+    ) {
+
+      current =
+        value.content;
+
+      continue;
+    }
+
+
+    if (
+      value.items &&
+      typeof value.items === 'object'
+    ) {
+
+      current =
+        value.items;
+
+      continue;
+    }
+
+
+    if (
+      value.results &&
+      typeof value.results === 'object'
+    ) {
+
+      current =
+        value.results;
+
+      continue;
+    }
+
+
+    return [];
   }
+
 
   return [];
 }
@@ -422,39 +625,49 @@ function toQueryParams(
     return {};
   }
 
+
   const query: QueryParams = {};
+
 
   if (
     params.branchId !== undefined &&
     params.branchId !== null
   ) {
+
     query.branchId =
       params.branchId;
   }
+
 
   if (
     params.period !== undefined &&
     params.period !== null
   ) {
+
     query.period =
       params.period;
   }
+
 
   if (
     params.from !== undefined &&
     params.from !== ''
   ) {
+
     query.from =
       params.from;
   }
+
 
   if (
     params.to !== undefined &&
     params.to !== ''
   ) {
+
     query.to =
       params.to;
   }
+
 
   return query;
 }
@@ -470,10 +683,16 @@ function triggerDownload(
 ): void {
 
   const url =
-    window.URL.createObjectURL(blob);
+    window.URL.createObjectURL(
+      blob
+    );
+
 
   const anchor =
-    document.createElement('a');
+    document.createElement(
+      'a'
+    );
+
 
   anchor.href =
     url;
@@ -481,13 +700,16 @@ function triggerDownload(
   anchor.download =
     filename;
 
+
   document.body.appendChild(
     anchor
   );
 
+
   anchor.click();
 
   anchor.remove();
+
 
   window.URL.revokeObjectURL(
     url
@@ -514,6 +736,7 @@ function extractErrorMessage(
         response?: {
           data?: {
             message?: string;
+            error?: string;
           };
         };
 
@@ -531,7 +754,23 @@ function extractErrorMessage(
       apiMessage &&
       typeof apiMessage === 'string'
     ) {
+
       return apiMessage;
+    }
+
+
+    const apiError =
+      value.response
+        ?.data
+        ?.error;
+
+
+    if (
+      apiError &&
+      typeof apiError === 'string'
+    ) {
+
+      return apiError;
     }
 
 
@@ -539,6 +778,7 @@ function extractErrorMessage(
       value.message &&
       typeof value.message === 'string'
     ) {
+
       return value.message;
     }
   }
@@ -547,6 +787,7 @@ function extractErrorMessage(
   if (
     typeof error === 'string'
   ) {
+
     return error;
   }
 
@@ -578,6 +819,7 @@ export const regulatoryApi = {
         }
       );
 
+
     return unwrap<BnrSummary>(
       response
     );
@@ -601,9 +843,51 @@ export const regulatoryApi = {
         }
       );
 
-    return unwrap<BnrFinancialStatementReport>(
-      response
-    );
+
+    const report =
+      unwrap<BnrFinancialStatementReport>(
+        response
+      );
+
+
+    // --------------------------------------------------------
+    // Keep financial statement sections as arrays.
+    //
+    // This prevents the page from ever doing:
+    //
+    // report.assets.map(...)
+    //
+    // when assets is null/object.
+    // --------------------------------------------------------
+
+    return {
+      ...report,
+
+      assets:
+        Array.isArray(report?.assets)
+          ? report.assets
+          : [],
+
+      liabilities:
+        Array.isArray(report?.liabilities)
+          ? report.liabilities
+          : [],
+
+      equity:
+        Array.isArray(report?.equity)
+          ? report.equity
+          : [],
+
+      income:
+        Array.isArray(report?.income)
+          ? report.income
+          : [],
+
+      expenses:
+        Array.isArray(report?.expenses)
+          ? report.expenses
+          : [],
+    };
   },
 
 
@@ -623,6 +907,7 @@ export const regulatoryApi = {
             toQueryParams(params),
         }
       );
+
 
     return unwrapArray<BreakdownRow>(
       response
@@ -647,6 +932,7 @@ export const regulatoryApi = {
         }
       );
 
+
     return unwrapArray<BreakdownRow>(
       response
     );
@@ -670,6 +956,7 @@ export const regulatoryApi = {
         }
       );
 
+
     return unwrapArray<BreakdownRow>(
       response
     );
@@ -678,24 +965,104 @@ export const regulatoryApi = {
 
   // ==========================================================
   // CREDIT BUREAU
+  //
+  // NOTE:
+  // Your BNR controller does NOT expose:
+  //
+  // /regulatory/credit-bureau
+  //
+  // Your actual CreditBureauController exposes:
+  //
+  // /credit-bureau/borrowers/{id}/check
+  // /credit-bureau/borrowers/{id}/history
+  // /credit-bureau/borrowers/{id}/latest
+  //
+  // Therefore the old generic creditBureau() method should
+  // not pretend that /regulatory/credit-bureau exists.
   // ==========================================================
 
-  async creditBureau(
-    params?: BnrReportParams
-  ): Promise<CreditRecord[]> {
+  async creditBureauHistory(
+    borrowerId: number
+  ): Promise<unknown[]> {
 
     const response =
       await api.get(
-        '/regulatory/credit-bureau',
-        {
-          params:
-            toQueryParams(params),
-        }
+        `/credit-bureau/borrowers/${borrowerId}/history`
       );
 
-    return unwrapArray<CreditRecord>(
+
+    return unwrapArray<unknown>(
       response
     );
+  },
+
+
+  // ==========================================================
+  // CREDIT BUREAU LATEST
+  // ==========================================================
+
+  async creditBureauLatest(
+    borrowerId: number
+  ): Promise<unknown | null> {
+
+    try {
+
+      const response =
+        await api.get(
+          `/credit-bureau/borrowers/${borrowerId}/latest`
+        );
+
+
+      const result =
+        unwrap<unknown>(
+          response
+        );
+
+
+      return result ?? null;
+
+    } catch {
+
+      return null;
+    }
+  },
+
+
+  // ==========================================================
+  // RUN CREDIT BUREAU CHECK
+  // ==========================================================
+
+  async runCreditBureauCheck(
+    borrowerId: number
+  ): Promise<unknown> {
+
+    const response =
+      await api.post(
+        `/credit-bureau/borrowers/${borrowerId}/check`
+      );
+
+
+    return unwrap<unknown>(
+      response
+    );
+  },
+
+
+  // ==========================================================
+  // LEGACY CREDIT BUREAU METHOD
+  //
+  // Kept so existing imports do not immediately break.
+  //
+  // The endpoint itself is NOT called because the backend
+  // controller you supplied does not define a generic
+  // /regulatory/credit-bureau endpoint.
+  // ==========================================================
+
+  async creditBureau(
+    _params?: BnrReportParams
+  ): Promise<CreditRecord[]> {
+
+    return [];
   },
 
 
@@ -725,16 +1092,19 @@ export const regulatoryApi = {
     const normalizedFormat =
       format.toLowerCase() as ExportFormat;
 
+
     const response =
       await api.get(
         '/regulatory/bnr/financial-statement/export',
         {
           params: {
             ...toQueryParams(params),
-            format: normalizedFormat,
+            format:
+              normalizedFormat,
           },
 
-          responseType: 'blob',
+          responseType:
+            'blob',
         }
       );
 
