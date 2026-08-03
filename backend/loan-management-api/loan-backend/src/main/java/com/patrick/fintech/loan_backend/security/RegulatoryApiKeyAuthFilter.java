@@ -19,14 +19,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Authenticates external regulatory/credit-bureau systems calling
- * /api/regulatory/external/**. These are machine clients, not staff users, so they
- * present an API key (header: X-Api-Key) instead of a JWT.
- *
- * Only engages for the /api/regulatory/external/** path prefix — everything else keeps
- * going through JwtAuthFilter as before, so this can't interfere with normal staff auth.
- */
+
 @Component
 public class RegulatoryApiKeyAuthFilter extends OncePerRequestFilter {
 
@@ -70,12 +63,18 @@ public class RegulatoryApiKeyAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // route check: a BNR key can't call the credit-bureau endpoints and vice versa
+       
         boolean isBnrRoute = request.getRequestURI().startsWith(PROTECTED_PREFIX + "bnr");
         boolean isCbRoute = request.getRequestURI().startsWith(PROTECTED_PREFIX + "credit-bureau");
+
+        if (!isBnrRoute && !isCbRoute) {
+            unauthorized(response, "Unrecognized regulatory API route");
+            return;
+        }
+
         boolean typeMatches = (isBnrRoute && client.getClientType() == RegulatoryApiClient.ClientType.BNR)
             || (isCbRoute && client.getClientType() == RegulatoryApiClient.ClientType.CREDIT_BUREAU);
-        if ((isBnrRoute || isCbRoute) && !typeMatches) {
+        if (!typeMatches) {
             unauthorized(response, "This API key is not authorized for this report type");
             return;
         }

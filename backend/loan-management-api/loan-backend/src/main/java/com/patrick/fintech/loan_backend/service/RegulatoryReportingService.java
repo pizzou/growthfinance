@@ -1058,37 +1058,42 @@ public class RegulatoryReportingService {
         // RATIOS
         // ========================================================
 
-        double parRatio =
-                ratio(
-                        parAmount,
-                        outstandingPrincipal
-                );
+        double parRatio = ratio(parAmount, outstandingPrincipal);
 
+        /*
+         * Standard PAR buckets (PAR1 / PAR30 / PAR60 / PAR90): outstanding
+         * balance of loans overdue by AT LEAST that many days, as a
+         * fraction of total outstanding portfolio. BNR and standard
+         * microfinance regulatory templates specifically ask for PAR30 --
+         * the broad "parRatio" above (any days overdue at all) is kept
+         * for internal use, but these four are the ones that belong in
+         * the regulator-facing summary.
+         */
+        double par1Amount = parAmount; // dpd > 0, same set backing the broad parRatio
+        double par30Amount = par31To60 + par61To90 + par91To180 + par181To365 + parOver365;
+        double par60Amount = par61To90 + par91To180 + par181To365 + parOver365;
+        double par90Amount = par91To180 + par181To365 + parOver365;
 
-        double nplRatio =
-                ratio(
-                        nplAmount,
-                        outstandingPrincipal
-                );
+        double par1Ratio = ratio(par1Amount, outstandingPrincipal);
+        double par30Ratio = ratio(par30Amount, outstandingPrincipal);
+        double par60Ratio = ratio(par60Amount, outstandingPrincipal);
+        double par90Ratio = ratio(par90Amount, outstandingPrincipal);
+
+        double nplRatio = ratio(nplAmount, outstandingPrincipal);
 
 
         // ========================================================
         // OUTSTANDING
         // ========================================================
 
-        double outstandingInterest =
-                0.0;
+        double outstandingInterest = 0.0;
 
-        double outstandingFees =
-                0.0;
-
+        double outstandingFees = 0.0;
 
         double totalOutstanding =
                 outstandingPrincipal
-                        +
-                        outstandingInterest
-                        +
-                        outstandingFees;
+                        + outstandingInterest
+                        + outstandingFees;
 
 
         // ========================================================
@@ -1478,6 +1483,22 @@ public class RegulatoryReportingService {
 
                 .parRatio(
                         parRatio
+                )
+
+                .par1Ratio(
+                        par1Ratio
+                )
+
+                .par30Ratio(
+                        par30Ratio
+                )
+
+                .par60Ratio(
+                        par60Ratio
+                )
+
+                .par90Ratio(
+                        par90Ratio
                 )
 
                 .par1To30Amount(

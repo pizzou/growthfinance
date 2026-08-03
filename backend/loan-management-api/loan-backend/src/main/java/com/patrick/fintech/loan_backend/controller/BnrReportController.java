@@ -705,64 +705,46 @@ public class BnrReportController {
     // CSV
     // ============================================================
 
-    static byte[] toCsv(
-            List<String> columns,
-            List<Map<String, Object>> rows
-    ) {
-
-        StringBuilder sb =
-                new StringBuilder();
-
-        sb.append(
-                String.join(",", columns)
-        );
-
+    static byte[] toCsv(List<String> columns, List<Map<String, Object>> rows) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.join(",", columns));
         sb.append("\n");
 
         for (Map<String, Object> row : rows) {
-
             for (int i = 0; i < columns.size(); i++) {
+                Object value = row.get(columns.get(i));
+                String cell = value == null ? "" : value.toString();
 
-                Object value =
-                        row.get(columns.get(i));
+                cell = cell.replace("\"", "\"\"");
 
-                String cell =
-                        value == null
-                                ? ""
-                                : value.toString();
+                /*
+                 * CSV formula-injection guard (OWASP CSV Injection).
+                 * If a cell's first character would be interpreted by
+                 * Excel/Sheets/LibreOffice as the start of a formula
+                 * (=, +, -, @, or tab), prefix it with a single quote so
+                 * spreadsheet software renders it as literal text instead
+                 * of executing it. This data can come from free-text
+                 * borrower fields (name, notes) and this file is opened
+                 * directly by external BNR / credit-bureau staff.
+                 */
+                if (!cell.isEmpty() && "=+-@\t".indexOf(cell.charAt(0)) >= 0) {
+                    cell = "'" + cell;
+                }
 
-                cell =
-                        cell.replace(
-                                "\"",
-                                "\"\""
-                        );
-
-                if (
-                        cell.contains(",") ||
-                        cell.contains("\"") ||
-                        cell.contains("\n")
-                ) {
-
-                    cell =
-                            "\"" +
-                                    cell +
-                                    "\"";
+                if (cell.contains(",") || cell.contains("\"") || cell.contains("\n")) {
+                    cell = "\"" + cell + "\"";
                 }
 
                 sb.append(cell);
-
                 if (i < columns.size() - 1) {
                     sb.append(",");
                 }
             }
-
             sb.append("\n");
         }
 
-        return sb.toString()
-                .getBytes(StandardCharsets.UTF_8);
+        return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
-
     // ============================================================
     // DATE PARSER
     // ============================================================
