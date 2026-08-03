@@ -14,111 +14,13 @@ import {
   type BreakdownRow,
   type ExportFormat,
   type RegulatoryPeriod,
-} from '@/services/regulatoryService';
-
-
-// ============================================================
-// TYPES
-// ============================================================
+} from '@/services/regulatoryService'
 
 type DownloadingFormat =
   | ExportFormat
   | null;
 
-
-// ============================================================
-// SAFE BREAKDOWN NORMALIZER
-// ============================================================
-//
-// Prevents:
-// TypeError: a.map is not a function
-//
-// The API may return:
-//   [...]
-//   { data: [...] }
-//   { content: [...] }
-//   { items: [...] }
-//   { rows: [...] }
-//   { result: [...] }
-//
-// Always return an array to the React page.
-// ============================================================
-
-function normalizeBreakdownRows(
-  value: unknown
-): BreakdownRow[] {
-
-  // API already returned an array
-  if (Array.isArray(value)) {
-    return value as BreakdownRow[];
-  }
-
-  // API returned an object
-  if (
-    value !== null &&
-    typeof value === 'object'
-  ) {
-
-    const response =
-      value as {
-        data?: unknown;
-        content?: unknown;
-        items?: unknown;
-        rows?: unknown;
-        result?: unknown;
-      };
-
-
-    // { data: [...] }
-
-    if (Array.isArray(response.data)) {
-      return response.data as BreakdownRow[];
-    }
-
-
-    // { content: [...] }
-
-    if (Array.isArray(response.content)) {
-      return response.content as BreakdownRow[];
-    }
-
-
-    // { items: [...] }
-
-    if (Array.isArray(response.items)) {
-      return response.items as BreakdownRow[];
-    }
-
-
-    // { rows: [...] }
-
-    if (Array.isArray(response.rows)) {
-      return response.rows as BreakdownRow[];
-    }
-
-
-    // { result: [...] }
-
-    if (Array.isArray(response.result)) {
-      return response.result as BreakdownRow[];
-    }
-  }
-
-
-  // Anything else becomes an empty array.
-  return [];
-}
-
-
-// ============================================================
-// PAGE
-// ============================================================
-
 export default function BnrReportPage() {
-
-  // ==========================================================
-  // FILTERS
-  // ==========================================================
 
   const [period, setPeriod] =
     useState<RegulatoryPeriod>('MONTHLY');
@@ -128,11 +30,6 @@ export default function BnrReportPage() {
 
   const [to, setTo] =
     useState<string>('');
-
-
-  // ==========================================================
-  // DATA
-  // ==========================================================
 
   const [summary, setSummary] =
     useState<BnrSummary | null>(null);
@@ -146,11 +43,6 @@ export default function BnrReportPage() {
   const [genderBreakdown, setGenderBreakdown] =
     useState<BreakdownRow[]>([]);
 
-
-  // ==========================================================
-  // UI STATE
-  // ==========================================================
-
   const [loading, setLoading] =
     useState<boolean>(true);
 
@@ -160,22 +52,12 @@ export default function BnrReportPage() {
   const [error, setError] =
     useState<string | null>(null);
 
-
-  // ==========================================================
-  // REPORT PARAMETERS
-  // ==========================================================
-
   const reportParams =
     useMemo<BnrReportParams>(() => {
 
       const params: BnrReportParams = {
         period,
       };
-
-
-      /*
-       * Only send from/to for CUSTOM periods.
-       */
 
       if (period === 'CUSTOM') {
 
@@ -188,7 +70,6 @@ export default function BnrReportPage() {
         }
       }
 
-
       return params;
 
     }, [
@@ -197,11 +78,6 @@ export default function BnrReportPage() {
       to,
     ]);
 
-
-  // ==========================================================
-  // VALIDATE CUSTOM DATES
-  // ==========================================================
-
   const validateFilters =
     useCallback((): string | null => {
 
@@ -209,21 +85,17 @@ export default function BnrReportPage() {
         return null;
       }
 
-
       if (!from) {
         return 'Please select a start date.';
       }
-
 
       if (!to) {
         return 'Please select an end date.';
       }
 
-
       if (from > to) {
         return 'The start date cannot be after the end date.';
       }
-
 
       return null;
 
@@ -233,17 +105,11 @@ export default function BnrReportPage() {
       to,
     ]);
 
-
-  // ==========================================================
-  // LOAD BNR REPORT
-  // ==========================================================
-
   const loadReport =
     useCallback(async (): Promise<void> => {
 
       const validationError =
         validateFilters();
-
 
       if (validationError) {
 
@@ -251,18 +117,14 @@ export default function BnrReportPage() {
           validationError
         );
 
-        setLoading(false);
-
         return;
       }
-
 
       try {
 
         setLoading(true);
 
         setError(null);
-
 
         const [
           summaryResult,
@@ -286,52 +148,24 @@ export default function BnrReportPage() {
           regulatoryApi.bnrByGender(
             reportParams
           ),
-
         ]);
 
-
-        // ====================================================
-        // SUMMARY
-        // ====================================================
 
         setSummary(
           summaryResult
         );
 
-
-        // ====================================================
-        // BREAKDOWNS
-        // ====================================================
-        //
-        // IMPORTANT:
-        // Normalize the API response before storing it.
-        //
-        // This prevents:
-        //
-        // TypeError: a.map is not a function
-        //
-        // ====================================================
-
         setLoanTypeBreakdown(
-          normalizeBreakdownRows(
-            loanTypeResult
-          )
+          loanTypeResult
         );
-
 
         setBranchBreakdown(
-          normalizeBreakdownRows(
-            branchResult
-          )
+          branchResult
         );
-
 
         setGenderBreakdown(
-          normalizeBreakdownRows(
-            genderResult
-          )
+          genderResult
         );
-
 
       } catch (err) {
 
@@ -340,21 +174,12 @@ export default function BnrReportPage() {
           err
         );
 
-
         setError(
           regulatoryApi.getErrorMessage(
             err,
             'Failed to load the BNR report.'
           )
         );
-
-
-        // Keep breakdown states safe.
-        setLoanTypeBreakdown([]);
-
-        setBranchBreakdown([]);
-
-        setGenderBreakdown([]);
 
       } finally {
 
@@ -366,11 +191,6 @@ export default function BnrReportPage() {
       validateFilters,
     ]);
 
-
-  // ==========================================================
-  // INITIAL LOAD / PERIOD CHANGE
-  // ==========================================================
-
   useEffect(() => {
 
     void loadReport();
@@ -378,11 +198,6 @@ export default function BnrReportPage() {
   }, [
     loadReport,
   ]);
-
-
-  // ==========================================================
-  // DOWNLOAD REPORT
-  // ==========================================================
 
   const downloadReport =
     useCallback(
@@ -393,7 +208,6 @@ export default function BnrReportPage() {
         const validationError =
           validateFilters();
 
-
         if (validationError) {
 
           setError(
@@ -403,7 +217,6 @@ export default function BnrReportPage() {
           return;
         }
 
-
         try {
 
           setError(null);
@@ -412,12 +225,10 @@ export default function BnrReportPage() {
             format
           );
 
-
           await regulatoryApi.bnrExport(
             format,
             reportParams
           );
-
 
         } catch (err) {
 
@@ -426,14 +237,12 @@ export default function BnrReportPage() {
             err
           );
 
-
           setError(
             regulatoryApi.getErrorMessage(
               err,
               `Failed to download BNR ${format.toUpperCase()} report.`
             )
           );
-
 
         } finally {
 
@@ -450,10 +259,6 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
-  // PDF DOWNLOAD
-  // ============================================================
-
   const handleDownloadPdf =
     useCallback(
       async (): Promise<void> => {
@@ -468,10 +273,6 @@ export default function BnrReportPage() {
       ]
     );
 
-
-  // ============================================================
-  // EXCEL DOWNLOAD
-  // ============================================================
 
   const handleDownloadExcel =
     useCallback(
@@ -488,10 +289,6 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
-  // CSV DOWNLOAD
-  // ============================================================
-
   const handleDownloadCsv =
     useCallback(
       async (): Promise<void> => {
@@ -507,10 +304,6 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
-  // FORMAT MONEY
-  // ============================================================
-
   const formatMoney =
     useCallback(
       (
@@ -521,10 +314,8 @@ export default function BnrReportPage() {
           summary?.currency ||
           'RWF';
 
-
         const amount =
           Number(value || 0);
-
 
         return new Intl.NumberFormat(
           'en-RW',
@@ -541,10 +332,6 @@ export default function BnrReportPage() {
       ]
     );
 
-
-  // ============================================================
-  // FORMAT NUMBER
-  // ============================================================
 
   const formatNumber =
     useCallback(
@@ -563,10 +350,6 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
-  // FORMAT PERCENT
-  // ============================================================
-
   const formatPercent =
     useCallback(
       (
@@ -580,14 +363,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
-  // LOADING
-  // ============================================================
-
   if (loading) {
 
     return (
-
       <div className="min-h-screen bg-gray-50 p-6">
 
         <div className="mx-auto max-w-7xl">
@@ -596,9 +374,7 @@ export default function BnrReportPage() {
 
             <div className="h-10 w-72 rounded bg-gray-200" />
 
-
             <div className="h-24 rounded bg-gray-200" />
-
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
 
@@ -606,12 +382,10 @@ export default function BnrReportPage() {
                 { length: 4 }
               ).map(
                 (_, index) => (
-
                   <div
                     key={index}
                     className="h-32 rounded bg-gray-200"
                   />
-
                 )
               )}
 
@@ -622,25 +396,15 @@ export default function BnrReportPage() {
         </div>
 
       </div>
-
     );
   }
 
-
-  // ============================================================
-  // RENDER
-  // ============================================================
 
   return (
 
     <div className="min-h-screen bg-gray-50">
 
       <div className="mx-auto max-w-7xl space-y-6 p-6">
-
-
-        {/* ================================================== */}
-        {/* HEADER */}
-        {/* ================================================== */}
 
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 
@@ -650,17 +414,12 @@ export default function BnrReportPage() {
               BNR Regulatory Report
             </h1>
 
-
             <p className="mt-1 text-sm text-gray-500">
               Regulatory reporting and portfolio information.
             </p>
 
           </div>
 
-
-          {/* ================================================== */}
-          {/* EXPORT BUTTONS */}
-          {/* ================================================== */}
 
           <div className="flex flex-wrap gap-2">
 
@@ -716,10 +475,6 @@ export default function BnrReportPage() {
         </div>
 
 
-        {/* ================================================== */}
-        {/* ERROR */}
-        {/* ================================================== */}
-
         {error && (
 
           <div className="rounded-lg border border-red-200 bg-red-50 p-4">
@@ -731,7 +486,6 @@ export default function BnrReportPage() {
                 <p className="font-semibold text-red-800">
                   Report error
                 </p>
-
 
                 <p className="mt-1 text-sm text-red-700">
                   {error}
@@ -755,10 +509,6 @@ export default function BnrReportPage() {
         )}
 
 
-        {/* ================================================== */}
-        {/* FILTERS */}
-        {/* ================================================== */}
-
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
           <div className="mb-4">
@@ -766,7 +516,6 @@ export default function BnrReportPage() {
             <h2 className="font-semibold text-gray-900">
               Report period
             </h2>
-
 
             <p className="text-sm text-gray-500">
               Select the reporting period used for the BNR report.
@@ -777,10 +526,7 @@ export default function BnrReportPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
 
-
-            {/* ================================================= */}
             {/* PERIOD */}
-            {/* ================================================= */}
 
             <div>
 
@@ -790,7 +536,6 @@ export default function BnrReportPage() {
               >
                 Period
               </label>
-
 
               <select
                 id="bnr-period"
@@ -809,26 +554,21 @@ export default function BnrReportPage() {
                   Daily
                 </option>
 
-
                 <option value="WEEKLY">
                   Weekly
                 </option>
-
 
                 <option value="MONTHLY">
                   Monthly
                 </option>
 
-
                 <option value="QUARTERLY">
                   Quarterly
                 </option>
 
-
                 <option value="YEARLY">
                   Yearly
                 </option>
-
 
                 <option value="CUSTOM">
                   Custom
@@ -839,9 +579,7 @@ export default function BnrReportPage() {
             </div>
 
 
-            {/* ================================================= */}
             {/* FROM */}
-            {/* ================================================= */}
 
             <div>
 
@@ -851,7 +589,6 @@ export default function BnrReportPage() {
               >
                 From
               </label>
-
 
               <input
                 id="bnr-from"
@@ -869,9 +606,7 @@ export default function BnrReportPage() {
             </div>
 
 
-            {/* ================================================= */}
             {/* TO */}
-            {/* ================================================= */}
 
             <div>
 
@@ -881,7 +616,6 @@ export default function BnrReportPage() {
               >
                 To
               </label>
-
 
               <input
                 id="bnr-to"
@@ -916,11 +650,6 @@ export default function BnrReportPage() {
 
         </div>
 
-
-        {/* ================================================== */}
-        {/* ORGANIZATION */}
-        {/* ================================================== */}
-
         {summary && (
 
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -930,20 +659,14 @@ export default function BnrReportPage() {
               <div>
 
                 <h2 className="text-lg font-semibold text-gray-900">
-
                   {summary.organizationName ||
                     'Organization'}
-
                 </h2>
 
-
                 <p className="text-sm text-gray-500">
-
                   BNR Institution Code:{' '}
-
                   {summary.bnrInstitutionCode ||
                     'Not configured'}
-
                 </p>
 
               </div>
@@ -967,11 +690,6 @@ export default function BnrReportPage() {
 
         )}
 
-
-        {/* ================================================== */}
-        {/* KPI CARDS */}
-        {/* ================================================== */}
-
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
 
@@ -983,13 +701,10 @@ export default function BnrReportPage() {
               Total Loans Issued
             </p>
 
-
             <p className="mt-2 text-2xl font-bold text-gray-900">
-
               {formatNumber(
                 summary?.totalLoansIssued
               )}
-
             </p>
 
           </div>
@@ -1003,13 +718,10 @@ export default function BnrReportPage() {
               Active Loans
             </p>
 
-
             <p className="mt-2 text-2xl font-bold text-gray-900">
-
               {formatNumber(
                 summary?.activeLoans
               )}
-
             </p>
 
           </div>
@@ -1023,13 +735,10 @@ export default function BnrReportPage() {
               Principal Disbursed
             </p>
 
-
             <p className="mt-2 text-2xl font-bold text-gray-900">
-
               {formatMoney(
                 summary?.totalPrincipalDisbursed
               )}
-
             </p>
 
           </div>
@@ -1043,13 +752,10 @@ export default function BnrReportPage() {
               Outstanding Principal
             </p>
 
-
             <p className="mt-2 text-2xl font-bold text-gray-900">
-
               {formatMoney(
                 summary?.outstandingPrincipal
               )}
-
             </p>
 
           </div>
@@ -1063,13 +769,10 @@ export default function BnrReportPage() {
               Interest Collected
             </p>
 
-
             <p className="mt-2 text-xl font-bold text-gray-900">
-
               {formatMoney(
                 summary?.totalInterestCollected
               )}
-
             </p>
 
           </div>
@@ -1083,13 +786,10 @@ export default function BnrReportPage() {
               Overdue Loans
             </p>
 
-
             <p className="mt-2 text-2xl font-bold text-gray-900">
-
               {formatNumber(
                 summary?.overdueLoans
               )}
-
             </p>
 
           </div>
@@ -1103,22 +803,16 @@ export default function BnrReportPage() {
               PAR Ratio
             </p>
 
-
             <p className="mt-2 text-2xl font-bold text-gray-900">
-
               {formatPercent(
                 summary?.parRatio
               )}
-
             </p>
 
-
             <p className="mt-1 text-xs text-gray-500">
-
               {formatMoney(
                 summary?.parAmount
               )}
-
             </p>
 
           </div>
@@ -1132,22 +826,16 @@ export default function BnrReportPage() {
               NPL Ratio
             </p>
 
-
             <p className="mt-2 text-2xl font-bold text-gray-900">
-
               {formatPercent(
                 summary?.nplRatio
               )}
-
             </p>
 
-
             <p className="mt-1 text-xs text-gray-500">
-
               {formatMoney(
                 summary?.nplAmount
               )}
-
             </p>
 
           </div>
@@ -1155,16 +843,11 @@ export default function BnrReportPage() {
         </div>
 
 
-        {/* ================================================== */}
-        {/* LOAN STATUS */}
-        {/* ================================================== */}
-
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
           <h2 className="mb-4 text-lg font-semibold text-gray-900">
             Loan Status
           </h2>
-
 
           <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
 
@@ -1173,24 +856,20 @@ export default function BnrReportPage() {
               value={summary?.activeLoans}
             />
 
-
             <StatusItem
               label="Closed"
               value={summary?.closedLoans}
             />
-
 
             <StatusItem
               label="Pending"
               value={summary?.pendingLoans}
             />
 
-
             <StatusItem
               label="Rejected"
               value={summary?.rejectedLoans}
             />
-
 
             <StatusItem
               label="Defaulted"
@@ -1202,21 +881,12 @@ export default function BnrReportPage() {
         </div>
 
 
-        {/* ================================================== */}
-        {/* BORROWER GENDER */}
-        {/* ================================================== */}
-
         <BreakdownTable
           title="Borrowers by Gender"
           rows={genderBreakdown}
           formatMoney={formatMoney}
           formatNumber={formatNumber}
         />
-
-
-        {/* ================================================== */}
-        {/* LOAN TYPE */}
-        {/* ================================================== */}
 
         <BreakdownTable
           title="Loans by Loan Type"
@@ -1226,9 +896,6 @@ export default function BnrReportPage() {
         />
 
 
-        {/* ================================================== */}
-        {/* BRANCH */}
-        {/* ================================================== */}
 
         <BreakdownTable
           title="Loans by Branch"
@@ -1238,9 +905,6 @@ export default function BnrReportPage() {
         />
 
 
-        {/* ================================================== */}
-        {/* FOOTER */}
-        {/* ================================================== */}
 
         <div className="pb-8 text-center text-xs text-gray-400">
 
@@ -1252,14 +916,9 @@ export default function BnrReportPage() {
       </div>
 
     </div>
-
   );
 }
 
-
-// ============================================================
-// STATUS ITEM
-// ============================================================
 
 function StatusItem({
   label,
@@ -1277,26 +936,18 @@ function StatusItem({
         {label}
       </p>
 
-
       <p className="mt-1 text-xl font-semibold text-gray-900">
-
         {new Intl.NumberFormat(
           'en-US'
         ).format(
           Number(value || 0)
         )}
-
       </p>
 
     </div>
-
   );
 }
 
-
-// ============================================================
-// BREAKDOWN TABLE
-// ============================================================
 
 function BreakdownTable({
   title,
@@ -1317,19 +968,6 @@ function BreakdownTable({
   ) => string;
 }) {
 
-  /*
-   * Extra defensive protection.
-   *
-   * Even though the state is typed as BreakdownRow[],
-   * runtime JavaScript can still receive bad API data.
-   */
-
-  const safeRows =
-    Array.isArray(rows)
-      ? rows
-      : [];
-
-
   return (
 
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1343,7 +981,7 @@ function BreakdownTable({
       </div>
 
 
-      {safeRows.length === 0 ? (
+      {rows.length === 0 ? (
 
         <div className="p-6 text-center text-sm text-gray-500">
           No data available for this period.
@@ -1366,14 +1004,12 @@ function BreakdownTable({
                   Category
                 </th>
 
-
                 <th
                   scope="col"
                   className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500"
                 >
                   Count
                 </th>
-
 
                 <th
                   scope="col"
@@ -1389,7 +1025,7 @@ function BreakdownTable({
 
             <tbody className="divide-y divide-gray-200 bg-white">
 
-              {safeRows.map(
+              {rows.map(
                 (row, index) => (
 
                   <tr
@@ -1398,27 +1034,19 @@ function BreakdownTable({
                   >
 
                     <td className="px-5 py-3 text-sm font-medium text-gray-900">
-
                       {row.label}
-
                     </td>
 
-
                     <td className="px-5 py-3 text-right text-sm text-gray-700">
-
                       {formatNumber(
                         row.count
                       )}
-
                     </td>
 
-
                     <td className="px-5 py-3 text-right text-sm text-gray-700">
-
                       {formatMoney(
                         row.amount
                       )}
-
                     </td>
 
                   </tr>
@@ -1435,6 +1063,5 @@ function BreakdownTable({
       )}
 
     </div>
-
   );
 }
