@@ -18,7 +18,6 @@ public class CreditBureauController {
 
     private final CreditBureauService creditBureauService;
 
-
     // ============================================================
     // RUN CREDIT BUREAU CHECK
     // ============================================================
@@ -26,8 +25,8 @@ public class CreditBureauController {
     @PostMapping("/borrowers/{borrowerId}/check")
     public ResponseEntity<CreditBureauCheckResponse> runCheck(
             @PathVariable Long borrowerId,
-            @RequestParam Long organizationId,
-            @RequestParam(required = false) String requestedBy
+            @RequestParam(name = "organizationId") Long organizationId,
+            @RequestParam(name = "requestedBy", required = false) String requestedBy
     ) {
 
         CreditBureauCheck check =
@@ -42,15 +41,14 @@ public class CreditBureauController {
         );
     }
 
-
     // ============================================================
-    // LATEST CHECK
+    // LATEST CREDIT BUREAU CHECK
     // ============================================================
 
     @GetMapping("/borrowers/{borrowerId}/latest")
     public ResponseEntity<CreditBureauCheckResponse> getLatest(
             @PathVariable Long borrowerId,
-            @RequestParam Long organizationId
+            @RequestParam(name = "organizationId") Long organizationId
     ) {
 
         return creditBureauService
@@ -64,15 +62,14 @@ public class CreditBureauController {
                 );
     }
 
-
     // ============================================================
-    // HISTORY
+    // CREDIT BUREAU HISTORY
     // ============================================================
 
     @GetMapping("/borrowers/{borrowerId}/history")
     public ResponseEntity<List<CreditBureauCheckResponse>> getHistory(
             @PathVariable Long borrowerId,
-            @RequestParam Long organizationId
+            @RequestParam(name = "organizationId") Long organizationId
     ) {
 
         return ResponseEntity.ok(
