@@ -55,29 +55,6 @@ export interface CreditBureauReportParams {
 }
 
 
-// ============================================================
-// INDIVIDUAL CREDIT BUREAU CHECK PARAMETERS
-// ============================================================
-//
-// These parameters are for:
-//
-// /api/credit-bureau/borrowers/{borrowerId}/check
-// /api/credit-bureau/borrowers/{borrowerId}/latest
-// /api/credit-bureau/borrowers/{borrowerId}/history
-//
-// They are different from CreditBureauReportParams because
-// regulatory export endpoints obtain organizationId from
-// the authenticated backend user.
-// ============================================================
-
-export interface CreditBureauCheckParams {
-
-  organizationId: number;
-
-  requestedBy?: string;
-}
-
-
 type QueryParams =
   Record<string, unknown>;
 
@@ -120,7 +97,6 @@ export interface BnrSummary {
 
   currency?: string;
 
-
   reportPeriod?: string;
 
   periodStart?: string;
@@ -135,11 +111,9 @@ export interface BnrSummary {
 
   reportReference?: string;
 
-
   branchId?: number;
 
   branchName?: string;
-
 
   totalLoans?: number;
 
@@ -167,7 +141,6 @@ export interface BnrSummary {
 
   restructuredLoans?: number;
 
-
   totalPrincipalDisbursed?: number;
 
   totalApprovedAmount?: number;
@@ -178,7 +151,6 @@ export interface BnrSummary {
 
   smallestLoanAmount?: number;
 
-
   outstandingPrincipal?: number;
 
   outstandingInterest?: number;
@@ -186,7 +158,6 @@ export interface BnrSummary {
   outstandingFees?: number;
 
   totalOutstanding?: number;
-
 
   totalPrincipalCollected?: number;
 
@@ -206,7 +177,6 @@ export interface BnrSummary {
 
   overduePayments?: number;
 
-
   parAmount?: number;
 
   parRatio?: number;
@@ -218,7 +188,6 @@ export interface BnrSummary {
   par60Ratio?: number;
 
   par90Ratio?: number;
-
 
   par1To30Amount?: number;
 
@@ -232,13 +201,11 @@ export interface BnrSummary {
 
   parOver365Amount?: number;
 
-
   nplAmount?: number;
 
   nplRatio?: number;
 
   nplLoanCount?: number;
-
 
   loansOver30Days?: number;
 
@@ -250,20 +217,17 @@ export interface BnrSummary {
 
   loansOver365Days?: number;
 
-
   defaultedAmount?: number;
 
   writtenOffAmount?: number;
 
   recoveriesAfterWriteOff?: number;
 
-
   requiredProvision?: number;
 
   existingProvision?: number;
 
   provisionShortfall?: number;
-
 
   totalBorrowers?: number;
 
@@ -277,13 +241,11 @@ export interface BnrSummary {
 
   borrowersWithMultipleLoans?: number;
 
-
   youthBorrowers?: number;
 
   adultBorrowers?: number;
 
   seniorBorrowers?: number;
-
 
   borrowersCreditChecked?: number;
 
@@ -295,13 +257,11 @@ export interface BnrSummary {
 
   totalExternalDebt?: number;
 
-
   loanTypeBreakdown?: BreakdownRow[];
 
   branchBreakdown?: BreakdownRow[];
 
   genderBreakdown?: BreakdownRow[];
-
 
   loansMissingBorrower?: number;
 
@@ -313,9 +273,7 @@ export interface BnrSummary {
 
   loansMissingRepaymentSchedule?: number;
 
-
   dataQualityWarnings?: string[];
-
 
   reportStatus?: string;
 
@@ -359,7 +317,6 @@ export interface BnrFinancialStatementReport {
 
   currency?: string;
 
-
   reportPeriod?: string;
 
   periodStart?: string;
@@ -368,13 +325,11 @@ export interface BnrFinancialStatementReport {
 
   generatedAt?: string;
 
-
   assets?: FinancialStatementRow[];
 
   liabilities?: FinancialStatementRow[];
 
   equity?: FinancialStatementRow[];
-
 
   totalAssets?: number;
 
@@ -386,18 +341,15 @@ export interface BnrFinancialStatementReport {
 
   balanceSheetBalanced?: boolean;
 
-
   income?: FinancialStatementRow[];
 
   expenses?: FinancialStatementRow[];
-
 
   totalIncome?: number;
 
   totalExpenses?: number;
 
   netIncome?: number;
-
 
   cashUsedForLending?: number;
 
@@ -408,7 +360,6 @@ export interface BnrFinancialStatementReport {
   otherCashMovement?: number;
 
   netChangeInCash?: number;
-
 
   trialBalanceDebit?: number;
 
@@ -423,7 +374,7 @@ export type BnrFinancialStatement =
 
 
 // ============================================================
-// CREDIT BUREAU EXPORT RECORD
+// CREDIT BUREAU
 // ============================================================
 
 export interface CreditRecord {
@@ -440,13 +391,11 @@ export interface CreditRecord {
 
   phone?: string;
 
-
   loanNumber?: string;
 
   loanType?: string;
 
   loanStatus?: string;
-
 
   loanAmount?: number;
 
@@ -456,7 +405,6 @@ export interface CreditRecord {
 
   creditScore?: number;
 
-
   dateOpened?: string;
 
   lastPaymentDate?: string;
@@ -464,7 +412,6 @@ export interface CreditRecord {
   maturityDate?: string;
 
   dateClosed?: string;
-
 
   branchName?: string;
 
@@ -479,14 +426,6 @@ export type CreditBureauRecord =
 // ============================================================
 // CREDIT BUREAU CHECK RESPONSE
 // ============================================================
-//
-// We keep this flexible until the exact Java
-// CreditBureauCheckResponse DTO is supplied.
-//
-// The known fields are included, while the index signature
-// prevents the frontend from breaking if the backend DTO
-// contains additional fields.
-// ============================================================
 
 export interface CreditBureauCheckResponse {
 
@@ -494,21 +433,33 @@ export interface CreditBureauCheckResponse {
 
   borrowerId?: number;
 
-  organizationId?: number;
+  borrowerName?: string;
 
-  status?: string;
+  nationalId?: string;
 
   creditScore?: number;
 
+  status?: string;
+
+  result?: string;
+
   riskLevel?: string;
 
-  requestedBy?: string;
+  totalLoans?: number;
+
+  activeLoans?: number;
+
+  outstandingBalance?: number;
+
+  overdueAmount?: number;
+
+  daysPastDue?: number;
+
+  defaultHistory?: boolean;
 
   checkedAt?: string;
 
-  createdAt?: string;
-
-  updatedAt?: string;
+  requestedBy?: string;
 
   message?: string;
 
@@ -601,7 +552,7 @@ interface ApiEnvelope<T = unknown> {
 
 
 // ============================================================
-// AXIOS RESPONSE-LIKE
+// AXIOS RESPONSE
 // ============================================================
 
 interface ApiResponseLike<T = unknown> {
@@ -628,10 +579,6 @@ function extractPayload<T>(
     response;
 
 
-  // ----------------------------------------------------------
-  // AXIOS RESPONSE
-  // ----------------------------------------------------------
-
   if (
     current &&
     typeof current === 'object'
@@ -639,7 +586,6 @@ function extractPayload<T>(
 
     const axiosResponse =
       current as ApiResponseLike;
-
 
     if (
       axiosResponse.data !== undefined
@@ -650,10 +596,6 @@ function extractPayload<T>(
     }
   }
 
-
-  // ----------------------------------------------------------
-  // API ENVELOPE
-  // ----------------------------------------------------------
 
   if (
     current &&
@@ -711,10 +653,6 @@ function unwrapArray<T>(
     response;
 
 
-  // ----------------------------------------------------------
-  // AXIOS RESPONSE
-  // ----------------------------------------------------------
-
   if (
     current &&
     typeof current === 'object'
@@ -722,7 +660,6 @@ function unwrapArray<T>(
 
     const axiosResponse =
       current as ApiResponseLike;
-
 
     if (
       axiosResponse.data !== undefined
@@ -733,10 +670,6 @@ function unwrapArray<T>(
     }
   }
 
-
-  // ----------------------------------------------------------
-  // NESTED ENVELOPES
-  // ----------------------------------------------------------
 
   for (
     let depth = 0;
@@ -763,15 +696,10 @@ function unwrapArray<T>(
 
     const value =
       current as {
-
         data?: unknown;
-
         content?: unknown;
-
         items?: unknown;
-
         results?: unknown;
-
         records?: unknown;
       };
 
@@ -898,8 +826,7 @@ function toQueryParams(
   }
 
 
-  const query: QueryParams =
-    {};
+  const query: QueryParams = {};
 
 
   if (
@@ -947,7 +874,7 @@ function toQueryParams(
 
 
 // ============================================================
-// CREDIT BUREAU EXPORT QUERY PARAMETERS
+// CREDIT BUREAU QUERY
 // ============================================================
 
 function toCreditBureauQueryParams(
@@ -960,8 +887,7 @@ function toCreditBureauQueryParams(
   }
 
 
-  const query: QueryParams =
-    {};
+  const query: QueryParams = {};
 
 
   if (
@@ -1022,7 +948,6 @@ function triggerDownload(
   anchor.href =
     url;
 
-
   anchor.download =
     filename;
 
@@ -1033,7 +958,6 @@ function triggerDownload(
 
 
   anchor.click();
-
 
   anchor.remove();
 
@@ -1060,13 +984,9 @@ function extractErrorMessage(
 
     const value =
       error as {
-
         response?: {
-
           data?: {
-
             message?: string;
-
             error?: string;
           };
         };
@@ -1132,7 +1052,6 @@ function extractErrorMessage(
 // ============================================================
 
 export const regulatoryApi = {
-
 
   // ==========================================================
   // BNR SUMMARY
@@ -1215,7 +1134,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // BNR LOAN TYPE BREAKDOWN
+  // BNR LOAN TYPE
   // ==========================================================
 
   async bnrByLoanType(
@@ -1239,7 +1158,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // BNR BRANCH BREAKDOWN
+  // BNR BRANCH
   // ==========================================================
 
   async bnrByBranch(
@@ -1263,7 +1182,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // BNR GENDER BREAKDOWN
+  // BNR GENDER
   // ==========================================================
 
   async bnrByGender(
@@ -1300,9 +1219,7 @@ export const regulatoryApi = {
         '/regulatory/bnr/export',
         {
           params: {
-
             ...toQueryParams(params),
-
             format,
           },
 
@@ -1314,21 +1231,15 @@ export const regulatoryApi = {
 
     const blob =
       response.data instanceof Blob
-
         ? response.data
-
         : new Blob(
             [response.data],
             {
               type:
                 format === 'pdf'
-
                   ? 'application/pdf'
-
                   : format === 'csv'
-
                     ? 'text/csv'
-
                     : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             }
           );
@@ -1342,17 +1253,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // CREDIT BUREAU REGULATORY PREVIEW
-  // ==========================================================
-  //
-  // Backend:
-  //
-  // GET /api/regulatory/credit-bureau/preview
-  //
-  // organizationId is NOT sent.
-  //
-  // Backend gets it from authenticated user.
-  //
+  // CREDIT BUREAU PREVIEW
   // ==========================================================
 
   async creditBureauPreview(
@@ -1378,19 +1279,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // CREDIT BUREAU REGULATORY EXPORT
-  // ==========================================================
-  //
-  // Backend:
-  //
-  // GET /api/regulatory/credit-bureau/export
-  //
-  // Supported:
-  //
-  // csv
-  // pdf
-  // xlsx
-  //
+  // CREDIT BUREAU EXPORT
   // ==========================================================
 
   async creditBureauExport(
@@ -1403,7 +1292,6 @@ export const regulatoryApi = {
         '/regulatory/credit-bureau/export',
         {
           params: {
-
             ...toCreditBureauQueryParams(
               params
             ),
@@ -1419,23 +1307,9 @@ export const regulatoryApi = {
 
     const blob =
       response.data instanceof Blob
-
         ? response.data
-
         : new Blob(
-            [response.data],
-            {
-              type:
-                format === 'pdf'
-
-                  ? 'application/pdf'
-
-                  : format === 'csv'
-
-                    ? 'text/csv'
-
-                    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            }
+            [response.data]
           );
 
 
@@ -1447,34 +1321,16 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // INDIVIDUAL CREDIT BUREAU HISTORY
-  // ==========================================================
-  //
-  // Backend:
-  //
-  // GET
-  // /api/credit-bureau/borrowers/{borrowerId}/history
-  //
-  // Required:
-  //
-  // organizationId
-  //
+  // CREDIT BUREAU HISTORY
   // ==========================================================
 
   async creditBureauHistory(
-    borrowerId: number,
-    organizationId: number
+    borrowerId: number
   ): Promise<CreditBureauCheckResponse[]> {
 
     const response =
       await api.get(
-        `/credit-bureau/borrowers/${borrowerId}/history`,
-        {
-          params: {
-
-            organizationId,
-          },
-        }
+        `/credit-bureau/borrowers/${borrowerId}/history`
       );
 
 
@@ -1485,36 +1341,18 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // INDIVIDUAL CREDIT BUREAU LATEST
-  // ==========================================================
-  //
-  // Backend:
-  //
-  // GET
-  // /api/credit-bureau/borrowers/{borrowerId}/latest
-  //
-  // Required:
-  //
-  // organizationId
-  //
+  // CREDIT BUREAU LATEST
   // ==========================================================
 
   async creditBureauLatest(
-    borrowerId: number,
-    organizationId: number
+    borrowerId: number
   ): Promise<CreditBureauCheckResponse | null> {
 
     try {
 
       const response =
         await api.get(
-          `/credit-bureau/borrowers/${borrowerId}/latest`,
-          {
-            params: {
-
-              organizationId,
-            },
-          }
+          `/credit-bureau/borrowers/${borrowerId}/latest`
         );
 
 
@@ -1534,51 +1372,16 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // RUN INDIVIDUAL CREDIT BUREAU CHECK
-  // ==========================================================
-  //
-  // Backend:
-  //
-  // POST
-  // /api/credit-bureau/borrowers/{borrowerId}/check
-  //
-  // Required:
-  //
-  // organizationId
-  //
-  // Optional:
-  //
-  // requestedBy
-  //
+  // RUN CREDIT BUREAU CHECK
   // ==========================================================
 
   async runCreditBureauCheck(
-    borrowerId: number,
-    organizationId: number,
-    requestedBy?: string
+    borrowerId: number
   ): Promise<CreditBureauCheckResponse> {
 
     const response =
       await api.post(
-
-        `/credit-bureau/borrowers/${borrowerId}/check`,
-
-        null,
-
-        {
-          params: {
-
-            organizationId,
-
-            ...(requestedBy &&
-            requestedBy.trim() !== ''
-              ? {
-                  requestedBy:
-                    requestedBy.trim(),
-                }
-              : {}),
-          },
-        }
+        `/credit-bureau/borrowers/${borrowerId}/check`
       );
 
 
@@ -1591,12 +1394,6 @@ export const regulatoryApi = {
   // ==========================================================
   // LEGACY CREDIT BUREAU
   // ==========================================================
-  //
-  // Kept for compatibility with old screens.
-  //
-  // Do NOT use this for the actual individual credit check.
-  //
-  // ==========================================================
 
   async creditBureau(
     _params?: BnrReportParams
@@ -1607,7 +1404,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // CREDIT BUREAU REPORT ALIAS
+  // CREDIT BUREAU REPORT
   // ==========================================================
 
   async creditBureauReport(
@@ -1644,7 +1441,6 @@ export const regulatoryApi = {
 
   async createApiClient(
     data: {
-
       name: string;
 
       clientType:
@@ -1683,9 +1479,7 @@ export const regulatoryApi = {
 
     const response =
       await api.post(
-
         `/regulatory/api-clients/${id}/revoke`,
-
         {
           reason,
         }
@@ -1704,7 +1498,6 @@ export const regulatoryApi = {
 
   getErrorMessage(
     error: unknown,
-
     fallback =
       'An error occurred while loading the regulatory report.'
   ): string {
@@ -1716,9 +1509,5 @@ export const regulatoryApi = {
   },
 };
 
-
-// ============================================================
-// DEFAULT EXPORT
-// ============================================================
 
 export default regulatoryApi;
