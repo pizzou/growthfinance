@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.dto.regulatory;
 
 import lombok.AllArgsConstructor;
