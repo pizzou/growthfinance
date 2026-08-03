@@ -1,12 +1,14 @@
-
 package com.patrick.fintech.loan_backend.util;
 
 import com.patrick.fintech.loan_backend.model.User;
 import com.patrick.fintech.loan_backend.repository.UserRepository;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -19,6 +21,7 @@ public class CurrentUserUtil {
     // CURRENT USER
     // ============================================================
 
+    @Transactional(readOnly = true)
     public User getCurrentUser() {
 
         Authentication auth =
@@ -26,17 +29,16 @@ public class CurrentUserUtil {
                         .getContext()
                         .getAuthentication();
 
-
         if (auth == null
                 || !auth.isAuthenticated()
                 || auth.getName() == null
-                || auth.getName().isBlank()) {
+                || auth.getName().isBlank()
+                || "anonymousUser".equals(auth.getName())) {
 
             throw new IllegalStateException(
                     "No authenticated user found"
             );
         }
-
 
         return userRepository
                 .findByEmail(auth.getName())
@@ -50,23 +52,34 @@ public class CurrentUserUtil {
 
 
     // ============================================================
-    // ORGANIZATION
+    // ORGANIZATION ID
     // ============================================================
 
+    @Transactional(readOnly = true)
     public Long getCurrentOrganizationId() {
 
-        User user =
-                getCurrentUser();
+        User user = getCurrentUser();
 
+        if (user == null) {
 
-        if (user.getOrganization() == null
-                || user.getOrganization().getId() == null) {
+            throw new IllegalStateException(
+                    "Current user not found"
+            );
+        }
+
+        if (user.getOrganization() == null) {
 
             throw new IllegalStateException(
                     "Current user is not assigned to an organization"
             );
         }
 
+        if (user.getOrganization().getId() == null) {
+
+            throw new IllegalStateException(
+                    "Current user's organization has no ID"
+            );
+        }
 
         return user
                 .getOrganization()
@@ -75,22 +88,20 @@ public class CurrentUserUtil {
 
 
     // ============================================================
-    // USER ID
+    // CURRENT USER ID
     // ============================================================
 
+    @Transactional(readOnly = true)
     public Long getCurrentUserId() {
 
-        User user =
-                getCurrentUser();
+        User user = getCurrentUser();
 
-
-        if (user.getId() == null) {
+        if (user == null || user.getId() == null) {
 
             throw new IllegalStateException(
                     "Current user has no ID"
             );
         }
-
 
         return user.getId();
     }
