@@ -1,1627 +1,1086 @@
 
 'use client';
 
-import {
+import React, {
+  useCallback,
   useEffect,
   useMemo,
   useState,
 } from 'react';
 
-import { useAuth } from '@/hooks/useAuth';
-
 import {
   regulatoryApi,
-
-  type ApiClient,
+  type BnrReportParams,
   type BnrSummary,
   type BreakdownRow,
-  type ClientType,
-  type CreditRecord,
   type ExportFormat,
-  type FinancialBreakdownRow,
-  type FinancialSummary,
   type RegulatoryPeriod,
-  type RegulatoryReportType,
-} from '@/services/regulatoryService';
-
-import { PageSpinner } from '@/components/ui/Skeleton';
-import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
+} from '@/services/regulatoryService'
 
 
 // ============================================================
-// CONSTANTS
+// TYPES
 // ============================================================
 
-const PERIODS: RegulatoryPeriod[] = [
-  'DAILY',
-  'WEEKLY',
-  'MONTHLY',
-  'QUARTERLY',
-  'YEARLY',
-  'CUSTOM',
-];
-
-
-const EXPORT_FORMATS: ExportFormat[] = [
-  'xlsx',
-  'csv',
-  'pdf',
-];
-
-
-const FINANCIAL_EXPORT_FORMATS: ExportFormat[] = [
-  'xlsx',
-  'csv',
-  'pdf',
-];
+type DownloadingFormat =
+  | ExportFormat
+  | null;
 
 
 // ============================================================
-// FORMATTERS
+// PAGE
 // ============================================================
 
-function fmt(
-  value?: number,
-  currency = 'RWF'
-): string {
+export default function BnrReportPage() {
 
-  if (value == null) {
-    return '—';
-  }
+  // ==========================================================
+  // FILTERS
+  // ==========================================================
 
-  return (
-    new Intl.NumberFormat(
-      'en-US',
-      {
-        maximumFractionDigits: 0,
+  const [period, setPeriod] =
+    useState<RegulatoryPeriod>('MONTHLY');
+
+  const [from, setFrom] =
+    useState<string>('');
+
+  const [to, setTo] =
+    useState<string>('');
+
+
+  // ==========================================================
+  // DATA
+  // ==========================================================
+
+  const [summary, setSummary] =
+    useState<BnrSummary | null>(null);
+
+  const [loanTypeBreakdown, setLoanTypeBreakdown] =
+    useState<BreakdownRow[]>([]);
+
+  const [branchBreakdown, setBranchBreakdown] =
+    useState<BreakdownRow[]>([]);
+
+  const [genderBreakdown, setGenderBreakdown] =
+    useState<BreakdownRow[]>([]);
+
+
+  // ==========================================================
+  // UI STATE
+  // ==========================================================
+
+  const [loading, setLoading] =
+    useState<boolean>(true);
+
+  const [downloadingFormat, setDownloadingFormat] =
+    useState<DownloadingFormat>(null);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+
+  // ==========================================================
+  // REPORT PARAMETERS
+  // ==========================================================
+
+  const reportParams =
+    useMemo<BnrReportParams>(() => {
+
+      const params: BnrReportParams = {
+        period,
+      };
+
+      /*
+       * Only send from/to when:
+       *
+       * 1. period is CUSTOM
+       * 2. the value actually exists
+       */
+
+      if (period === 'CUSTOM') {
+
+        if (from) {
+          params.from = from;
+        }
+
+        if (to) {
+          params.to = to;
+        }
       }
-    ).format(value) +
-    ' ' +
-    currency
-  );
-}
 
+      return params;
 
-function formatDate(
-  value?: string
-): string {
-
-  if (!value) {
-    return '—';
-  }
-
-  const date =
-    new Date(value);
-
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
-    return value;
-  }
-
-  return date.toLocaleDateString();
-}
-
-
-function formatDateTime(
-  value?: string
-): string {
-
-  if (!value) {
-    return 'Never';
-  }
-
-  const date =
-    new Date(value);
-
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
-    return value;
-  }
-
-  return date.toLocaleString();
-}
-
-
-function getErrorMessage(
-  error: unknown,
-  fallback: string
-): string {
-
-  return regulatoryApi.getErrorMessage(
-    error,
-    fallback
-  );
-}
-
-
-
-
-export default function RegulatoryReportsPage() {
-
-  const {
-    isAdmin,
-    user,
-  } = useAuth();
-
-
-  const canView =
-    !!isAdmin ||
-    [
-      'MANAGER',
-      'AUDITOR',
-    ].includes(
-      user?.role || ''
-    );
-
-
-  const [
-    reportType,
-    setReportType,
-  ] = useState<RegulatoryReportType>(
-    'BNR'
-  );
-
-
-  if (!canView) {
-
-    return (
-      <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
-
-        <p className="text-3xl mb-2">
-          🔒
-        </p>
-
-        <p className="text-gray-600 text-sm">
-          You don&apos;t have access to Regulatory Reports.
-        </p>
-
-      </div>
-    );
-  }
-
-
-  return (
-    <div className="space-y-6">
-
-      {/* ================================================== */}
-      {/* HEADER */}
-      {/* ================================================== */}
-
-      <div>
-
-        <h1 className="text-xl font-bold text-gray-900">
-          Regulatory & Financial Reporting
-        </h1>
-
-        <p className="text-sm text-gray-500 mt-1">
-          Generate BNR regulatory reports, financial
-          statements and credit bureau data exports.
-        </p>
-
-      </div>
-
-
-      {/* ================================================== */}
-      {/* REPORT TYPE SELECTOR */}
-      {/* ================================================== */}
-
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-
-        <div className="flex items-center gap-4 flex-wrap">
-
-          <div>
-
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Report Type
-            </label>
-
-            <select
-              value={reportType}
-              onChange={(event) =>
-                setReportType(
-                  event.target
-                    .value as RegulatoryReportType
-                )
-              }
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white min-w-[220px]"
-            >
-
-              <option value="BNR">
-                BNR Regulatory Report
-              </option>
-
-              <option value="FINANCIAL">
-                Financial Report
-              </option>
-
-              <option value="CREDIT_BUREAU">
-                Credit Bureau Report
-              </option>
-
-            </select>
-
-          </div>
-
-
-          <div className="text-xs text-gray-400 max-w-xl">
-
-            {reportType === 'BNR' && (
-              <>
-                Generate regulatory portfolio
-                reports including loan, PAR, NPL,
-                gender, branch and loan-type data.
-              </>
-            )}
-
-            {reportType === 'FINANCIAL' && (
-              <>
-                Generate financial reports covering
-                income, expenses, profit and cash flow.
-              </>
-            )}
-
-            {reportType === 'CREDIT_BUREAU' && (
-              <>
-                Generate restricted borrower-level
-                credit bureau information.
-              </>
-            )}
-
-          </div>
-
-        </div>
-
-      </div>
-
-
-      {/* ================================================== */}
-      {/* REPORT */}
-      {/* ================================================== */}
-
-      {reportType === 'BNR' && (
-        <BnrReport />
-      )}
-
-
-      {reportType === 'FINANCIAL' && (
-        <FinancialReport />
-      )}
-
-
-      {reportType === 'CREDIT_BUREAU' && (
-        <CreditBureauReport />
-      )}
-
-
-      {/* ================================================== */}
-      {/* API ACCESS */}
-      {/* ================================================== */}
-
-      {isAdmin && (
-        <ApiKeysSection />
-      )}
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// BNR REPORT
-// ============================================================
-
-function BnrReport() {
-
-  const [
-    period,
-    setPeriod,
-  ] = useState<RegulatoryPeriod>(
-    'MONTHLY'
-  );
-
-
-  const [
-    from,
-    setFrom,
-  ] = useState('');
-
-
-  const [
-    to,
-    setTo,
-  ] = useState('');
-
-
-  const [
-    summary,
-    setSummary,
-  ] = useState<BnrSummary | null>(
-    null
-  );
-
-
-  const [
-    loanTypes,
-    setLoanTypes,
-  ] = useState<BreakdownRow[]>(
-    []
-  );
-
-
-  const [
-    branches,
-    setBranches,
-  ] = useState<BreakdownRow[]>(
-    []
-  );
-
-
-  const [
-    gender,
-    setGender,
-  ] = useState<BreakdownRow[]>(
-    []
-  );
-
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-
-  const [
-    loadError,
-    setLoadError,
-  ] = useState('');
-
-
-  const [
-    exporting,
-    setExporting,
-  ] = useState<ExportFormat | null>(
-    null
-  );
-
-
-  const params = useMemo(
-    () => ({
-      period,
-
-      from:
-        period === 'CUSTOM'
-          ? from || undefined
-          : undefined,
-
-      to:
-        period === 'CUSTOM'
-          ? to || undefined
-          : undefined,
-    }),
-    [
+    }, [
       period,
       from,
       to,
-    ]
-  );
+    ]);
 
 
-  const load = async () => {
+  // ==========================================================
+  // VALIDATE CUSTOM DATES
+  // ==========================================================
 
-    if (
-      period === 'CUSTOM' &&
-      (!from || !to)
-    ) {
+  const validateFilters =
+    useCallback((): string | null => {
 
-      setLoadError(
-        'Please select both a start and end date.'
-      );
+      if (period !== 'CUSTOM') {
+        return null;
+      }
 
-      return;
-    }
+      if (!from) {
+        return 'Please select a start date.';
+      }
 
+      if (!to) {
+        return 'Please select an end date.';
+      }
 
-    setLoading(true);
-    setLoadError('');
+      if (from > to) {
+        return 'The start date cannot be after the end date.';
+      }
 
+      return null;
 
-    try {
-
-      const [
-        summaryResponse,
-        loanTypeResponse,
-        branchResponse,
-        genderResponse,
-      ] = await Promise.all([
-
-        regulatoryApi.bnrSummary(
-          params
-        ),
-
-        regulatoryApi.bnrByLoanType(
-          params
-        ),
-
-        regulatoryApi.bnrByBranch(
-          params
-        ),
-
-        regulatoryApi.bnrByGender(
-          params
-        ),
-
-      ]);
+    }, [
+      period,
+      from,
+      to,
+    ]);
 
 
-      setSummary(
-        summaryResponse
-      );
+  // ==========================================================
+  // LOAD BNR REPORT
+  // ==========================================================
+
+  const loadReport =
+    useCallback(async (): Promise<void> => {
+
+      const validationError =
+        validateFilters();
+
+      if (validationError) {
+
+        setError(
+          validationError
+        );
+
+        return;
+      }
+
+      try {
+
+        setLoading(true);
+
+        setError(null);
+
+        const [
+          summaryResult,
+          loanTypeResult,
+          branchResult,
+          genderResult,
+        ] = await Promise.all([
+
+          regulatoryApi.bnrSummary(
+            reportParams
+          ),
+
+          regulatoryApi.bnrByLoanType(
+            reportParams
+          ),
+
+          regulatoryApi.bnrByBranch(
+            reportParams
+          ),
+
+          regulatoryApi.bnrByGender(
+            reportParams
+          ),
+        ]);
 
 
-      setLoanTypes(
-        loanTypeResponse || []
-      );
+        setSummary(
+          summaryResult
+        );
+
+        setLoanTypeBreakdown(
+          loanTypeResult
+        );
+
+        setBranchBreakdown(
+          branchResult
+        );
+
+        setGenderBreakdown(
+          genderResult
+        );
+
+      } catch (err) {
+
+        console.error(
+          'Failed to load BNR report:',
+          err
+        );
+
+        setError(
+          regulatoryApi.getErrorMessage(
+            err,
+            'Failed to load the BNR report.'
+          )
+        );
+
+      } finally {
+
+        setLoading(false);
+      }
+
+    }, [
+      reportParams,
+      validateFilters,
+    ]);
 
 
-      setBranches(
-        branchResponse || []
-      );
-
-
-      setGender(
-        genderResponse || []
-      );
-
-    } catch (error) {
-
-      console.error(
-        'Failed to load BNR report:',
-        error
-      );
-
-
-      setLoadError(
-        getErrorMessage(
-          error,
-          'Could not load BNR reports.'
-        )
-      );
-
-    } finally {
-
-      setLoading(false);
-
-    }
-  };
-
+  // ==========================================================
+  // INITIAL LOAD
+  // ==========================================================
 
   useEffect(() => {
 
-    if (
-      period !== 'CUSTOM'
-    ) {
+    void loadReport();
 
-      void load();
-
-    }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period]);
+  }, [
+    loadReport,
+  ]);
 
 
-  const doExport = async (
-    format: ExportFormat
-  ) => {
+  // ==========================================================
+  // DOWNLOAD
+  // ==========================================================
 
-    if (
-      period === 'CUSTOM' &&
-      (!from || !to)
-    ) {
+  const downloadReport =
+    useCallback(
+      async (
+        format: ExportFormat
+      ): Promise<void> => {
 
-      alert(
-        'Please select both From and To dates.'
-      );
+        const validationError =
+          validateFilters();
 
-      return;
-    }
+        if (validationError) {
+
+          setError(
+            validationError
+          );
+
+          return;
+        }
+
+        try {
+
+          setError(null);
+
+          setDownloadingFormat(
+            format
+          );
+
+          /*
+           * IMPORTANT:
+           *
+           * The format is explicitly supplied.
+           *
+           * PDF:
+           *     regulatoryApi.bnrExport(
+           *         'pdf',
+           *         reportParams
+           *     )
+           *
+           * XLSX:
+           *     regulatoryApi.bnrExport(
+           *         'xlsx',
+           *         reportParams
+           *     )
+           *
+           * CSV:
+           *     regulatoryApi.bnrExport(
+           *         'csv',
+           *         reportParams
+           *     )
+           *
+           * Therefore the API client ALWAYS creates:
+           *
+           * /regulatory/bnr/export/pdf
+           *
+           * /regulatory/bnr/export/xlsx
+           *
+           * /regulatory/bnr/export/csv
+           *
+           * and never:
+           *
+           * /regulatory/bnr/export
+           */
+
+          await regulatoryApi.bnrExport(
+            format,
+            reportParams
+          );
+
+        } catch (err) {
+
+          console.error(
+            `Failed to download BNR ${format} report:`,
+            err
+          );
+
+          setError(
+            regulatoryApi.getErrorMessage(
+              err,
+              `Failed to download BNR ${format.toUpperCase()} report.`
+            )
+          );
+
+        } finally {
+
+          setDownloadingFormat(
+            null
+          );
+        }
+
+      },
+      [
+        reportParams,
+        validateFilters,
+      ]
+    );
 
 
-    setExporting(format);
+  // ==========================================================
+  // DEDICATED DOWNLOAD HANDLERS
+  // ==========================================================
+  //
+  // These wrappers make the intended format completely explicit.
+  //
+  // ==========================================================
+
+  const handleDownloadPdf =
+    useCallback(
+      async (): Promise<void> => {
+
+        await downloadReport(
+          'pdf'
+        );
+
+      },
+      [
+        downloadReport,
+      ]
+    );
 
 
-    try {
+  const handleDownloadExcel =
+    useCallback(
+      async (): Promise<void> => {
 
-      await regulatoryApi.bnrExport(
-        format,
-        params
-      );
+        await downloadReport(
+          'xlsx'
+        );
 
-    } catch (error) {
-
-      alert(
-        getErrorMessage(
-          error,
-          'Export failed.'
-        )
-      );
-
-    } finally {
-
-      setExporting(null);
-
-    }
-  };
+      },
+      [
+        downloadReport,
+      ]
+    );
 
 
-  const currency =
-    summary?.currency || 'RWF';
+  const handleDownloadCsv =
+    useCallback(
+      async (): Promise<void> => {
+
+        await downloadReport(
+          'csv'
+        );
+
+      },
+      [
+        downloadReport,
+      ]
+    );
 
 
-  return (
-    <div className="space-y-6">
+  // ==========================================================
+  // FORMAT MONEY
+  // ==========================================================
 
-      {/* FILTERS */}
+  const formatMoney =
+    useCallback(
+      (
+        value?: number
+      ): string => {
 
-      <div className="flex items-end justify-between gap-4 flex-wrap">
+        const currency =
+          summary?.currency ||
+          'RWF';
 
-        <div className="flex items-end gap-3 flex-wrap">
+        const amount =
+          Number(value || 0);
 
-          <div>
+        return new Intl.NumberFormat(
+          'en-RW',
+          {
+            style: 'currency',
+            currency,
+            maximumFractionDigits: 2,
+          }
+        ).format(amount);
 
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Report Period
-            </label>
+      },
+      [
+        summary?.currency,
+      ]
+    );
 
-            <select
-              value={period}
-              onChange={(event) =>
-                setPeriod(
-                  event.target.value as RegulatoryPeriod
-                )
-              }
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-            >
 
-              {PERIODS.map(
-                (item) => (
+  // ==========================================================
+  // FORMAT NUMBER
+  // ==========================================================
 
-                  <option
-                    key={item}
-                    value={item}
-                  >
-                    {item.charAt(0) +
-                      item
-                        .slice(1)
-                        .toLowerCase()}
-                  </option>
+  const formatNumber =
+    useCallback(
+      (
+        value?: number
+      ): string => {
 
+        return new Intl.NumberFormat(
+          'en-US'
+        ).format(
+          Number(value || 0)
+        );
+
+      },
+      []
+    );
+
+
+  // ==========================================================
+  // FORMAT PERCENT
+  // ==========================================================
+
+  const formatPercent =
+    useCallback(
+      (
+        value?: number
+      ): string => {
+
+        return `${Number(value || 0).toFixed(2)}%`;
+
+      },
+      []
+    );
+
+
+  // ==========================================================
+  // LOADING
+  // ==========================================================
+
+  if (loading) {
+
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+
+        <div className="mx-auto max-w-7xl">
+
+          <div className="animate-pulse space-y-6">
+
+            <div className="h-10 w-72 rounded bg-gray-200" />
+
+            <div className="h-24 rounded bg-gray-200" />
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+
+              {Array.from(
+                { length: 4 }
+              ).map(
+                (_, index) => (
+                  <div
+                    key={index}
+                    className="h-32 rounded bg-gray-200"
+                  />
                 )
               )}
 
-            </select>
+            </div>
 
           </div>
-
-
-          {period === 'CUSTOM' && (
-            <>
-
-              <div>
-
-                <label className="block text-xs font-semibold text-gray-500 mb-1">
-                  From
-                </label>
-
-                <input
-                  type="date"
-                  value={from}
-                  onChange={(event) =>
-                    setFrom(
-                      event.target.value
-                    )
-                  }
-                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                />
-
-              </div>
-
-
-              <div>
-
-                <label className="block text-xs font-semibold text-gray-500 mb-1">
-                  To
-                </label>
-
-                <input
-                  type="date"
-                  value={to}
-                  onChange={(event) =>
-                    setTo(
-                      event.target.value
-                    )
-                  }
-                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                />
-
-              </div>
-
-
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() =>
-                  void load()
-                }
-              >
-                Apply
-              </Button>
-
-            </>
-          )}
-
-        </div>
-
-
-        <div className="flex gap-2 flex-wrap">
-
-          {EXPORT_FORMATS.map(
-            (format) => (
-
-              <Button
-                key={format}
-                size="sm"
-                variant="outline"
-                loading={
-                  exporting === format
-                }
-                onClick={() =>
-                  void doExport(format)
-                }
-              >
-                ⬇ {format.toUpperCase()}
-              </Button>
-
-            )
-          )}
 
         </div>
 
       </div>
+    );
+  }
 
 
-      {loading ? (
+  // ==========================================================
+  // RENDER
+  // ==========================================================
 
-        <PageSpinner />
+  return (
 
-      ) : loadError ? (
+    <div className="min-h-screen bg-gray-50">
 
-        <ErrorPanel
-          message={loadError}
-          onRetry={() =>
-            void load()
-          }
-        />
+      <div className="mx-auto max-w-7xl space-y-6 p-6">
 
-      ) : !summary ? (
 
-        <EmptyState
-          message="No BNR data available."
-        />
+        {/* ================================================== */}
+        {/* HEADER */}
+        {/* ================================================== */}
 
-      ) : (
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 
-        <>
+          <div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h1 className="text-2xl font-bold text-gray-900">
+              BNR Regulatory Report
+            </h1>
 
-            <div className="flex items-center justify-between flex-wrap gap-2">
+            <p className="mt-1 text-sm text-gray-500">
+              Regulatory reporting and portfolio information.
+            </p>
+
+          </div>
+
+
+          {/* ================================================== */}
+          {/* EXPORT BUTTONS */}
+          {/* ================================================== */}
+
+          <div className="flex flex-wrap gap-2">
+
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={
+                downloadingFormat !== null
+              }
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+
+              {downloadingFormat === 'pdf'
+                ? 'Downloading PDF...'
+                : 'Download PDF'}
+
+            </button>
+
+
+            <button
+              type="button"
+              onClick={handleDownloadExcel}
+              disabled={
+                downloadingFormat !== null
+              }
+              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+
+              {downloadingFormat === 'xlsx'
+                ? 'Downloading Excel...'
+                : 'Download Excel'}
+
+            </button>
+
+
+            <button
+              type="button"
+              onClick={handleDownloadCsv}
+              disabled={
+                downloadingFormat !== null
+              }
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+
+              {downloadingFormat === 'csv'
+                ? 'Downloading CSV...'
+                : 'Download CSV'}
+
+            </button>
+
+          </div>
+
+        </div>
+
+
+        {/* ================================================== */}
+        {/* ERROR */}
+        {/* ================================================== */}
+
+        {error && (
+
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+
+            <div className="flex items-start justify-between gap-4">
 
               <div>
 
-                <h2 className="font-semibold text-gray-800 text-sm">
-                  Loan Portfolio Summary
-                </h2>
+                <p className="font-semibold text-red-800">
+                  Report error
+                </p>
 
-                <p className="text-xs text-gray-400 mt-1">
-                  Reporting period
+                <p className="mt-1 text-sm text-red-700">
+                  {error}
                 </p>
 
               </div>
 
 
-              <span className="text-xs text-gray-400">
-
-                {summary.organizationName || '—'}
-
-                {summary.bnrInstitutionCode
-                  ? ` · Institution Code: ${summary.bnrInstitutionCode}`
-                  : ''}
-
-                {' · '}
-
-                {summary.periodStart || '—'}
-
-                {' to '}
-
-                {summary.periodEnd || '—'}
-
-              </span>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-sm font-medium text-red-700 hover:text-red-900"
+              >
+                Dismiss
+              </button>
 
             </div>
 
           </div>
 
+        )}
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
-            {[
-              [
-                'Total Loans Issued',
-                summary.totalLoansIssued,
-              ],
+        {/* ================================================== */}
+        {/* FILTERS */}
+        {/* ================================================== */}
 
-              [
-                'Active Loans',
-                summary.activeLoans,
-              ],
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
-              [
-                'Closed Loans',
-                summary.closedLoans,
-              ],
+          <div className="mb-4">
 
-              [
-                'Pending Loans',
-                summary.pendingLoans,
-              ],
+            <h2 className="font-semibold text-gray-900">
+              Report period
+            </h2>
 
-              [
-                'Rejected Loans',
-                summary.rejectedLoans,
-              ],
-
-              [
-                'Overdue Loans',
-                summary.overdueLoans,
-              ],
-
-              [
-                'Defaulted / Written-off',
-                summary.defaultedLoans,
-              ],
-
-            ].map(
-              ([label, value]) => (
-
-                <div
-                  key={String(label)}
-                  className="bg-white rounded-xl border border-gray-200 p-4"
-                >
-
-                  <p className="text-gray-500 text-xs uppercase tracking-wide">
-                    {label}
-                  </p>
-
-                  <p className="text-xl font-bold mt-1 text-gray-900">
-                    {value ?? 0}
-                  </p>
-
-                </div>
-
-              )
-            )}
+            <p className="text-sm text-gray-500">
+              Select the reporting period used for the BNR report.
+            </p>
 
           </div>
 
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
 
-            {[
-              {
-                label:
-                  'Total Principal Disbursed',
-
-                value:
-                  fmt(
-                    summary.totalPrincipalDisbursed,
-                    currency
-                  ),
-
-                color:
-                  'text-indigo-600',
-              },
-
-              {
-                label:
-                  'Outstanding Principal',
-
-                value:
-                  fmt(
-                    summary.outstandingPrincipal,
-                    currency
-                  ),
-
-                color:
-                  'text-blue-600',
-              },
-
-              {
-                label:
-                  'Total Interest Collected',
-
-                value:
-                  fmt(
-                    summary.totalInterestCollected,
-                    currency
-                  ),
-
-                color:
-                  'text-green-600',
-              },
-
-              {
-                label:
-                  'Interest Accrued',
-
-                value:
-                  fmt(
-                    summary.interestAccruedUnpaid,
-                    currency
-                  ),
-
-                color:
-                  'text-orange-600',
-              },
-
-              {
-                label:
-                  'Portfolio at Risk',
-
-                value:
-                  `${fmt(
-                    summary.parAmount,
-                    currency
-                  )} (${(
-                    (summary.parRatio || 0) *
-                    100
-                  ).toFixed(1)}%)`,
-
-                color:
-                  'text-amber-600',
-              },
-
-              {
-                label:
-                  'NPL >90 Days',
-
-                value:
-                  `${fmt(
-                    summary.nplAmount,
-                    currency
-                  )} (${(
-                    (summary.nplRatio || 0) *
-                    100
-                  ).toFixed(1)}%)`,
-
-                color:
-                  'text-red-600',
-              },
-
-            ].map(
-              (card) => (
-
-                <div
-                  key={card.label}
-                  className="bg-white rounded-xl border border-gray-200 p-5"
-                >
-
-                  <p className="text-gray-500 text-xs uppercase tracking-wide">
-                    {card.label}
-                  </p>
-
-                  <p
-                    className={`text-lg font-bold mt-1 ${card.color}`}
-                  >
-                    {card.value}
-                  </p>
-
-                </div>
-
-              )
-            )}
-
-          </div>
-
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-
-              <h3 className="font-semibold text-gray-800 text-sm mb-3">
-                Financial Inclusion — Gender
-              </h3>
-
-              <BreakdownTable
-                rows={gender}
-                currency={currency}
-              />
-
-            </div>
-
-
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-
-              <h3 className="font-semibold text-gray-800 text-sm mb-3">
-                By Loan Type
-              </h3>
-
-              <BreakdownTable
-                rows={loanTypes}
-                currency={currency}
-              />
-
-            </div>
-
-          </div>
-
-
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-
-            <h3 className="font-semibold text-gray-800 text-sm mb-3">
-              By Branch
-            </h3>
-
-            <BreakdownTable
-              rows={branches}
-              currency={currency}
-            />
-
-          </div>
-
-        </>
-      )}
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// FINANCIAL REPORT
-// ============================================================
-
-function FinancialReport() {
-
-  const [
-    from,
-    setFrom,
-  ] = useState('');
-
-
-  const [
-    to,
-    setTo,
-  ] = useState('');
-
-
-  const [
-    summary,
-    setSummary,
-  ] = useState<FinancialSummary | null>(
-    null
-  );
-
-
-  const [
-    income,
-    setIncome,
-  ] = useState<FinancialBreakdownRow[]>(
-    []
-  );
-
-
-  const [
-    expenses,
-    setExpenses,
-  ] = useState<FinancialBreakdownRow[]>(
-    []
-  );
-
-
-  const [
-    cashFlow,
-    setCashFlow,
-  ] = useState<FinancialBreakdownRow[]>(
-    []
-  );
-
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
-
-
-  const [
-    loadError,
-    setLoadError,
-  ] = useState('');
-
-
-  const [
-    exporting,
-    setExporting,
-  ] = useState<ExportFormat | null>(
-    null
-  );
-
-
-  const params = useMemo(
-    () => ({
-      from,
-      to,
-    }),
-    [
-      from,
-      to,
-    ]
-  );
-
-
-  const load = async () => {
-
-    if (!from || !to) {
-
-      setLoadError(
-        'Please select both a start and end date.'
-      );
-
-      return;
-    }
-
-
-    if (from > to) {
-
-      setLoadError(
-        'The start date cannot be after the end date.'
-      );
-
-      return;
-    }
-
-
-    setLoading(true);
-    setLoadError('');
-
-
-    try {
-
-      const [
-        summaryResponse,
-        incomeResponse,
-        expenseResponse,
-        cashFlowResponse,
-      ] = await Promise.all([
-
-        regulatoryApi.financialSummary(
-          params
-        ),
-
-        regulatoryApi.financialIncome(
-          params
-        ),
-
-        regulatoryApi.financialExpenses(
-          params
-        ),
-
-        regulatoryApi.financialCashFlow(
-          params
-        ),
-
-      ]);
-
-
-      setSummary(
-        summaryResponse
-      );
-
-
-      setIncome(
-        incomeResponse || []
-      );
-
-
-      setExpenses(
-        expenseResponse || []
-      );
-
-
-      setCashFlow(
-        cashFlowResponse || []
-      );
-
-    } catch (error) {
-
-      console.error(
-        'Failed to load financial report:',
-        error
-      );
-
-
-      setLoadError(
-        getErrorMessage(
-          error,
-          'Could not load financial report.'
-        )
-      );
-
-    } finally {
-
-      setLoading(false);
-
-    }
-  };
-
-
-  const doExport = async (
-    format: ExportFormat
-  ) => {
-
-    if (!from || !to) {
-
-      alert(
-        'Please select both From and To dates.'
-      );
-
-      return;
-    }
-
-
-    if (from > to) {
-
-      alert(
-        'The start date cannot be after the end date.'
-      );
-
-      return;
-    }
-
-
-    setExporting(format);
-
-
-    try {
-
-      await regulatoryApi.financialExport(
-        format,
-        params
-      );
-
-    } catch (error) {
-
-      alert(
-        getErrorMessage(
-          error,
-          'Financial report export failed.'
-        )
-      );
-
-    } finally {
-
-      setExporting(null);
-
-    }
-  };
-
-
-  const currency =
-    summary?.currency || 'RWF';
-
-
-  return (
-    <div className="space-y-6">
-
-      {/* ================================================== */}
-      {/* FILTERS */}
-      {/* ================================================== */}
-
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-
-        <div className="flex items-end justify-between gap-4 flex-wrap">
-
-          <div className="flex items-end gap-3 flex-wrap">
+            {/* PERIOD */}
 
             <div>
 
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
+              <label
+                htmlFor="bnr-period"
+                className="mb-1 block text-sm font-medium text-gray-700"
+              >
+                Period
+              </label>
+
+              <select
+                id="bnr-period"
+                value={period}
+                onChange={(event) => {
+
+                  setPeriod(
+                    event.target.value as RegulatoryPeriod
+                  );
+
+                }}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+
+                <option value="DAILY">
+                  Daily
+                </option>
+
+                <option value="WEEKLY">
+                  Weekly
+                </option>
+
+                <option value="MONTHLY">
+                  Monthly
+                </option>
+
+                <option value="QUARTERLY">
+                  Quarterly
+                </option>
+
+                <option value="YEARLY">
+                  Yearly
+                </option>
+
+                <option value="CUSTOM">
+                  Custom
+                </option>
+
+              </select>
+
+            </div>
+
+
+            {/* FROM */}
+
+            <div>
+
+              <label
+                htmlFor="bnr-from"
+                className="mb-1 block text-sm font-medium text-gray-700"
+              >
                 From
               </label>
 
               <input
+                id="bnr-from"
                 type="date"
                 value={from}
+                disabled={period !== 'CUSTOM'}
                 onChange={(event) =>
                   setFrom(
                     event.target.value
                   )
                 }
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
 
             </div>
 
 
+            {/* TO */}
+
             <div>
 
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
+              <label
+                htmlFor="bnr-to"
+                className="mb-1 block text-sm font-medium text-gray-700"
+              >
                 To
               </label>
 
               <input
+                id="bnr-to"
                 type="date"
                 value={to}
+                disabled={period !== 'CUSTOM'}
                 onChange={(event) =>
                   setTo(
                     event.target.value
                   )
                 }
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
 
             </div>
 
-
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() =>
-                void load()
-              }
-            >
-              Generate Report
-            </Button>
-
           </div>
 
 
-          {/* ================================================== */}
-          {/* EXPORT FORMAT */}
-          {/* ================================================== */}
+          <div className="mt-4 flex justify-end">
 
-          <div>
-
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Export Format
-            </label>
-
-            <div className="flex items-center gap-2">
-
-              <select
-                defaultValue="pdf"
-                id="financial-export-format"
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-              >
-
-                {FINANCIAL_EXPORT_FORMATS.map(
-                  (format) => (
-
-                    <option
-                      key={format}
-                      value={format}
-                    >
-                      {format === 'xlsx'
-                        ? 'Excel (XLSX)'
-                        : format.toUpperCase()}
-                    </option>
-
-                  )
-                )}
-
-              </select>
-
-
-              <Button
-                size="sm"
-                variant="outline"
-                loading={!!exporting}
-                onClick={() => {
-
-                  const element =
-                    document.getElementById(
-                      'financial-export-format'
-                    ) as HTMLSelectElement | null;
-
-                  const format =
-                    (element?.value ||
-                      'pdf') as ExportFormat;
-
-                  void doExport(format);
-
-                }}
-              >
-                ⬇ Export
-              </Button>
-
-            </div>
+            <button
+              type="button"
+              onClick={() => void loadReport()}
+              disabled={loading}
+              className="rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Refresh Report
+            </button>
 
           </div>
 
         </div>
 
 
-        <p className="text-xs text-gray-400 mt-3">
-          Select the reporting period, generate the
-          report, then choose PDF, CSV or Excel for export.
-        </p>
+        {/* ================================================== */}
+        {/* ORGANIZATION */}
+        {/* ================================================== */}
 
-      </div>
+        {summary && (
+
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+
+              <div>
+
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {summary.organizationName ||
+                    'Organization'}
+                </h2>
+
+                <p className="text-sm text-gray-500">
+                  BNR Institution Code:{' '}
+                  {summary.bnrInstitutionCode ||
+                    'Not configured'}
+                </p>
+
+              </div>
 
 
-      {/* ================================================== */}
-      {/* EMPTY */}
-      {/* ================================================== */}
+              <div className="text-sm text-gray-500">
 
-      {!loading &&
-        !summary &&
-        !loadError && (
+                {summary.periodStart ||
+                  '—'}
 
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+                {' → '}
 
-            <p className="text-sm text-blue-700">
-              Select a From and To date, then click
-              Generate Report.
-            </p>
+                {summary.periodEnd ||
+                  '—'}
+
+              </div>
+
+            </div>
 
           </div>
 
         )}
 
 
-      {/* ================================================== */}
-      {/* LOADING */}
-      {/* ================================================== */}
+        {/* ================================================== */}
+        {/* KPI CARDS */}
+        {/* ================================================== */}
 
-      {loading && (
-        <PageSpinner />
-      )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
 
-      {/* ================================================== */}
-      {/* ERROR */}
-      {/* ================================================== */}
+          {/* TOTAL LOANS */}
 
-      {!loading && loadError && (
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
-        <ErrorPanel
-          message={loadError}
-          onRetry={() =>
-            void load()
-          }
-        />
+            <p className="text-sm text-gray-500">
+              Total Loans Issued
+            </p>
 
-      )}
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatNumber(
+                summary?.totalLoansIssued
+              )}
+            </p>
 
+          </div>
 
-      {/* ================================================== */}
-      {/* REPORT */}
-      {/* ================================================== */}
 
-      {!loading &&
-        !loadError &&
-        summary && (
+          {/* ACTIVE */}
 
-          <>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
-            {/* REPORT HEADER */}
+            <p className="text-sm text-gray-500">
+              Active Loans
+            </p>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatNumber(
+                summary?.activeLoans
+              )}
+            </p>
 
-              <div className="flex items-center justify-between gap-4 flex-wrap">
+          </div>
 
-                <div>
 
-                  <h2 className="font-semibold text-gray-900">
-                    Financial Report
-                  </h2>
+          {/* DISBURSED */}
 
-                  <p className="text-xs text-gray-400 mt-1">
-                    {summary.organizationName || '—'}
-                  </p>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
-                </div>
+            <p className="text-sm text-gray-500">
+              Principal Disbursed
+            </p>
 
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatMoney(
+                summary?.totalPrincipalDisbursed
+              )}
+            </p>
 
-                <div className="text-xs text-gray-500">
+          </div>
 
-                  {summary.periodStart || from}
-                  {' → '}
-                  {summary.periodEnd || to}
 
-                </div>
+          {/* OUTSTANDING */}
 
-              </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
-            </div>
+            <p className="text-sm text-gray-500">
+              Outstanding Principal
+            </p>
 
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatMoney(
+                summary?.outstandingPrincipal
+              )}
+            </p>
 
-            {/* ================================================== */}
-            {/* PROFIT & LOSS */}
-            {/* ================================================== */}
+          </div>
 
-            <div>
 
-              <h2 className="font-semibold text-gray-800 text-sm mb-3">
-                Income Statement
-              </h2>
+          {/* INTEREST */}
 
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <p className="text-sm text-gray-500">
+              Interest Collected
+            </p>
 
-                <FinancialCard
-                  label="Total Income"
-                  value={fmt(
-                    summary.totalIncome,
-                    currency
-                  )}
-                  className="text-green-600"
-                />
+            <p className="mt-2 text-xl font-bold text-gray-900">
+              {formatMoney(
+                summary?.totalInterestCollected
+              )}
+            </p>
 
+          </div>
 
-                <FinancialCard
-                  label="Total Expenses"
-                  value={fmt(
-                    summary.totalExpenses,
-                    currency
-                  )}
-                  className="text-red-600"
-                />
 
+          {/* OVERDUE */}
 
-                <FinancialCard
-                  label="Net Profit"
-                  value={fmt(
-                    summary.netProfit,
-                    currency
-                  )}
-                  className={
-                    (summary.netProfit || 0) >= 0
-                      ? 'text-blue-600'
-                      : 'text-red-600'
-                  }
-                />
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
-              </div>
+            <p className="text-sm text-gray-500">
+              Overdue Loans
+            </p>
 
-            </div>
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatNumber(
+                summary?.overdueLoans
+              )}
+            </p>
 
+          </div>
 
-            {/* ================================================== */}
-            {/* CASH FLOW */}
-            {/* ================================================== */}
 
-            <div>
+          {/* PAR */}
 
-              <h2 className="font-semibold text-gray-800 text-sm mb-3">
-                Cash Flow
-              </h2>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
+            <p className="text-sm text-gray-500">
+              PAR Ratio
+            </p>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatPercent(
+                summary?.parRatio
+              )}
+            </p>
 
-                <FinancialCard
-                  label="Opening Cash Balance"
-                  value={fmt(
-                    summary.openingCashBalance,
-                    currency
-                  )}
-                />
+            <p className="mt-1 text-xs text-gray-500">
+              {formatMoney(
+                summary?.parAmount
+              )}
+            </p>
 
+          </div>
 
-                <FinancialCard
-                  label="Cash Inflows"
-                  value={fmt(
-                    summary.cashInflows,
-                    currency
-                  )}
-                  className="text-green-600"
-                />
 
+          {/* NPL */}
 
-                <FinancialCard
-                  label="Cash Outflows"
-                  value={fmt(
-                    summary.cashOutflows,
-                    currency
-                  )}
-                  className="text-red-600"
-                />
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
+            <p className="text-sm text-gray-500">
+              NPL Ratio
+            </p>
 
-                <FinancialCard
-                  label="Net Cash Flow"
-                  value={fmt(
-                    summary.netCashFlow,
-                    currency
-                  )}
-                  className={
-                    (summary.netCashFlow || 0) >= 0
-                      ? 'text-blue-600'
-                      : 'text-red-600'
-                  }
-                />
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatPercent(
+                summary?.nplRatio
+              )}
+            </p>
 
-              </div>
+            <p className="mt-1 text-xs text-gray-500">
+              {formatMoney(
+                summary?.nplAmount
+              )}
+            </p>
 
-            </div>
+          </div>
 
+        </div>
 
-            {/* ================================================== */}
-            {/* CLOSING CASH */}
-            {/* ================================================== */}
 
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
+        {/* ================================================== */}
+        {/* LOAN STATUS */}
+        {/* ================================================== */}
 
-              <div className="flex items-center justify-between">
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
 
-                <span className="text-sm font-semibold text-gray-700">
-                  Closing Cash Balance
-                </span>
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">
+            Loan Status
+          </h2>
 
-                <span className="text-xl font-bold text-gray-900">
-                  {fmt(
-                    summary.closingCashBalance,
-                    currency
-                  )}
-                </span>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
 
-              </div>
-
-            </div>
-
-
-            {/* ================================================== */}
-            {/* INCOME BREAKDOWN */}
-            {/* ================================================== */}
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-              <FinancialBreakdownTable
-                title="Income"
-                rows={income}
-                currency={currency}
-              />
-
-
-              <FinancialBreakdownTable
-                title="Expenses"
-                rows={expenses}
-                currency={currency}
-              />
-
-            </div>
-
-
-            {/* ================================================== */}
-            {/* CASH FLOW BREAKDOWN */}
-            {/* ================================================== */}
-
-            <FinancialBreakdownTable
-              title="Cash Flow"
-              rows={cashFlow}
-              currency={currency}
+            <StatusItem
+              label="Active"
+              value={summary?.activeLoans}
             />
 
-          </>
+            <StatusItem
+              label="Closed"
+              value={summary?.closedLoans}
+            />
 
-        )}
+            <StatusItem
+              label="Pending"
+              value={summary?.pendingLoans}
+            />
+
+            <StatusItem
+              label="Rejected"
+              value={summary?.rejectedLoans}
+            />
+
+            <StatusItem
+              label="Defaulted"
+              value={summary?.defaultedLoans}
+            />
+
+          </div>
+
+        </div>
+
+
+        {/* ================================================== */}
+        {/* BORROWER GENDER */}
+        {/* ================================================== */}
+
+        <BreakdownTable
+          title="Borrowers by Gender"
+          rows={genderBreakdown}
+          formatMoney={formatMoney}
+          formatNumber={formatNumber}
+        />
+
+
+        {/* ================================================== */}
+        {/* LOAN TYPE */}
+        {/* ================================================== */}
+
+        <BreakdownTable
+          title="Loans by Loan Type"
+          rows={loanTypeBreakdown}
+          formatMoney={formatMoney}
+          formatNumber={formatNumber}
+        />
+
+
+        {/* ================================================== */}
+        {/* BRANCH */}
+        {/* ================================================== */}
+
+        <BreakdownTable
+          title="Loans by Branch"
+          rows={branchBreakdown}
+          formatMoney={formatMoney}
+          formatNumber={formatNumber}
+        />
+
+
+        {/* ================================================== */}
+        {/* FOOTER */}
+        {/* ================================================== */}
+
+        <div className="pb-8 text-center text-xs text-gray-400">
+
+          BNR regulatory report •{' '}
+          {period}
+
+        </div>
+
+      </div>
 
     </div>
   );
@@ -1629,30 +1088,31 @@ function FinancialReport() {
 
 
 // ============================================================
-// FINANCIAL CARD
+// STATUS ITEM
 // ============================================================
 
-function FinancialCard({
+function StatusItem({
   label,
   value,
-  className = 'text-gray-900',
 }: {
   label: string;
-  value: string;
-  className?: string;
+  value?: number;
 }) {
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
 
-      <p className="text-gray-500 text-xs uppercase tracking-wide">
+    <div className="rounded-lg bg-gray-50 p-4">
+
+      <p className="text-sm text-gray-500">
         {label}
       </p>
 
-      <p
-        className={`text-xl font-bold mt-1 ${className}`}
-      >
-        {value}
+      <p className="mt-1 text-xl font-semibold text-gray-900">
+        {new Intl.NumberFormat(
+          'en-US'
+        ).format(
+          Number(value || 0)
+        )}
       </p>
 
     </div>
@@ -1661,50 +1121,75 @@ function FinancialCard({
 
 
 // ============================================================
-// FINANCIAL BREAKDOWN TABLE
+// BREAKDOWN TABLE
 // ============================================================
 
-function FinancialBreakdownTable({
+function BreakdownTable({
   title,
   rows,
-  currency,
+  formatMoney,
+  formatNumber,
 }: {
   title: string;
 
-  rows: FinancialBreakdownRow[];
+  rows: BreakdownRow[];
 
-  currency: string;
+  formatMoney: (
+    value?: number
+  ) => string;
+
+  formatNumber: (
+    value?: number
+  ) => string;
 }) {
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
 
-      <h3 className="font-semibold text-gray-800 text-sm mb-3">
-        {title}
-      </h3>
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+
+      <div className="border-b border-gray-200 p-5">
+
+        <h2 className="text-lg font-semibold text-gray-900">
+          {title}
+        </h2>
+
+      </div>
 
 
-      {!rows.length ? (
+      {rows.length === 0 ? (
 
-        <p className="text-sm text-gray-400">
+        <div className="p-6 text-center text-sm text-gray-500">
           No data available for this period.
-        </p>
+        </div>
 
       ) : (
 
         <div className="overflow-x-auto">
 
-          <table className="w-full text-sm">
+          <table className="min-w-full divide-y divide-gray-200">
 
-            <thead>
+            <thead className="bg-gray-50">
 
-              <tr className="text-left text-gray-500 text-xs uppercase">
+              <tr>
 
-                <th className="pb-2">
+                <th
+                  scope="col"
+                  className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
+                >
                   Category
                 </th>
 
-                <th className="pb-2 text-right">
+                <th
+                  scope="col"
+                  className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500"
+                >
+                  Count
+                </th>
+
+                <th
+                  scope="col"
+                  className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500"
+                >
                   Amount
                 </th>
 
@@ -1713,26 +1198,29 @@ function FinancialBreakdownTable({
             </thead>
 
 
-            <tbody>
+            <tbody className="divide-y divide-gray-200 bg-white">
 
               {rows.map(
                 (row, index) => (
 
                   <tr
-                    key={
-                      `${row.label}-${index}`
-                    }
-                    className="border-t border-gray-50"
+                    key={`${row.label}-${index}`}
+                    className="hover:bg-gray-50"
                   >
 
-                    <td className="py-2 text-gray-700">
+                    <td className="px-5 py-3 text-sm font-medium text-gray-900">
                       {row.label}
                     </td>
 
-                    <td className="py-2 text-right font-medium text-gray-800">
-                      {fmt(
-                        row.amount,
-                        currency
+                    <td className="px-5 py-3 text-right text-sm text-gray-700">
+                      {formatNumber(
+                        row.count
+                      )}
+                    </td>
+
+                    <td className="px-5 py-3 text-right text-sm text-gray-700">
+                      {formatMoney(
+                        row.amount
                       )}
                     </td>
 
@@ -1748,1414 +1236,6 @@ function FinancialBreakdownTable({
         </div>
 
       )}
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// CREDIT BUREAU REPORT
-// ============================================================
-
-function CreditBureauReport() {
-
-  const [
-    records,
-    setRecords,
-  ] = useState<CreditRecord[]>(
-    []
-  );
-
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-
-  const [
-    loadError,
-    setLoadError,
-  ] = useState('');
-
-
-  const [
-    exporting,
-    setExporting,
-  ] = useState<ExportFormat | null>(
-    null
-  );
-
-
-  const [
-    from,
-    setFrom,
-  ] = useState('');
-
-
-  const [
-    to,
-    setTo,
-  ] = useState('');
-
-
-  const load = async () => {
-
-    setLoading(true);
-    setLoadError('');
-
-
-    try {
-
-      const response =
-        await regulatoryApi.creditBureauPreview({
-          from:
-            from || undefined,
-
-          to:
-            to || undefined,
-        });
-
-
-      setRecords(
-        response || []
-      );
-
-    } catch (error) {
-
-      console.error(
-        'Failed to load credit bureau:',
-        error
-      );
-
-
-      setLoadError(
-        getErrorMessage(
-          error,
-          'Could not load credit bureau records.'
-        )
-      );
-
-    } finally {
-
-      setLoading(false);
-
-    }
-  };
-
-
-  useEffect(() => {
-
-    void load();
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-
-  const doExport = async (
-    format: ExportFormat
-  ) => {
-
-    setExporting(format);
-
-
-    try {
-
-      await regulatoryApi.creditBureauExport(
-        format,
-        {
-          from:
-            from || undefined,
-
-          to:
-            to || undefined,
-        }
-      );
-
-    } catch (error) {
-
-      alert(
-        getErrorMessage(
-          error,
-          'Export failed.'
-        )
-      );
-
-    } finally {
-
-      setExporting(null);
-
-    }
-  };
-
-
-  return (
-    <div className="space-y-4">
-
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-
-        <p className="text-xs text-amber-800">
-
-          <strong>
-            Restricted information:
-          </strong>{' '}
-
-          This screen contains borrower-level personal
-          and credit information. Views and exports
-          should be audited by the backend.
-
-        </p>
-
-      </div>
-
-
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-
-        <div className="flex items-end justify-between gap-4 flex-wrap">
-
-          <div className="flex items-end gap-3 flex-wrap">
-
-            <div>
-
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                From
-              </label>
-
-              <input
-                type="date"
-                value={from}
-                onChange={(event) =>
-                  setFrom(
-                    event.target.value
-                  )
-                }
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              />
-
-            </div>
-
-
-            <div>
-
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                To
-              </label>
-
-              <input
-                type="date"
-                value={to}
-                onChange={(event) =>
-                  setTo(
-                    event.target.value
-                  )
-                }
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              />
-
-            </div>
-
-
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() =>
-                void load()
-              }
-            >
-              Apply
-            </Button>
-
-          </div>
-
-
-          <ExportSelector
-            formats={EXPORT_FORMATS}
-            exporting={exporting}
-            onExport={doExport}
-          />
-
-        </div>
-
-      </div>
-
-
-      {loading ? (
-
-        <PageSpinner />
-
-      ) : loadError ? (
-
-        <ErrorPanel
-          message={loadError}
-          onRetry={() =>
-            void load()
-          }
-        />
-
-      ) : (
-
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-
-          <div className="overflow-x-auto">
-
-            <table className="w-full text-sm">
-
-              <thead>
-
-                <tr className="text-left text-gray-500 text-xs uppercase bg-gray-50">
-
-                  <th className="px-4 py-3">
-                    Borrower
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Loan #
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Type
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Status
-                  </th>
-
-                  <th className="px-4 py-3 text-right">
-                    Amount
-                  </th>
-
-                  <th className="px-4 py-3 text-right">
-                    Outstanding
-                  </th>
-
-                  <th className="px-4 py-3 text-right">
-                    Days Past Due
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Branch
-                  </th>
-
-                </tr>
-
-              </thead>
-
-
-              <tbody>
-
-                {records
-                  .slice(0, 200)
-                  .map(
-                    (record, index) => (
-
-                      <tr
-                        key={
-                          record.borrowerId ??
-                          record.loanNumber ??
-                          index
-                        }
-                        className="border-t border-gray-50 hover:bg-gray-50"
-                      >
-
-                        <td className="px-4 py-3 text-gray-800">
-                          {record.fullName || '—'}
-                        </td>
-
-                        <td className="px-4 py-3 text-gray-600">
-                          {record.loanNumber || '—'}
-                        </td>
-
-                        <td className="px-4 py-3 text-gray-600">
-                          {record.loanType || '—'}
-                        </td>
-
-                        <td className="px-4 py-3">
-
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                            {record.loanStatus || '—'}
-                          </span>
-
-                        </td>
-
-                        <td className="px-4 py-3 text-right">
-                          {fmt(
-                            record.loanAmount
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3 text-right">
-                          {fmt(
-                            record.outstandingBalance
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3 text-right">
-                          {record.daysPastDue ?? 0}
-                        </td>
-
-                        <td className="px-4 py-3 text-gray-500">
-                          {record.branchName || '—'}
-                        </td>
-
-                      </tr>
-
-                    )
-                  )}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
-
-          {records.length === 0 && (
-            <EmptyState
-              message="No records for this period."
-            />
-          )}
-
-
-          {records.length > 200 && (
-
-            <p className="text-center text-xs text-gray-400 py-3 border-t">
-
-              Showing first 200 of{' '}
-              {records.length}.
-
-            </p>
-
-          )}
-
-        </div>
-
-      )}
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// API ACCESS
-// ============================================================
-
-function ApiKeysSection() {
-
-  const [
-    clients,
-    setClients,
-  ] = useState<ApiClient[]>(
-    []
-  );
-
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-
-  const [
-    loadError,
-    setLoadError,
-  ] = useState('');
-
-
-  const [
-    showCreate,
-    setShowCreate,
-  ] = useState(false);
-
-
-  const [
-    newKey,
-    setNewKey,
-  ] = useState<{
-    apiKey: string;
-    client: ApiClient;
-  } | null>(null);
-
-
-  const [
-    form,
-    setForm,
-  ] = useState<{
-    name: string;
-    clientType: ClientType;
-    contactEmail: string;
-    description: string;
-    expiresAt: string;
-  }>({
-    name: '',
-    clientType: 'BNR',
-    contactEmail: '',
-    description: '',
-    expiresAt: '',
-  });
-
-
-  const [
-    saving,
-    setSaving,
-  ] = useState(false);
-
-
-  const [
-    revokingId,
-    setRevokingId,
-  ] = useState<number | null>(
-    null
-  );
-
-
-  const load = async () => {
-
-    setLoading(true);
-    setLoadError('');
-
-
-    try {
-
-      const response =
-        await regulatoryApi.listApiClients();
-
-
-      setClients(
-        response || []
-      );
-
-    } catch (error) {
-
-      console.error(
-        'Failed to load API clients:',
-        error
-      );
-
-
-      setLoadError(
-        getErrorMessage(
-          error,
-          'Could not load API keys.'
-        )
-      );
-
-    } finally {
-
-      setLoading(false);
-
-    }
-  };
-
-
-  useEffect(() => {
-
-    void load();
-
-  }, []);
-
-
-  const resetForm = () => {
-
-    setForm({
-      name: '',
-      clientType: 'BNR',
-      contactEmail: '',
-      description: '',
-      expiresAt: '',
-    });
-  };
-
-
-  const create = async () => {
-
-    const name =
-      form.name.trim();
-
-
-    if (!name) {
-
-      alert(
-        'Integration name is required.'
-      );
-
-      return;
-    }
-
-
-    setSaving(true);
-
-
-    try {
-
-      const response =
-        await regulatoryApi.createApiClient({
-          name,
-
-          clientType:
-            form.clientType,
-
-          contactEmail:
-            form.contactEmail.trim() ||
-            undefined,
-
-          description:
-            form.description.trim() ||
-            undefined,
-
-          expiresAt:
-            form.expiresAt
-              ? new Date(
-                  `${form.expiresAt}T23:59:59`
-                ).toISOString()
-              : null,
-        });
-
-
-      if (
-        !response?.apiKey ||
-        !response?.client
-      ) {
-
-        throw new Error(
-          'The server created the API client but did not return the API key.'
-        );
-      }
-
-
-      setNewKey({
-        apiKey:
-          response.apiKey,
-
-        client:
-          response.client,
-      });
-
-
-      setShowCreate(false);
-
-      resetForm();
-
-      await load();
-
-    } catch (error) {
-
-      alert(
-        getErrorMessage(
-          error,
-          'Failed to create API key.'
-        )
-      );
-
-    } finally {
-
-      setSaving(false);
-
-    }
-  };
-
-
-  const revoke = async (
-    id: number
-  ) => {
-
-    const reason =
-      window.prompt(
-        'Optional reason for revoking this API key:',
-        ''
-      );
-
-
-    if (reason === null) {
-      return;
-    }
-
-
-    const confirmed =
-      window.confirm(
-        'Revoke this API key? Any system using it will immediately lose access.'
-      );
-
-
-    if (!confirmed) {
-      return;
-    }
-
-
-    setRevokingId(id);
-
-
-    try {
-
-      await regulatoryApi.revokeApiClient(
-        id,
-        reason.trim() || undefined
-      );
-
-
-      await load();
-
-    } catch (error) {
-
-      alert(
-        getErrorMessage(
-          error,
-          'Failed to revoke API key.'
-        )
-      );
-
-    } finally {
-
-      setRevokingId(null);
-
-    }
-  };
-
-
-  return (
-    <div className="space-y-4">
-
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-
-          <div>
-
-            <h2 className="font-semibold text-gray-900">
-              External API Access
-            </h2>
-
-            <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-              Issue and revoke API credentials used
-              by authorized regulatory and credit-bureau
-              integrations.
-            </p>
-
-          </div>
-
-
-          <Button
-            onClick={() =>
-              setShowCreate(true)
-            }
-          >
-            + New API Key
-          </Button>
-
-        </div>
-
-      </div>
-
-
-      {loading ? (
-
-        <PageSpinner />
-
-      ) : loadError ? (
-
-        <ErrorPanel
-          message={loadError}
-          onRetry={() =>
-            void load()
-          }
-        />
-
-      ) : (
-
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-
-          <div className="overflow-x-auto">
-
-            <table className="w-full text-sm">
-
-              <thead>
-
-                <tr className="text-left text-gray-500 text-xs uppercase bg-gray-50">
-
-                  <th className="px-4 py-3">
-                    Name
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Type
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Key Prefix
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Status
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Expires
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Last Used
-                  </th>
-
-                  <th className="px-4 py-3">
-                  </th>
-
-                </tr>
-
-              </thead>
-
-
-              <tbody>
-
-                {clients.map(
-                  (client) => {
-
-                    const revoked =
-                      !!client.revokedAt ||
-                      !client.active;
-
-
-                    const expired =
-                      !!client.expiresAt &&
-                      new Date(
-                        client.expiresAt
-                      ).getTime() <=
-                        Date.now();
-
-
-                    return (
-                      <tr
-                        key={client.id}
-                        className="border-t border-gray-50 hover:bg-gray-50"
-                      >
-
-                        <td className="px-4 py-3">
-
-                          <p className="font-medium text-gray-800">
-                            {client.name}
-                          </p>
-
-                          {client.contactEmail && (
-
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {client.contactEmail}
-                            </p>
-
-                          )}
-
-                        </td>
-
-
-                        <td className="px-4 py-3">
-
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                            {client.clientType}
-                          </span>
-
-                        </td>
-
-
-                        <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                          {client.keyPrefix}…
-                        </td>
-
-
-                        <td className="px-4 py-3">
-
-                          {revoked ? (
-
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                              Revoked
-                            </span>
-
-                          ) : expired ? (
-
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
-                              Expired
-                            </span>
-
-                          ) : (
-
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                              Active
-                            </span>
-
-                          )}
-
-                        </td>
-
-
-                        <td className="px-4 py-3 text-xs text-gray-500">
-                          {formatDate(
-                            client.expiresAt
-                          )}
-                        </td>
-
-
-                        <td className="px-4 py-3 text-xs text-gray-500">
-                          {formatDateTime(
-                            client.lastUsedAt
-                          )}
-                        </td>
-
-
-                        <td className="px-4 py-3 text-right">
-
-                          {!revoked &&
-                            !expired && (
-
-                              <Button
-                                size="xs"
-                                variant="danger"
-                                loading={
-                                  revokingId ===
-                                  client.id
-                                }
-                                onClick={() =>
-                                  void revoke(
-                                    client.id
-                                  )
-                                }
-                              >
-                                Revoke
-                              </Button>
-
-                            )}
-
-                        </td>
-
-                      </tr>
-                    );
-                  }
-                )}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
-
-          {clients.length === 0 && (
-            <EmptyState
-              message="No API keys issued yet."
-            />
-          )}
-
-        </div>
-
-      )}
-
-
-      {/* CREATE MODAL */}
-
-      <Modal
-        open={showCreate}
-        onClose={() => {
-
-          if (!saving) {
-            setShowCreate(false);
-          }
-
-        }}
-        title="Issue New API Key"
-        footer={
-          <>
-
-            <Button
-              variant="secondary"
-              onClick={() =>
-                setShowCreate(false)
-              }
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-
-
-            <Button
-              loading={saving}
-              onClick={() =>
-                void create()
-              }
-            >
-              Create Key
-            </Button>
-
-          </>
-        }
-      >
-
-        <div className="space-y-4">
-
-          <div>
-
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Integration Name
-            </label>
-
-            <input
-              value={form.name}
-              onChange={(event) =>
-                setForm(
-                  (current) => ({
-                    ...current,
-                    name:
-                      event.target.value,
-                  })
-                )
-              }
-              placeholder="e.g. BNR Production Integration"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            />
-
-          </div>
-
-
-          <div>
-
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Client Type
-            </label>
-
-            <select
-              value={form.clientType}
-              onChange={(event) =>
-                setForm(
-                  (current) => ({
-                    ...current,
-
-                    clientType:
-                      event.target
-                        .value as ClientType,
-                  })
-                )
-              }
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-            >
-
-              <option value="BNR">
-                National Bank of Rwanda (BNR)
-              </option>
-
-              <option value="CREDIT_BUREAU">
-                Credit Bureau
-              </option>
-
-            </select>
-
-          </div>
-
-
-          <div>
-
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Contact Email
-            </label>
-
-            <input
-              type="email"
-              value={form.contactEmail}
-              onChange={(event) =>
-                setForm(
-                  (current) => ({
-                    ...current,
-                    contactEmail:
-                      event.target.value,
-                  })
-                )
-              }
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            />
-
-          </div>
-
-
-          <div>
-
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Expiration Date
-            </label>
-
-            <input
-              type="date"
-              value={form.expiresAt}
-              onChange={(event) =>
-                setForm(
-                  (current) => ({
-                    ...current,
-                    expiresAt:
-                      event.target.value,
-                  })
-                )
-              }
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            />
-
-          </div>
-
-
-          <div>
-
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Description
-            </label>
-
-            <textarea
-              value={form.description}
-              onChange={(event) =>
-                setForm(
-                  (current) => ({
-                    ...current,
-                    description:
-                      event.target.value,
-                  })
-                )
-              }
-              rows={3}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            />
-
-          </div>
-
-
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-
-            <p className="text-xs text-amber-800">
-              The complete API key will be displayed
-              only once after creation. Store it securely.
-            </p>
-
-          </div>
-
-        </div>
-
-      </Modal>
-
-
-      {/* CREATED KEY */}
-
-      <Modal
-        open={!!newKey}
-        onClose={() =>
-          setNewKey(null)
-        }
-        title="API Key Created"
-        footer={
-          <Button
-            onClick={() =>
-              setNewKey(null)
-            }
-          >
-            Done
-          </Button>
-        }
-      >
-
-        {newKey && (
-
-          <div className="space-y-4">
-
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-
-              <p className="text-sm font-semibold text-green-800">
-                API key created successfully.
-              </p>
-
-              <p className="text-xs text-green-700 mt-1">
-                This is the only time the complete key
-                will be displayed.
-              </p>
-
-            </div>
-
-
-            <div>
-
-              <p className="text-sm text-gray-600">
-
-                Integration:
-
-                <strong className="ml-1">
-                  {newKey.client.name}
-                </strong>
-
-              </p>
-
-            </div>
-
-
-            <div className="bg-gray-900 rounded-lg p-4">
-
-              <p className="text-xs text-gray-400 mb-2">
-                API Key
-              </p>
-
-              <code className="text-teal-400 font-mono text-xs break-all select-all">
-                {newKey.apiKey}
-              </code>
-
-            </div>
-
-
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={async () => {
-
-                try {
-
-                  await navigator.clipboard.writeText(
-                    newKey.apiKey
-                  );
-
-                  alert(
-                    'API key copied to clipboard.'
-                  );
-
-                } catch {
-
-                  alert(
-                    'Could not access clipboard.'
-                  );
-
-                }
-
-              }}
-            >
-              📋 Copy to Clipboard
-            </Button>
-
-          </div>
-
-        )}
-
-      </Modal>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// EXPORT SELECTOR
-// ============================================================
-
-function ExportSelector({
-  formats,
-  exporting,
-  onExport,
-}: {
-  formats: ExportFormat[];
-
-  exporting:
-    ExportFormat | null;
-
-  onExport:
-    (format: ExportFormat) => Promise<void>;
-}) {
-
-  const [
-    format,
-    setFormat,
-  ] = useState<ExportFormat>(
-    'pdf'
-  );
-
-
-  return (
-    <div>
-
-      <label className="block text-xs font-semibold text-gray-500 mb-1">
-        Export Format
-      </label>
-
-      <div className="flex items-center gap-2">
-
-        <select
-          value={format}
-          onChange={(event) =>
-            setFormat(
-              event.target
-                .value as ExportFormat
-            )
-          }
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-        >
-
-          {formats.map(
-            (item) => (
-
-              <option
-                key={item}
-                value={item}
-              >
-                {item === 'xlsx'
-                  ? 'Excel (XLSX)'
-                  : item.toUpperCase()}
-              </option>
-
-            )
-          )}
-
-        </select>
-
-
-        <Button
-          size="sm"
-          variant="outline"
-          loading={!!exporting}
-          onClick={() =>
-            void onExport(format)
-          }
-        >
-          ⬇ Export
-        </Button>
-
-      </div>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// BREAKDOWN TABLE
-// ============================================================
-
-function BreakdownTable({
-  rows,
-  currency,
-}: {
-  rows: BreakdownRow[];
-
-  currency: string;
-}) {
-
-  if (!rows.length) {
-
-    return (
-      <p className="text-sm text-gray-400">
-        No data for this period.
-      </p>
-    );
-  }
-
-
-  return (
-    <div className="overflow-x-auto">
-
-      <table className="w-full text-sm">
-
-        <thead>
-
-          <tr className="text-left text-gray-500 text-xs uppercase">
-
-            <th className="pb-2">
-              Category
-            </th>
-
-            <th className="pb-2 text-right">
-              Count
-            </th>
-
-            <th className="pb-2 text-right">
-              Amount
-            </th>
-
-          </tr>
-
-        </thead>
-
-
-        <tbody>
-
-          {rows.map(
-            (row) => (
-
-              <tr
-                key={row.label}
-                className="border-t border-gray-50"
-              >
-
-                <td className="py-2 text-gray-700">
-                  {row.label}
-                </td>
-
-                <td className="py-2 text-right text-gray-800 font-medium">
-                  {row.count ?? 0}
-                </td>
-
-                <td className="py-2 text-right text-gray-600">
-                  {fmt(
-                    row.amount,
-                    currency
-                  )}
-                </td>
-
-              </tr>
-
-            )
-          )}
-
-        </tbody>
-
-      </table>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// ERROR
-// ============================================================
-
-function ErrorPanel({
-  message,
-  onRetry,
-}: {
-  message: string;
-
-  onRetry: () => void;
-}) {
-
-  return (
-    <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
-
-      <p className="text-red-700 text-sm font-semibold mb-3">
-        {message}
-      </p>
-
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={onRetry}
-      >
-        Try Again
-      </Button>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// EMPTY
-// ============================================================
-
-function EmptyState({
-  message,
-}: {
-  message: string;
-}) {
-
-  return (
-    <div className="text-center py-8">
-
-      <p className="text-sm text-gray-400">
-        {message}
-      </p>
 
     </div>
   );
