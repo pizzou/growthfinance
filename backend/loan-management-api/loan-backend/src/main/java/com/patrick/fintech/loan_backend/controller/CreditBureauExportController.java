@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
@@ -24,18 +23,25 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Staff-facing Credit Bureau export screen.
+ * Staff-facing Credit Bureau export controller.
  *
  * Provides:
+ *
  * - Preview
  * - CSV export
  * - PDF export
  * - Excel export
  *
  * Access:
+ *
  * ADMIN and MANAGER only.
  *
- * Organization scope is obtained from the authenticated user.
+ * Organization:
+ *
+ * The organization is obtained from the authenticated user.
+ *
+ * Therefore the frontend must NOT send organizationId
+ * for these regulatory export endpoints.
  */
 @RestController
 @RequestMapping("/api/regulatory/credit-bureau")
@@ -43,30 +49,57 @@ import java.util.Map;
 @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
 public class CreditBureauExportController {
 
+
     private final RegulatoryReportingService reportingService;
+
     private final ReportExportService exportService;
+
     private final AuditService auditService;
+
     private final CurrentUserUtil currentUserUtil;
 
+
+    // ============================================================
+    // EXPORT COLUMNS
+    // ============================================================
+
     private static final List<String> COLUMNS = List.of(
+
             "National ID",
+
             "Full Name",
+
             "Date of Birth",
+
             "Gender",
+
             "Phone",
+
             "Loan Number",
+
             "Loan Type",
+
             "Loan Amount",
+
             "Outstanding Balance",
+
             "Status",
+
             "Days Past Due",
+
             "Credit Score",
+
             "Date Opened",
+
             "Last Payment",
+
             "Date Closed",
+
             "Branch",
+
             "Currency"
     );
+
 
     // ============================================================
     // PREVIEW
@@ -75,45 +108,72 @@ public class CreditBureauExportController {
     @GetMapping("/preview")
     public ResponseEntity<ApiResponse<List<CreditBureauRecord>>> preview(
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             Long branchId,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String from,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String to
     ) {
 
-        Long orgId =
-                currentUserUtil.getCurrentOrganizationId();
+        Long organizationId =
+                currentUserUtil
+                        .getCurrentOrganizationId();
+
 
         List<CreditBureauRecord> records =
                 reportingService.buildCreditBureauExport(
-                        orgId,
+
+                        organizationId,
+
                         branchId,
+
                         parseDate(from),
+
                         parseDate(to)
                 );
 
+
         auditService.log(
-                currentUserUtil.getCurrentUser().getOrganization(),
-                currentUserUtil.getCurrentUser(),
+
+                currentUserUtil
+                        .getCurrentUser()
+                        .getOrganization(),
+
+                currentUserUtil
+                        .getCurrentUser(),
+
                 "VIEW",
+
                 "CreditBureauExport",
+
                 "preview",
+
                 "Previewed credit bureau export (" +
                         records.size() +
                         " records)",
+
                 null,
+
                 null,
+
                 "Regulatory Reporting"
         );
+
 
         return ResponseEntity.ok(
                 ApiResponse.ok(records)
         );
     }
+
 
     // ============================================================
     // EXPORT
@@ -127,167 +187,224 @@ public class CreditBureauExportController {
             )
             String format,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             Long branchId,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String from,
 
-            @RequestParam(required = false)
+            @RequestParam(
+                    required = false
+            )
             String to
     ) {
 
-        Long orgId =
-                currentUserUtil.getCurrentOrganizationId();
+        Long organizationId =
+                currentUserUtil
+                        .getCurrentOrganizationId();
+
 
         List<CreditBureauRecord> records =
                 reportingService.buildCreditBureauExport(
-                        orgId,
+
+                        organizationId,
+
                         branchId,
+
                         parseDate(from),
+
                         parseDate(to)
                 );
 
-        String orgName =
+
+        String organizationName =
                 currentUserUtil
                         .getCurrentUser()
                         .getOrganization()
                         .getName();
+
 
         List<Map<String, Object>> rows =
                 records.stream()
                         .map(this::toRow)
                         .toList();
 
+
         String filename =
                 "Credit-Bureau-Export-" +
                         LocalDate.now()
-                                .format(DateTimeFormatter.ISO_DATE);
+                                .format(
+                                        DateTimeFormatter.ISO_DATE
+                                );
+
 
         auditService.log(
-                currentUserUtil.getCurrentUser().getOrganization(),
-                currentUserUtil.getCurrentUser(),
+
+                currentUserUtil
+                        .getCurrentUser()
+                        .getOrganization(),
+
+                currentUserUtil
+                        .getCurrentUser(),
+
                 "EXPORT",
+
                 "CreditBureauExport",
+
                 "export",
+
                 "Exported credit bureau data as " +
                         format.toUpperCase() +
                         " (" +
                         records.size() +
                         " borrower records)",
+
                 null,
+
                 null,
+
                 "Regulatory Reporting"
         );
 
+
         return createFileResponse(
+
                 format,
+
                 filename,
+
                 "Credit Bureau Export",
+
                 COLUMNS,
+
                 rows,
-                orgName
+
+                organizationName
         );
     }
+
 
     // ============================================================
     // ROW CONVERSION
     // ============================================================
 
     private Map<String, Object> toRow(
-            CreditBureauRecord r
+            CreditBureauRecord record
     ) {
 
         Map<String, Object> row =
                 new LinkedHashMap<>();
 
+
         row.put(
                 "National ID",
-                r.getNationalId()
+                record.getNationalId()
         );
+
 
         row.put(
                 "Full Name",
-                r.getFullName()
+                record.getFullName()
         );
+
 
         row.put(
                 "Date of Birth",
-                r.getDateOfBirth()
+                record.getDateOfBirth()
         );
+
 
         row.put(
                 "Gender",
-                r.getGender()
+                record.getGender()
         );
+
 
         row.put(
                 "Phone",
-                r.getPhone()
+                record.getPhone()
         );
+
 
         row.put(
                 "Loan Number",
-                r.getLoanNumber()
+                record.getLoanNumber()
         );
+
 
         row.put(
                 "Loan Type",
-                r.getLoanType()
+                record.getLoanType()
         );
+
 
         row.put(
                 "Loan Amount",
-                r.getLoanAmount()
+                record.getLoanAmount()
         );
+
 
         row.put(
                 "Outstanding Balance",
-                r.getOutstandingBalance()
+                record.getOutstandingBalance()
         );
+
 
         row.put(
                 "Status",
-                r.getLoanStatus()
+                record.getLoanStatus()
         );
+
 
         row.put(
                 "Days Past Due",
-                r.getDaysPastDue()
+                record.getDaysPastDue()
         );
+
 
         row.put(
                 "Credit Score",
-                r.getCreditScore()
+                record.getCreditScore()
         );
+
 
         row.put(
                 "Date Opened",
-                r.getDateOpened()
+                record.getDateOpened()
         );
+
 
         row.put(
                 "Last Payment",
-                r.getLastPaymentDate()
+                record.getLastPaymentDate()
         );
+
 
         row.put(
                 "Date Closed",
-                r.getDateClosed()
+                record.getDateClosed()
         );
+
 
         row.put(
                 "Branch",
-                r.getBranchName()
+                record.getBranchName()
         );
+
 
         row.put(
                 "Currency",
-                r.getCurrency()
+                record.getCurrency()
         );
+
 
         return row;
     }
+
 
     // ============================================================
     // FILE RESPONSE
@@ -308,11 +425,20 @@ public class CreditBureauExportController {
             String organizationName
     ) {
 
-        if (format == null ||
-                format.isBlank()) {
+        if (
+                format == null ||
+                format.isBlank()
+        ) {
 
             format = "xlsx";
         }
+
+
+        format =
+                format
+                        .trim()
+                        .toLowerCase();
+
 
         byte[] bytes;
 
@@ -320,7 +446,12 @@ public class CreditBureauExportController {
 
         String extension;
 
-        switch (format.toLowerCase()) {
+
+        switch (format) {
+
+            // ----------------------------------------------------
+            // CSV
+            // ----------------------------------------------------
 
             case "csv" -> {
 
@@ -330,50 +461,79 @@ public class CreditBureauExportController {
                                 rows
                         );
 
+
                 contentType =
                         MediaType.parseMediaType(
                                 "text/csv"
                         );
 
+
                 extension = "csv";
             }
+
+
+            // ----------------------------------------------------
+            // PDF
+            // ----------------------------------------------------
 
             case "pdf" -> {
 
                 bytes =
                         exportService.toPdf(
+
                                 title,
+
                                 columns,
+
                                 rows,
+
                                 organizationName
                         );
+
 
                 contentType =
                         MediaType.APPLICATION_PDF;
 
+
                 extension = "pdf";
             }
+
+
+            // ----------------------------------------------------
+            // EXCEL
+            // ----------------------------------------------------
 
             case "xlsx" -> {
 
                 bytes =
                         exportService.toExcel(
+
                                 title,
+
                                 columns,
+
                                 rows
                         );
+
 
                 contentType =
                         MediaType.parseMediaType(
                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         );
 
+
                 extension = "xlsx";
             }
+
+
+            // ----------------------------------------------------
+            // INVALID
+            // ----------------------------------------------------
 
             default -> {
 
                 throw new IllegalArgumentException(
+
                         "Unsupported export format: " +
                                 format +
                                 ". Supported formats: csv, pdf, xlsx."
@@ -381,18 +541,27 @@ public class CreditBureauExportController {
             }
         }
 
+
         return ResponseEntity.ok()
-                .contentType(contentType)
+
+                .contentType(
+                        contentType
+                )
+
                 .header(
+
                         HttpHeaders.CONTENT_DISPOSITION,
+
                         "attachment; filename=\"" +
                                 filename +
                                 "." +
                                 extension +
                                 "\""
                 )
+
                 .body(bytes);
     }
+
 
     // ============================================================
     // CSV
@@ -408,57 +577,167 @@ public class CreditBureauExportController {
         StringBuilder csv =
                 new StringBuilder();
 
-        csv.append(
-                String.join(",", columns)
-        );
+
+        // --------------------------------------------------------
+        // HEADER
+        // --------------------------------------------------------
+
+        for (
+                int i = 0;
+                i < columns.size();
+                i++
+        ) {
+
+            String column =
+                    escapeCsv(
+                            columns.get(i)
+                    );
+
+
+            csv.append(column);
+
+
+            if (
+                    i <
+                            columns.size() - 1
+            ) {
+
+                csv.append(",");
+            }
+        }
+
 
         csv.append("\n");
 
-        for (Map<String, Object> row : rows) {
 
-            for (int i = 0;
-                 i < columns.size();
-                 i++) {
+        // --------------------------------------------------------
+        // ROWS
+        // --------------------------------------------------------
+
+        for (
+                Map<String, Object> row :
+                rows
+        ) {
+
+            for (
+                    int i = 0;
+                    i < columns.size();
+                    i++
+            ) {
 
                 Object value =
                         row.get(
                                 columns.get(i)
                         );
 
+
                 String cell =
                         value == null
                                 ? ""
                                 : value.toString();
 
-                cell =
-                        cell.replace(
-                                "\"",
-                                "\"\""
-                        );
 
-                if (cell.contains(",") ||
-                        cell.contains("\"") ||
-                        cell.contains("\n")) {
+                csv.append(
+                        escapeCsv(cell)
+                );
 
-                    cell =
-                            "\"" +
-                                    cell +
-                                    "\"";
-                }
 
-                csv.append(cell);
+                if (
+                        i <
+                                columns.size() - 1
+                ) {
 
-                if (i < columns.size() - 1) {
                     csv.append(",");
                 }
             }
 
+
             csv.append("\n");
         }
 
-        return csv.toString()
-                .getBytes(StandardCharsets.UTF_8);
+
+        // UTF-8 BOM helps Excel correctly detect UTF-8 CSV.
+        byte[] bom =
+                new byte[]{
+                        (byte) 0xEF,
+                        (byte) 0xBB,
+                        (byte) 0xBF
+                };
+
+
+        byte[] content =
+                csv.toString()
+                        .getBytes(
+                                StandardCharsets.UTF_8
+                        );
+
+
+        byte[] result =
+                new byte[
+                        bom.length +
+                                content.length
+                ];
+
+
+        System.arraycopy(
+                bom,
+                0,
+                result,
+                0,
+                bom.length
+        );
+
+
+        System.arraycopy(
+                content,
+                0,
+                result,
+                bom.length,
+                content.length
+        );
+
+
+        return result;
     }
+
+
+    // ============================================================
+    // CSV ESCAPING
+    // ============================================================
+
+    private String escapeCsv(
+            String value
+    ) {
+
+        if (value == null) {
+
+            return "";
+        }
+
+
+        String escaped =
+                value.replace(
+                        "\"",
+                        "\"\""
+                );
+
+
+        if (
+                escaped.contains(",") ||
+                escaped.contains("\"") ||
+                escaped.contains("\n") ||
+                escaped.contains("\r")
+        ) {
+
+            return "\"" +
+                    escaped +
+                    "\"";
+        }
+
+
+        return escaped;
+    }
+
 
     // ============================================================
     // DATE
@@ -468,12 +747,17 @@ public class CreditBureauExportController {
             String value
     ) {
 
-        if (value == null ||
-                value.isBlank()) {
+        if (
+                value == null ||
+                value.isBlank()
+        ) {
 
             return null;
         }
 
-        return LocalDate.parse(value);
+
+        return LocalDate.parse(
+                value
+        );
     }
 }

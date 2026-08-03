@@ -18,15 +18,39 @@ public class CreditBureauController {
 
     private final CreditBureauService creditBureauService;
 
+
     // ============================================================
     // RUN CREDIT BUREAU CHECK
+    // ============================================================
+    //
+    // POST
+    // /api/credit-bureau/borrowers/{borrowerId}/check
+    //
+    // Required:
+    // organizationId
+    //
+    // Optional:
+    // requestedBy
+    //
+    // Example:
+    //
+    // POST /api/credit-bureau/borrowers/10/check?organizationId=1
+    //
     // ============================================================
 
     @PostMapping("/borrowers/{borrowerId}/check")
     public ResponseEntity<CreditBureauCheckResponse> runCheck(
+
             @PathVariable Long borrowerId,
-            @RequestParam(name = "organizationId") Long organizationId,
-            @RequestParam(name = "requestedBy", required = false) String requestedBy
+
+            @RequestParam(name = "organizationId")
+            Long organizationId,
+
+            @RequestParam(
+                    name = "requestedBy",
+                    required = false
+            )
+            String requestedBy
     ) {
 
         CreditBureauCheck check =
@@ -37,18 +61,36 @@ public class CreditBureauController {
                 );
 
         return ResponseEntity.ok(
-                creditBureauService.toOfficerResponse(check)
+                creditBureauService.toOfficerResponse(
+                        check
+                )
         );
     }
+
 
     // ============================================================
     // LATEST CREDIT BUREAU CHECK
     // ============================================================
+    //
+    // GET
+    // /api/credit-bureau/borrowers/{borrowerId}/latest
+    //
+    // Required:
+    // organizationId
+    //
+    // Example:
+    //
+    // GET /api/credit-bureau/borrowers/10/latest?organizationId=1
+    //
+    // ============================================================
 
     @GetMapping("/borrowers/{borrowerId}/latest")
     public ResponseEntity<CreditBureauCheckResponse> getLatest(
+
             @PathVariable Long borrowerId,
-            @RequestParam(name = "organizationId") Long organizationId
+
+            @RequestParam(name = "organizationId")
+            Long organizationId
     ) {
 
         return creditBureauService
@@ -58,18 +100,37 @@ public class CreditBureauController {
                 )
                 .map(ResponseEntity::ok)
                 .orElseGet(
-                        () -> ResponseEntity.notFound().build()
+                        () ->
+                                ResponseEntity
+                                        .notFound()
+                                        .build()
                 );
     }
+
 
     // ============================================================
     // CREDIT BUREAU HISTORY
     // ============================================================
+    //
+    // GET
+    // /api/credit-bureau/borrowers/{borrowerId}/history
+    //
+    // Required:
+    // organizationId
+    //
+    // Example:
+    //
+    // GET /api/credit-bureau/borrowers/10/history?organizationId=1
+    //
+    // ============================================================
 
     @GetMapping("/borrowers/{borrowerId}/history")
     public ResponseEntity<List<CreditBureauCheckResponse>> getHistory(
+
             @PathVariable Long borrowerId,
-            @RequestParam(name = "organizationId") Long organizationId
+
+            @RequestParam(name = "organizationId")
+            Long organizationId
     ) {
 
         return ResponseEntity.ok(
