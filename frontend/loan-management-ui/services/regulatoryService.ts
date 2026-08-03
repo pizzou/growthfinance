@@ -54,13 +54,6 @@ export interface BnrReportParams {
 // ============================================================
 // API QUERY PARAMETERS
 // ============================================================
-//
-// This is deliberately compatible with clients expecting:
-//
-// Record<string, unknown>
-//
-// BnrReportParams itself does not need an index signature.
-// ============================================================
 
 type QueryParams =
   Record<string, unknown>;
@@ -78,11 +71,6 @@ export interface BreakdownRow {
 
 
 // Backwards-compatible alias.
-//
-// Some older pages may still import BnrBreakdownRow.
-// Keep it exported so those pages do not break.
-//
-
 export type BnrBreakdownRow =
   BreakdownRow;
 
@@ -481,10 +469,6 @@ export interface BnrFinancialStatementReport {
 
 
 // Backwards-compatible name.
-//
-// Older frontend code may import BnrFinancialStatement.
-//
-
 export type BnrFinancialStatement =
   BnrFinancialStatementReport;
 
@@ -540,7 +524,6 @@ export interface CreditRecord {
 
 
 // Backwards-compatible name.
-
 export type CreditBureauRecord =
   CreditRecord;
 
@@ -561,14 +544,6 @@ interface ApiEnvelope<T> {
 
 // ============================================================
 // API CLIENT RESPONSE NORMALIZATION
-// ============================================================
-//
-// The project's API client returns untyped values. These helpers
-// safely normalize the response without using:
-//
-// ApiClient<T>
-//
-// which was the source of the TS2558 errors.
 // ============================================================
 
 function unwrap<T>(
@@ -909,58 +884,57 @@ export const regulatoryApi = {
   // BNR EXPORT
   // ==========================================================
 
-  // ============================================================
-// BNR EXPORT
-// ============================================================
+  async bnrExport(
+    format: ExportFormat,
+    params?: BnrReportParams
+  ): Promise<void> {
 
-async bnrExport(
-  format: ExportFormat,
-  params?: BnrReportParams
-): Promise<void> {
+    const normalizedFormat =
+      format.toLowerCase() as ExportFormat;
 
-  const normalizedFormat =
-    format.toLowerCase() as ExportFormat;
+    const response =
+      await api.get(
+        '/regulatory/bnr/financial-statement/export',
+        {
+          params: {
+            ...toQueryParams(params),
+            format: normalizedFormat,
+          },
 
-  const response =
-    await api.get(
-      '/regulatory/bnr/financial-statement/export',
-      {
-        params: {
-          ...toQueryParams(params),
-          format: normalizedFormat,
-        },
+          responseType: 'blob',
+        }
+      );
 
-        responseType: 'blob',
-      }
+    const responseData =
+      response?.data;
+
+    const blob =
+      responseData instanceof Blob
+        ? responseData
+        : new Blob(
+            [responseData],
+            {
+              type:
+                normalizedFormat === 'pdf'
+                  ? 'application/pdf'
+                  : normalizedFormat === 'csv'
+                    ? 'text/csv'
+                    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            }
+          );
+
+
+    const filename =
+      `BNR-Financial-Statement-${new Date()
+        .toISOString()
+        .slice(0, 10)}.${normalizedFormat}`;
+
+
+    triggerDownload(
+      blob,
+      filename
     );
-
-  // Axios returns AxiosResponse<Blob>.
-  // The actual file is inside response.data.
-  const blob =
-    response.data instanceof Blob
-      ? response.data
-      : new Blob(
-          [response.data],
-          {
-            type:
-              normalizedFormat === 'pdf'
-                ? 'application/pdf'
-                : normalizedFormat === 'csv'
-                  ? 'text/csv'
-                  : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          }
-        );
-
-  const filename =
-    `BNR-Financial-Statement-${new Date()
-      .toISOString()
-      .slice(0, 10)}.${normalizedFormat}`;
-
-  triggerDownload(
-    blob,
-    filename
-  );
-},
+  },
 
 
   // ==========================================================
@@ -979,8 +953,6 @@ async bnrExport(
     );
   },
 };
-
-
 
 
 export default regulatoryApi;
