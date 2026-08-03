@@ -93,9 +93,6 @@ public class RegulatoryExternalController {
                         .getOrganization()
                         .getId();
 
-        // --------------------------------------------------------
-        // BUILD CREDIT BUREAU DATA
-        // --------------------------------------------------------
 
         List<CreditBureauRecord> records =
                 reportingService.buildCreditBureauExport(
