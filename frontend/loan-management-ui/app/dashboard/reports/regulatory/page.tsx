@@ -1,23 +1,32 @@
 'use client';
 
-import {
-  useEffect,
-  useState,
-} from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '@/hooks/useAuth';
 
 import {
   regulatoryApi,
+  type ApiClient,
+  type BnrFinancialStatementReport,
+  type BnrReportParams,
   type BnrSummary,
   type BreakdownRow,
   type CreditRecord,
-  type ApiClient,
+  type ExportFormat,
+  type FinancialStatementAccount,
+  type RegulatoryPeriod,
 } from '@/services/regulatoryService';
+import {
+  PageSpinner,
+} from '@/components/ui/Skeleton';
 
-import { PageSpinner } from '@/components/ui/Skeleton';
-import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
+import {
+  Button,
+} from '@/components/ui/Button';
+
+import {
+  Modal,
+} from '@/components/ui/Modal';
 
 
 /* ============================================================
@@ -39,14 +48,14 @@ const fmt = (
       {
         maximumFractionDigits: 0,
       }
-    ).format(n)
-    + ' '
-    + currency
+    ).format(n) +
+    ' ' +
+    currency
   );
 };
 
 
-const PERIODS = [
+const PERIODS: RegulatoryPeriod[] = [
   'DAILY',
   'WEEKLY',
   'MONTHLY',
@@ -57,7 +66,7 @@ const PERIODS = [
 
 
 /* ============================================================
-   PAGE
+   MAIN PAGE
    ============================================================ */
 
 export default function RegulatoryReportsPage() {
@@ -76,12 +85,13 @@ export default function RegulatoryReportsPage() {
       user?.role || ''
     );
 
-
   const [
     tab,
     setTab,
   ] = useState<
-    'bnr' | 'credit-bureau' | 'api-keys'
+    'bnr' |
+    'credit-bureau' |
+    'api-keys'
   >('bnr');
 
 
@@ -109,7 +119,7 @@ export default function RegulatoryReportsPage() {
     <div className="space-y-6">
 
       {/* ======================================================
-          HEADER
+          PAGE HEADER
           ====================================================== */}
 
       <div>
@@ -137,23 +147,26 @@ export default function RegulatoryReportsPage() {
             key: 'bnr',
             label: '🏦 BNR Reports',
           },
+
           {
             key: 'credit-bureau',
             label: '📇 Credit Bureau',
           },
+
           {
             key: 'api-keys',
             label: '🔑 API Access',
             adminOnly: true,
           },
+
         ]
           .filter(
-            item =>
+            (item) =>
               !item.adminOnly ||
               isAdmin
           )
           .map(
-            item => (
+            (item) => (
 
               <button
                 key={item.key}
@@ -174,7 +187,6 @@ export default function RegulatoryReportsPage() {
                   border-b-2
                   -mb-px
                   transition-colors
-
                   ${
                     tab === item.key
                       ? 'border-teal-600 text-teal-700'
@@ -192,7 +204,7 @@ export default function RegulatoryReportsPage() {
 
 
       {/* ======================================================
-          CONTENT
+          TAB CONTENT
           ====================================================== */}
 
       {tab === 'bnr' && (
@@ -223,7 +235,9 @@ function BnrTab() {
   const [
     period,
     setPeriod,
-  ] = useState('MONTHLY');
+  ] = useState<RegulatoryPeriod>(
+    'MONTHLY'
+  );
 
   const [
     from,
@@ -238,22 +252,41 @@ function BnrTab() {
   const [
     summary,
     setSummary,
-  ] = useState<BnrSummary | null>(null);
+  ] = useState<BnrSummary | null>(
+    null
+  );
+
+  const [
+    financialStatement,
+    setFinancialStatement,
+  ] =
+    useState<BnrFinancialStatement | null>(
+      null
+    );
 
   const [
     loanTypes,
     setLoanTypes,
-  ] = useState<BreakdownRow[]>([]);
+  ] =
+    useState<BreakdownRow[]>(
+      []
+    );
 
   const [
     branches,
     setBranches,
-  ] = useState<BreakdownRow[]>([]);
+  ] =
+    useState<BreakdownRow[]>(
+      []
+    );
 
   const [
     gender,
     setGender,
-  ] = useState<BreakdownRow[]>([]);
+  ] =
+    useState<BreakdownRow[]>(
+      []
+    );
 
   const [
     loading,
@@ -268,35 +301,52 @@ function BnrTab() {
   const [
     exporting,
     setExporting,
-  ] = useState(false);
+  ] = useState<ExportFormat | null>(
+    null
+  );
 
 
-  const params = {
-    period,
-    from:
-      period === 'CUSTOM'
-        ? from
-        : undefined,
-    to:
-      period === 'CUSTOM'
-        ? to
-        : undefined,
-  };
+  const params =
+    useMemo<BnrReportParams>(
+      () => ({
+
+        period,
+
+        from:
+          period === 'CUSTOM'
+            ? from || undefined
+            : undefined,
+
+        to:
+          period === 'CUSTOM'
+            ? to || undefined
+            : undefined,
+
+      }),
+      [
+        period,
+        from,
+        to,
+      ]
+    );
 
 
   /* ==========================================================
      LOAD
      ========================================================== */
 
-  const load = async (): Promise<void> => {
+  const load = async () => {
 
     if (
       period === 'CUSTOM' &&
-      (!from || !to)
+      (
+        !from ||
+        !to
+      )
     ) {
 
       setLoadError(
-        'Please select both a start date and an end date.'
+        'Please select both From and To dates.'
       );
 
       return;
@@ -317,6 +367,7 @@ function BnrTab() {
 
 
     setLoading(true);
+
     setLoadError('');
 
 
@@ -324,60 +375,54 @@ function BnrTab() {
 
       const [
         summaryResult,
+        financialResult,
         loanTypeResult,
         branchResult,
         genderResult,
-      ] = await Promise.all([
+      ] =
+        await Promise.all([
 
-        regulatoryApi.bnrSummary(
-          params
-        ),
+          regulatoryApi.bnrSummary(
+            params
+          ),
 
-        regulatoryApi.bnrByLoanType(
-          params
-        ),
+          regulatoryApi.bnrFinancialStatement(
+            params
+          ),
 
-        regulatoryApi.bnrByBranch(
-          params
-        ),
+          regulatoryApi.bnrByLoanType(
+            params
+          ),
 
-        regulatoryApi.bnrByGender(
-          params
-        ),
+          regulatoryApi.bnrByBranch(
+            params
+          ),
 
-      ]);
+          regulatoryApi.bnrByGender(
+            params
+          ),
 
+        ]);
 
-      /*
-       * These are already normalized by regulatoryService.ts.
-       */
 
       setSummary(
         summaryResult
       );
 
+      setFinancialStatement(
+        financialResult
+      );
+
       setLoanTypes(
-        Array.isArray(
-          loanTypeResult
-        )
-          ? loanTypeResult
-          : []
+        loanTypeResult
       );
 
       setBranches(
-        Array.isArray(
-          branchResult
-        )
-          ? branchResult
-          : []
+        branchResult
       );
 
       setGender(
-        Array.isArray(
-          genderResult
-        )
-          ? genderResult
-          : []
+        genderResult
       );
 
     } catch (error) {
@@ -408,85 +453,102 @@ function BnrTab() {
   useEffect(
     () => {
 
-      if (period !== 'CUSTOM') {
+      if (
+        period !== 'CUSTOM'
+      ) {
+
         void load();
       }
 
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Period change should automatically reload.
+    // Custom periods use Apply.
     [period]
   );
 
 
   /* ==========================================================
-     EXPORT
+     EXPORT FINANCIAL STATEMENT
      ========================================================== */
 
-  const doExport = async (
-    format: 'xlsx' | 'csv' | 'pdf'
-  ): Promise<void> => {
+  const exportFinancialStatement =
+    async (
+      format: ExportFormat
+    ) => {
 
-    if (
-      period === 'CUSTOM' &&
-      (!from || !to)
-    ) {
-
-      setLoadError(
-        'Please select both a start date and an end date before exporting.'
-      );
-
-      return;
-    }
-
-
-    if (
-      period === 'CUSTOM' &&
-      from > to
-    ) {
-
-      setLoadError(
-        'The start date cannot be after the end date.'
-      );
-
-      return;
-    }
-
-
-    setExporting(true);
-
-
-    try {
-
-      await regulatoryApi.bnrExport(
-        format,
-        params
-      );
-
-    } catch (error) {
-
-      console.error(
-        'BNR export failed:',
-        error
-      );
-
-      setLoadError(
-        regulatoryApi.getErrorMessage(
-          error,
-          'Export failed.'
+      if (
+        period === 'CUSTOM' &&
+        (
+          !from ||
+          !to
         )
+      ) {
+
+        setLoadError(
+          'Please select both From and To dates.'
+        );
+
+        return;
+      }
+
+
+      if (
+        period === 'CUSTOM' &&
+        from > to
+      ) {
+
+        setLoadError(
+          'The start date cannot be after the end date.'
+        );
+
+        return;
+      }
+
+
+      setExporting(
+        format
       );
 
-    } finally {
+      try {
 
-      setExporting(false);
-    }
-  };
+        await regulatoryApi
+          .bnrFinancialStatementExport(
+            format,
+            params
+          );
+
+      } catch (error) {
+
+        console.error(
+          'Financial statement export failed:',
+          error
+        );
+
+        setLoadError(
+          regulatoryApi.getErrorMessage(
+            error,
+            'Financial statement export failed.'
+          )
+        );
+
+      } finally {
+
+        setExporting(
+          null
+        );
+      }
+    };
 
 
   const currency =
     summary?.currency ||
+    financialStatement?.currency ||
     'RWF';
 
+
+  /* ==========================================================
+     RENDER
+     ========================================================== */
 
   return (
 
@@ -502,33 +564,31 @@ function BnrTab() {
 
           <div>
 
-            <label
-              className="block text-xs font-semibold text-gray-500 mb-1"
-              htmlFor="bnr-period"
-            >
+            <label className="block text-xs font-semibold text-gray-500 mb-1">
               Report Period
             </label>
 
             <select
-              id="bnr-period"
               value={period}
-              onChange={event =>
+              onChange={(event) =>
                 setPeriod(
-                  event.target.value
+                  event.target.value as RegulatoryPeriod
                 )
               }
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
             >
 
               {PERIODS.map(
-                value => (
+                (item) => (
 
                   <option
-                    key={value}
-                    value={value}
+                    key={item}
+                    value={item}
                   >
-                    {value.charAt(0) +
-                      value.slice(1).toLowerCase()}
+                    {
+                      item.charAt(0) +
+                      item.slice(1).toLowerCase()
+                    }
                   </option>
 
                 )
@@ -544,18 +604,14 @@ function BnrTab() {
 
               <div>
 
-                <label
-                  className="block text-xs font-semibold text-gray-500 mb-1"
-                  htmlFor="bnr-from"
-                >
+                <label className="block text-xs font-semibold text-gray-500 mb-1">
                   From
                 </label>
 
                 <input
-                  id="bnr-from"
                   type="date"
                   value={from}
-                  onChange={event =>
+                  onChange={(event) =>
                     setFrom(
                       event.target.value
                     )
@@ -568,18 +624,14 @@ function BnrTab() {
 
               <div>
 
-                <label
-                  className="block text-xs font-semibold text-gray-500 mb-1"
-                  htmlFor="bnr-to"
-                >
+                <label className="block text-xs font-semibold text-gray-500 mb-1">
                   To
                 </label>
 
                 <input
-                  id="bnr-to"
                   type="date"
                   value={to}
-                  onChange={event =>
+                  onChange={(event) =>
                     setTo(
                       event.target.value
                     )
@@ -606,7 +658,9 @@ function BnrTab() {
         </div>
 
 
-        {/* EXPORT BUTTONS */}
+        {/* ====================================================
+            FINANCIAL STATEMENT EXPORTS
+            ==================================================== */}
 
         <div className="flex gap-2">
 
@@ -615,17 +669,24 @@ function BnrTab() {
               'xlsx',
               'csv',
               'pdf',
-            ] as const
+            ] as ExportFormat[]
           ).map(
-            format => (
+            (format) => (
 
               <Button
                 key={format}
                 size="sm"
                 variant="outline"
-                loading={exporting}
+                loading={
+                  exporting === format
+                }
+                disabled={
+                  exporting !== null
+                }
                 onClick={() =>
-                  void doExport(format)
+                  void exportFinancialStatement(
+                    format
+                  )
                 }
               >
                 ⬇ {format.toUpperCase()}
@@ -640,14 +701,10 @@ function BnrTab() {
 
 
       {/* ======================================================
-          LOADING
+          ERROR
           ====================================================== */}
 
-      {loading ? (
-
-        <PageSpinner />
-
-      ) : loadError ? (
+      {loadError && (
 
         <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
 
@@ -666,6 +723,16 @@ function BnrTab() {
           </Button>
 
         </div>
+      )}
+
+
+      {/* ======================================================
+          LOADING
+          ====================================================== */}
+
+      {loading ? (
+
+        <PageSpinner />
 
       ) : !summary ? (
 
@@ -678,7 +745,7 @@ function BnrTab() {
         <>
 
           {/* ==================================================
-              PORTFOLIO HEADER
+              SUMMARY HEADER
               ================================================== */}
 
           <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -713,7 +780,7 @@ function BnrTab() {
 
 
           {/* ==================================================
-              LOAN COUNTS
+              LOAN STATUS CARDS
               ================================================== */}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -721,34 +788,56 @@ function BnrTab() {
             {[
               {
                 label: 'Total Loans Issued',
-                value: summary.totalLoans,
+                value:
+                  summary.totalLoans ??
+                  summary.totalLoansIssued ??
+                  0,
               },
+
               {
                 label: 'Active Loans',
-                value: summary.activeLoans,
+                value:
+                  summary.activeLoans ??
+                  0,
               },
+
               {
                 label: 'Closed Loans',
-                value: summary.closedLoans,
+                value:
+                  summary.closedLoans ??
+                  0,
               },
+
               {
                 label: 'Pending Loans',
-                value: summary.pendingLoans,
+                value:
+                  summary.pendingLoans ??
+                  0,
               },
+
               {
                 label: 'Rejected Loans',
-                value: summary.rejectedLoans,
+                value:
+                  summary.rejectedLoans ??
+                  0,
               },
+
               {
                 label: 'Overdue Loans',
-                value: summary.overdueLoans,
+                value:
+                  summary.overdueLoans ??
+                  0,
               },
+
               {
                 label: 'Defaulted / Written-off',
-                value: summary.defaultedLoans,
+                value:
+                  summary.defaultedLoans ??
+                  0,
               },
+
             ].map(
-              card => (
+              (card) => (
 
                 <div
                   key={card.label}
@@ -760,7 +849,7 @@ function BnrTab() {
                   </p>
 
                   <p className="text-xl font-bold mt-1 text-gray-900">
-                    {card.value ?? 0}
+                    {card.value}
                   </p>
 
                 </div>
@@ -772,7 +861,7 @@ function BnrTab() {
 
 
           {/* ==================================================
-              FINANCIAL SUMMARY
+              FINANCIAL PORTFOLIO CARDS
               ================================================== */}
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -786,6 +875,7 @@ function BnrTab() {
                 ),
                 color: 'text-indigo-600',
               },
+
               {
                 label: 'Outstanding Principal',
                 value: fmt(
@@ -794,6 +884,7 @@ function BnrTab() {
                 ),
                 color: 'text-blue-600',
               },
+
               {
                 label: 'Total Interest Collected',
                 value: fmt(
@@ -802,6 +893,7 @@ function BnrTab() {
                 ),
                 color: 'text-green-600',
               },
+
               {
                 label: 'Interest Accrued (Unpaid)',
                 value: fmt(
@@ -810,30 +902,35 @@ function BnrTab() {
                 ),
                 color: 'text-orange-600',
               },
+
               {
                 label: 'Portfolio at Risk (PAR)',
                 value:
                   `${fmt(
                     summary.parAmount,
                     currency
-                  )} (${formatRatio(
-                    summary.parRatio
-                  )})`,
+                  )} (${(
+                    (summary.parRatio || 0) *
+                    100
+                  ).toFixed(1)}%)`,
                 color: 'text-amber-600',
               },
+
               {
                 label: 'NPL (>90 days)',
                 value:
                   `${fmt(
                     summary.nplAmount,
                     currency
-                  )} (${formatRatio(
-                    summary.nplRatio
-                  )})`,
+                  )} (${(
+                    (summary.nplRatio || 0) *
+                    100
+                  ).toFixed(1)}%)`,
                 color: 'text-red-600',
               },
+
             ].map(
-              card => (
+              (card) => (
 
                 <div
                   key={card.label}
@@ -845,7 +942,12 @@ function BnrTab() {
                   </p>
 
                   <p
-                    className={`text-lg font-bold mt-1 ${card.color}`}
+                    className={`
+                      text-lg
+                      font-bold
+                      mt-1
+                      ${card.color}
+                    `}
                   >
                     {card.value}
                   </p>
@@ -856,6 +958,20 @@ function BnrTab() {
             )}
 
           </div>
+
+
+          {/* ==================================================
+              FINANCIAL STATEMENT
+              ================================================== */}
+
+          <FinancialStatementSection
+            report={
+              financialStatement
+            }
+            currency={
+              currency
+            }
+          />
 
 
           {/* ==================================================
@@ -916,40 +1032,513 @@ function BnrTab() {
 
 
 /* ============================================================
-   RATIO FORMATTER
+   FINANCIAL STATEMENT SECTION
    ============================================================ */
 
-/**
- * Supports both common backend representations:
- *
- * 0.125 -> 12.5%
- *
- * 12.5  -> 12.5%
- *
- * The first is treated as a decimal ratio.
- * The second is treated as an already-percent value.
- */
-function formatRatio(
-  value?: number
-): string {
+function FinancialStatementSection({
+  report,
+  currency,
+}: {
+  report: BnrFinancialStatement | null;
+  currency: string;
+}) {
 
-  if (value == null) {
-    return '0.0%';
+  if (!report) {
+
+    return (
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+
+        <h2 className="font-semibold text-gray-800 text-sm">
+          BNR Financial Statement
+        </h2>
+
+        <p className="text-sm text-gray-400 mt-3">
+          No financial statement data available for this period.
+        </p>
+
+      </div>
+    );
   }
 
-  const number =
-    Number(value);
 
-  if (!Number.isFinite(number)) {
-    return '0.0%';
+  return (
+
+    <div className="space-y-4">
+
+      {/* ======================================================
+          HEADER
+          ====================================================== */}
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+
+        <div className="flex items-center justify-between flex-wrap gap-2">
+
+          <div>
+
+            <h2 className="font-semibold text-gray-800 text-sm">
+              BNR Financial Statement
+            </h2>
+
+            <p className="text-xs text-gray-400 mt-1">
+              Balance Sheet, Profit &amp; Loss, Trial Balance and Cash Flow
+            </p>
+
+          </div>
+
+
+          <div className="text-xs text-gray-400">
+
+            {report.periodStart || '—'}
+
+            {' to '}
+
+            {report.periodEnd || '—'}
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      {/* ======================================================
+          BALANCE SHEET SUMMARY
+          ====================================================== */}
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+
+        <h3 className="font-semibold text-gray-800 text-sm mb-4">
+          Balance Sheet
+        </h3>
+
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+          <StatementMetric
+            label="Total Assets"
+            value={fmt(
+              report.totalAssets,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Total Liabilities"
+            value={fmt(
+              report.totalLiabilities,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Total Equity"
+            value={fmt(
+              report.totalEquity,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Current Period Net Income"
+            value={fmt(
+              report.currentPeriodNetIncome,
+              currency
+            )}
+          />
+
+        </div>
+
+
+        <BalanceStatus
+          label="Balance Sheet"
+          balanced={
+            report.balanceSheetBalanced
+          }
+        />
+
+      </div>
+
+
+      {/* ======================================================
+          PROFIT AND LOSS
+          ====================================================== */}
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+
+        <h3 className="font-semibold text-gray-800 text-sm mb-4">
+          Profit &amp; Loss
+        </h3>
+
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+          <StatementMetric
+            label="Total Income"
+            value={fmt(
+              report.totalIncome,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Total Expenses"
+            value={fmt(
+              report.totalExpenses,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Net Income"
+            value={fmt(
+              report.netIncome,
+              currency
+            )}
+          />
+
+        </div>
+
+      </div>
+
+
+      {/* ======================================================
+          TRIAL BALANCE
+          ====================================================== */}
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+
+        <h3 className="font-semibold text-gray-800 text-sm mb-4">
+          Trial Balance
+        </h3>
+
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          <StatementMetric
+            label="Total Debit"
+            value={fmt(
+              report.trialBalanceDebit,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Total Credit"
+            value={fmt(
+              report.trialBalanceCredit,
+              currency
+            )}
+          />
+
+        </div>
+
+
+        <BalanceStatus
+          label="Trial Balance"
+          balanced={
+            report.trialBalanceBalanced
+          }
+        />
+
+      </div>
+
+
+      {/* ======================================================
+          CASH FLOW
+          ====================================================== */}
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+
+        <h3 className="font-semibold text-gray-800 text-sm mb-4">
+          Cash Flow
+        </h3>
+
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+
+          <StatementMetric
+            label="Cash Used For Lending"
+            value={fmt(
+              report.cashUsedForLending,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Cash From Collections"
+            value={fmt(
+              report.cashFromCollections,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Cash From Fees"
+            value={fmt(
+              report.cashFromFees,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Other Cash Movement"
+            value={fmt(
+              report.otherCashMovement,
+              currency
+            )}
+          />
+
+          <StatementMetric
+            label="Net Change In Cash"
+            value={fmt(
+              report.netChangeInCash,
+              currency
+            )}
+          />
+
+        </div>
+
+      </div>
+
+
+      {/* ======================================================
+          ACCOUNT DETAILS
+          ====================================================== */}
+
+      <StatementAccountTable
+        title="Assets"
+        rows={
+          report.assets || []
+        }
+        currency={
+          currency
+        }
+      />
+
+      <StatementAccountTable
+        title="Liabilities"
+        rows={
+          report.liabilities || []
+        }
+        currency={
+          currency
+        }
+      />
+
+      <StatementAccountTable
+        title="Equity"
+        rows={
+          report.equity || []
+        }
+        currency={
+          currency
+        }
+      />
+
+      <StatementAccountTable
+        title="Income"
+        rows={
+          report.income || []
+        }
+        currency={
+          currency
+        }
+      />
+
+      <StatementAccountTable
+        title="Expenses"
+        rows={
+          report.expenses || []
+        }
+        currency={
+          currency
+        }
+      />
+
+    </div>
+  );
+}
+
+
+/* ============================================================
+   STATEMENT METRIC
+   ============================================================ */
+
+function StatementMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+
+  return (
+
+    <div className="bg-gray-50 rounded-lg p-4">
+
+      <p className="text-gray-500 text-xs uppercase tracking-wide">
+        {label}
+      </p>
+
+      <p className="text-base font-bold mt-1 text-gray-900">
+        {value}
+      </p>
+
+    </div>
+  );
+}
+
+
+/* ============================================================
+   BALANCE STATUS
+   ============================================================ */
+
+function BalanceStatus({
+  label,
+  balanced,
+}: {
+  label: string;
+  balanced?: boolean;
+}) {
+
+  if (
+    balanced === undefined ||
+    balanced === null
+  ) {
+
+    return null;
   }
 
-  const percentage =
-    Math.abs(number) <= 1
-      ? number * 100
-      : number;
 
-  return `${percentage.toFixed(1)}%`;
+  return (
+
+    <div
+      className={`
+        mt-4
+        rounded-lg
+        px-4
+        py-3
+        text-sm
+        font-semibold
+        ${
+          balanced
+            ? 'bg-green-50 text-green-700 border border-green-200'
+            : 'bg-red-50 text-red-700 border border-red-200'
+        }
+      `}
+    >
+
+      {balanced
+        ? `✓ ${label} is balanced`
+        : `⚠ ${label} is not balanced`}
+
+    </div>
+  );
+}
+
+
+/* ============================================================
+   STATEMENT ACCOUNT TABLE
+   ============================================================ */
+
+function StatementAccountTable({
+  title,
+  rows,
+  currency,
+}: {
+  title: string;
+  rows: FinancialStatementRow[];
+  currency: string;
+}) {
+
+  if (
+    rows.length === 0
+  ) {
+
+    return null;
+  }
+
+
+  return (
+
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+
+      <h3 className="font-semibold text-gray-800 text-sm mb-3">
+        {title}
+      </h3>
+
+
+      <div className="overflow-x-auto">
+
+        <table className="w-full text-sm">
+
+          <thead>
+
+            <tr className="text-left text-gray-500 text-xs uppercase">
+
+              <th className="pb-2">
+                Account
+              </th>
+
+              <th className="pb-2 text-right">
+                Balance
+              </th>
+
+            </tr>
+
+          </thead>
+
+
+          <tbody>
+
+            {rows.map(
+              (row, index) => (
+
+                <tr
+                  key={
+                    `${row.code || ''}-${row.name || ''}-${index}`
+                  }
+                  className="border-t border-gray-50"
+                >
+
+                  <td className="py-2 text-gray-700">
+
+                    <span className="font-medium">
+                      {row.code || ''}
+                    </span>
+
+                    {row.code && row.name
+                      ? ' - '
+                      : ''}
+
+                    {row.name || 'Unnamed account'}
+
+                  </td>
+
+
+                  <td className="py-2 text-right text-gray-700">
+
+                    {fmt(
+                      row.balance,
+                      currency
+                    )}
+
+                  </td>
+
+                </tr>
+
+              )
+            )}
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+  );
 }
 
 
@@ -965,25 +1554,12 @@ function BreakdownTable({
   currency: string;
 }) {
 
-  /*
-   * Defensive protection against malformed API responses.
-   *
-   * This is the direct protection against:
-   *
-   * TypeError: a.map is not a function
-   */
-
-  const safeRows =
-    Array.isArray(rows)
-      ? rows
-      : [];
-
-
   if (
-    safeRows.length === 0
+    rows.length === 0
   ) {
 
     return (
+
       <p className="text-sm text-gray-400">
         No data for this period.
       </p>
@@ -1018,22 +1594,22 @@ function BreakdownTable({
 
       <tbody>
 
-        {safeRows.map(
+        {rows.map(
           (row, index) => (
 
             <tr
-              key={`${row.label}-${index}`}
+              key={
+                `${row.label}-${index}`
+              }
               className="border-t border-gray-50"
             >
 
               <td className="py-2 text-gray-700">
-                {row.label || '—'}
+                {row.label}
               </td>
 
               <td className="py-2 text-right text-gray-800 font-medium">
-                {Number(
-                  row.count || 0
-                )}
+                {row.count}
               </td>
 
               <td className="py-2 text-right text-gray-600">
@@ -1060,7 +1636,7 @@ function BreakdownTable({
    ============================================================ */
 
 function CreditBureauTab({
-  isAdmin,
+  isAdmin: _isAdmin,
 }: {
   isAdmin: boolean;
 }) {
@@ -1068,7 +1644,10 @@ function CreditBureauTab({
   const [
     records,
     setRecords,
-  ] = useState<CreditRecord[]>([]);
+  ] =
+    useState<CreditRecord[]>(
+      []
+    );
 
   const [
     loading,
@@ -1083,7 +1662,10 @@ function CreditBureauTab({
   const [
     exporting,
     setExporting,
-  ] = useState(false);
+  ] =
+    useState<ExportFormat | null>(
+      null
+    );
 
   const [
     from,
@@ -1096,47 +1678,31 @@ function CreditBureauTab({
   ] = useState('');
 
 
-  const load = async (): Promise<void> => {
-
-    if (
-      from &&
-      to &&
-      from > to
-    ) {
-
-      setLoadError(
-        'The start date cannot be after the end date.'
-      );
-
-      return;
-    }
-
+  const load = async () => {
 
     setLoading(true);
-    setLoadError('');
 
+    setLoadError('');
 
     try {
 
       const result =
-        await regulatoryApi.creditBureauPreview({
-          from:
-            from || undefined,
-          to:
-            to || undefined,
-        });
+        await regulatoryApi
+          .creditBureauPreview({
+            from:
+              from || undefined,
 
+            to:
+              to || undefined,
+          });
 
       setRecords(
-        Array.isArray(result)
-          ? result
-          : []
+        result
       );
 
     } catch (error) {
 
       console.error(
-        'Credit bureau load failed:',
         error
       );
 
@@ -1160,56 +1726,54 @@ function CreditBureauTab({
       void load();
 
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
 
-  const doExport = async (
-    format: 'xlsx' | 'csv' | 'pdf'
-  ): Promise<void> => {
+  const doExport =
+    async (
+      format: ExportFormat
+    ) => {
 
-    setExporting(true);
-
-
-    try {
-
-      await regulatoryApi.creditBureauExport(
-        format,
-        {
-          from:
-            from || undefined,
-          to:
-            to || undefined,
-        }
+      setExporting(
+        format
       );
 
-    } catch (error) {
+      try {
 
-      console.error(
-        'Credit bureau export failed:',
-        error
-      );
+        await regulatoryApi
+          .creditBureauExport(
+            format,
+            {
+              from:
+                from || undefined,
 
-      setLoadError(
-        regulatoryApi.getErrorMessage(
-          error,
-          'Export failed.'
-        )
-      );
+              to:
+                to || undefined,
+            }
+          );
 
-    } finally {
+      } catch (error) {
 
-      setExporting(false);
-    }
-  };
+        alert(
+          regulatoryApi.getErrorMessage(
+            error,
+            'Export failed'
+          )
+        );
+
+      } finally {
+
+        setExporting(
+          null
+        );
+      }
+    };
 
 
   return (
 
     <div className="space-y-4">
-
-      {/* SECURITY NOTICE */}
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
 
@@ -1220,26 +1784,20 @@ function CreditBureauTab({
       </div>
 
 
-      {/* FILTERS */}
-
       <div className="flex items-end justify-between gap-4 flex-wrap">
 
         <div className="flex items-end gap-3">
 
           <div>
 
-            <label
-              className="block text-xs font-semibold text-gray-500 mb-1"
-              htmlFor="credit-from"
-            >
+            <label className="block text-xs font-semibold text-gray-500 mb-1">
               From
             </label>
 
             <input
-              id="credit-from"
               type="date"
               value={from}
-              onChange={event =>
+              onChange={(event) =>
                 setFrom(
                   event.target.value
                 )
@@ -1252,18 +1810,14 @@ function CreditBureauTab({
 
           <div>
 
-            <label
-              className="block text-xs font-semibold text-gray-500 mb-1"
-              htmlFor="credit-to"
-            >
+            <label className="block text-xs font-semibold text-gray-500 mb-1">
               To
             </label>
 
             <input
-              id="credit-to"
               type="date"
               value={to}
-              onChange={event =>
+              onChange={(event) =>
                 setTo(
                   event.target.value
                 )
@@ -1294,17 +1848,24 @@ function CreditBureauTab({
               'xlsx',
               'csv',
               'pdf',
-            ] as const
+            ] as ExportFormat[]
           ).map(
-            format => (
+            (format) => (
 
               <Button
                 key={format}
                 size="sm"
                 variant="outline"
-                loading={exporting}
+                loading={
+                  exporting === format
+                }
+                disabled={
+                  exporting !== null
+                }
                 onClick={() =>
-                  void doExport(format)
+                  void doExport(
+                    format
+                  )
                 }
               >
                 ⬇ {format.toUpperCase()}
@@ -1317,8 +1878,6 @@ function CreditBureauTab({
 
       </div>
 
-
-      {/* DATA */}
 
       {loading ? (
 
@@ -1394,37 +1953,34 @@ function CreditBureauTab({
             <tbody>
 
               {records
-                .slice(0, 200)
+                .slice(
+                  0,
+                  200
+                )
                 .map(
                   (record, index) => (
 
                     <tr
-                      key={
-                        record.borrowerId ??
-                        record.loanNumber ??
-                        index
-                      }
+                      key={index}
                       className="border-t border-gray-50"
                     >
 
                       <td className="px-4 py-2 text-gray-800">
-                        {record.fullName || '—'}
+                        {record.fullName}
                       </td>
 
                       <td className="px-4 py-2 text-gray-600">
-                        {record.loanNumber || '—'}
+                        {record.loanNumber}
                       </td>
 
                       <td className="px-4 py-2 text-gray-600">
-                        {record.loanType || '—'}
+                        {record.loanType}
                       </td>
 
                       <td className="px-4 py-2">
 
                         <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-
-                          {record.loanStatus || '—'}
-
+                          {record.loanStatus}
                         </span>
 
                       </td>
@@ -1446,7 +2002,7 @@ function CreditBureauTab({
                       </td>
 
                       <td className="px-4 py-2 text-gray-500">
-                        {record.branchName || '—'}
+                        {record.branchName}
                       </td>
 
                     </tr>
@@ -1464,7 +2020,6 @@ function CreditBureauTab({
             <p className="text-center text-sm text-gray-400 py-8">
               No records for this period.
             </p>
-
           )}
 
 
@@ -1473,11 +2028,9 @@ function CreditBureauTab({
             <p className="text-center text-xs text-gray-400 py-3">
 
               Showing first 200 of {records.length}
-              {' — '}
-              full data is in the export.
+              — full data is in the export.
 
             </p>
-
           )}
 
         </div>
@@ -1498,7 +2051,10 @@ function ApiKeysTab() {
   const [
     clients,
     setClients,
-  ] = useState<ApiClient[]>([]);
+  ] =
+    useState<ApiClient[]>(
+      []
+    );
 
   const [
     loading,
@@ -1518,23 +2074,27 @@ function ApiKeysTab() {
   const [
     newKey,
     setNewKey,
-  ] = useState<{
-    apiKey: string;
-    client: ApiClient;
-  } | null>(null);
+  ] =
+    useState<{
+      apiKey: string;
+      client: ApiClient;
+    } | null>(
+      null
+    );
 
   const [
     form,
     setForm,
-  ] = useState({
-    name: '',
-    clientType:
-      'BNR' as
-        | 'BNR'
-        | 'CREDIT_BUREAU',
-    contactEmail: '',
-    description: '',
-  });
+  ] =
+    useState({
+      name: '',
+      clientType:
+        'BNR' as
+          | 'BNR'
+          | 'CREDIT_BUREAU',
+      contactEmail: '',
+      description: '',
+    });
 
   const [
     saving,
@@ -1542,32 +2102,25 @@ function ApiKeysTab() {
   ] = useState(false);
 
 
-  /* ==========================================================
-     LOAD CLIENTS
-     ========================================================== */
-
-  const load = async (): Promise<void> => {
+  const load = async () => {
 
     setLoading(true);
-    setLoadError('');
 
+    setLoadError('');
 
     try {
 
       const result =
-        await regulatoryApi.listApiClients();
-
+        await regulatoryApi
+          .listApiClients();
 
       setClients(
-        Array.isArray(result)
-          ? result
-          : []
+        result
       );
 
     } catch (error) {
 
       console.error(
-        'API clients load failed:',
         error
       );
 
@@ -1595,125 +2148,112 @@ function ApiKeysTab() {
   );
 
 
-  /* ==========================================================
-     CREATE
-     ========================================================== */
+  const create =
+    async () => {
 
-  const create = async (): Promise<void> => {
+      if (
+        !form.name.trim()
+      ) {
 
-    if (
-      !form.name.trim()
-    ) {
-
-      alert(
-        'Name is required'
-      );
-
-      return;
-    }
-
-
-    setSaving(true);
-
-
-    try {
-
-      const response =
-        await regulatoryApi.createApiClient(
-          form
+        alert(
+          'Name is required'
         );
 
+        return;
+      }
 
-      setNewKey(
-        response
+
+      setSaving(
+        true
       );
 
+      try {
 
-      setShowCreate(
-        false
-      );
-
-
-      setForm({
-        name: '',
-        clientType: 'BNR',
-        contactEmail: '',
-        description: '',
-      });
+        const result =
+          await regulatoryApi
+            .createApiClient(
+              form
+            ) as {
+              apiKey: string;
+              client: ApiClient;
+            };
 
 
-      await load();
+        setNewKey(
+          result
+        );
 
-    } catch (error) {
+        setShowCreate(
+          false
+        );
 
-      console.error(
-        'API key creation failed:',
-        error
-      );
+        setForm({
+          name: '',
+          clientType:
+            'BNR',
+          contactEmail: '',
+          description: '',
+        });
 
-      alert(
-        regulatoryApi.getErrorMessage(
-          error,
-          'Failed to create API key'
+        await load();
+
+      } catch (error) {
+
+        alert(
+          regulatoryApi.getErrorMessage(
+            error,
+            'Failed to create API key'
+          )
+        );
+
+      } finally {
+
+        setSaving(
+          false
+        );
+      }
+    };
+
+
+  const revoke =
+    async (
+      id: number
+    ) => {
+
+      if (
+        !confirm(
+          'Revoke this API key? Any system using it will immediately lose access.'
         )
-      );
+      ) {
 
-    } finally {
-
-      setSaving(false);
-    }
-  };
+        return;
+      }
 
 
-  /* ==========================================================
-     REVOKE
-     ========================================================== */
+      try {
 
-  const revoke = async (
-    id: number
-  ): Promise<void> => {
+        await regulatoryApi
+          .revokeApiClient(
+            id
+          );
 
-    if (
-      !confirm(
-        'Revoke this API key? Any system using it will immediately lose access.'
-      )
-    ) {
-      return;
-    }
+        await load();
 
+      } catch (error) {
 
-    try {
-
-      await regulatoryApi.revokeApiClient(
-        id
-      );
-
-      await load();
-
-    } catch (error) {
-
-      console.error(
-        'API key revoke failed:',
-        error
-      );
-
-      alert(
-        regulatoryApi.getErrorMessage(
-          error,
-          'Failed to revoke'
-        )
-      );
-    }
-  };
+        alert(
+          regulatoryApi.getErrorMessage(
+            error,
+            'Failed to revoke'
+          )
+        );
+      }
+    };
 
 
   return (
 
     <div className="space-y-4">
-
-      {/* ======================================================
-          HEADER
-          ====================================================== */}
 
       <div className="flex items-center justify-between">
 
@@ -1729,7 +2269,9 @@ function ApiKeysTab() {
 
         <Button
           onClick={() =>
-            setShowCreate(true)
+            setShowCreate(
+              true
+            )
           }
         >
           + New API Key
@@ -1737,10 +2279,6 @@ function ApiKeysTab() {
 
       </div>
 
-
-      {/* ======================================================
-          TABLE
-          ====================================================== */}
 
       {loading ? (
 
@@ -1807,7 +2345,7 @@ function ApiKeysTab() {
             <tbody>
 
               {clients.map(
-                client => (
+                (client) => (
 
                   <tr
                     key={client.id}
@@ -1818,7 +2356,6 @@ function ApiKeysTab() {
                       {client.name}
                     </td>
 
-
                     <td className="px-4 py-2">
 
                       <span
@@ -1827,7 +2364,6 @@ function ApiKeysTab() {
                           px-2
                           py-0.5
                           rounded-full
-
                           ${
                             client.clientType === 'BNR'
                               ? 'bg-blue-100 text-blue-700'
@@ -1846,14 +2382,9 @@ function ApiKeysTab() {
 
                     </td>
 
-
                     <td className="px-4 py-2 font-mono text-xs text-gray-500">
-
-                      {client.keyPrefix}
-                      …
-
+                      {client.keyPrefix}…
                     </td>
-
 
                     <td className="px-4 py-2">
 
@@ -1874,19 +2405,15 @@ function ApiKeysTab() {
 
                     </td>
 
-
                     <td className="px-4 py-2 text-gray-500 text-xs">
 
-                      {
-                        client.lastUsedAt
-                          ? new Date(
-                              client.lastUsedAt
-                            ).toLocaleString()
-                          : 'Never'
-                      }
+                      {client.lastUsedAt
+                        ? new Date(
+                            client.lastUsedAt
+                          ).toLocaleString()
+                        : 'Never'}
 
                     </td>
-
 
                     <td className="px-4 py-2 text-right">
 
@@ -1924,16 +2451,14 @@ function ApiKeysTab() {
             <p className="text-center text-sm text-gray-400 py-8">
               No API keys issued yet.
             </p>
-
           )}
 
         </div>
-
       )}
 
 
       {/* ======================================================
-          CREATE MODAL
+          CREATE API KEY MODAL
           ====================================================== */}
 
       <Modal
@@ -1975,9 +2500,9 @@ function ApiKeysTab() {
 
             <input
               value={form.name}
-              onChange={event =>
+              onChange={(event) =>
                 setForm(
-                  current => ({
+                  (current) => ({
                     ...current,
                     name:
                       event.target.value,
@@ -1998,10 +2523,12 @@ function ApiKeysTab() {
             </label>
 
             <select
-              value={form.clientType}
-              onChange={event =>
+              value={
+                form.clientType
+              }
+              onChange={(event) =>
                 setForm(
-                  current => ({
+                  (current) => ({
                     ...current,
                     clientType:
                       event.target.value as
@@ -2033,11 +2560,12 @@ function ApiKeysTab() {
             </label>
 
             <input
-              type="email"
-              value={form.contactEmail}
-              onChange={event =>
+              value={
+                form.contactEmail
+              }
+              onChange={(event) =>
                 setForm(
-                  current => ({
+                  (current) => ({
                     ...current,
                     contactEmail:
                       event.target.value,
@@ -2057,10 +2585,12 @@ function ApiKeysTab() {
             </label>
 
             <textarea
-              value={form.description}
-              onChange={event =>
+              value={
+                form.description
+              }
+              onChange={(event) =>
                 setForm(
-                  current => ({
+                  (current) => ({
                     ...current,
                     description:
                       event.target.value,
@@ -2105,10 +2635,8 @@ function ApiKeysTab() {
 
             <p className="text-sm text-gray-600">
 
-              Copy this key now — for security,
-              it won&apos;t be shown again.
-
-              {' Give it to '}
+              Copy this key now — for security, it won&apos;t
+              be shown again. Give it to{' '}
 
               {
                 newKey.client.clientType === 'BNR'
@@ -2116,34 +2644,30 @@ function ApiKeysTab() {
                   : 'the credit bureau'
               }
 
-              {' to use in the '}
+              {' '}to use in the{' '}
 
               <code className="bg-gray-100 px-1 rounded">
                 X-Api-Key
               </code>
 
-              {' header.'}
+              {' '}header.
 
             </p>
 
 
             <div className="bg-gray-900 text-teal-400 font-mono text-xs p-3 rounded-lg break-all select-all">
-
               {newKey.apiKey}
-
             </div>
 
 
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => {
-
-                void navigator.clipboard.writeText(
+              onClick={() =>
+                navigator.clipboard.writeText(
                   newKey.apiKey
-                );
-
-              }}
+                )
+              }
             >
               📋 Copy to Clipboard
             </Button>

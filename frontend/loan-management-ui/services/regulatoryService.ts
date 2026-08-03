@@ -1,8 +1,9 @@
 import API, { get, post } from './api';
 
-/* ============================================================
-   TYPES
-   ============================================================ */
+
+// ============================================================
+// TYPES
+// ============================================================
 
 export type RegulatoryPeriod =
   | 'DAILY'
@@ -12,38 +13,37 @@ export type RegulatoryPeriod =
   | 'YEARLY'
   | 'CUSTOM';
 
+
 export type ExportFormat =
   | 'xlsx'
   | 'csv'
   | 'pdf';
 
+
 export type BnrReportParams = {
   branchId?: number;
-  period?: RegulatoryPeriod | string;
+  period?: RegulatoryPeriod;
   from?: string;
   to?: string;
 };
 
-export type CreditBureauParams = {
-  branchId?: number;
-  from?: string;
-  to?: string;
-};
 
-export type BreakdownRow = {
-  label: string;
-  count: number;
-  amount: number;
-};
+// ============================================================
+// BNR SUMMARY
+// ============================================================
 
 export type BnrSummary = {
   organizationName?: string;
   bnrInstitutionCode?: string;
+
   reportPeriod?: string;
+
   periodStart?: string;
   periodEnd?: string;
 
   totalLoans?: number;
+  totalLoansIssued?: number;
+
   activeLoans?: number;
   closedLoans?: number;
   pendingLoans?: number;
@@ -53,8 +53,10 @@ export type BnrSummary = {
 
   totalPrincipalDisbursed?: number;
   outstandingPrincipal?: number;
+
   totalInterestCollected?: number;
   interestAccruedUnpaid?: number;
+
   totalProcessingFees?: number;
 
   maleBorrowers?: number;
@@ -70,147 +72,186 @@ export type BnrSummary = {
   currency?: string;
 };
 
+
+// ============================================================
+// BNR BREAKDOWN
+// ============================================================
+//
+// This must match BnrBreakdownRow returned by the backend.
+//
+// If your Java BnrBreakdownRow has these three properties:
+//
+//     label
+//     count
+//     amount
+//
+// then this is the correct frontend type.
+//
+
+export type BreakdownRow = {
+  label: string;
+  count: number;
+  amount: number;
+};
+
+
+// ============================================================
+// FINANCIAL STATEMENT
+// ============================================================
+
+export type FinancialStatementAccount = {
+  code?: string;
+  name?: string;
+  balance?: number;
+};
+
+
+export type BnrFinancialStatementReport = {
+
+  assets?: FinancialStatementAccount[];
+
+  liabilities?: FinancialStatementAccount[];
+
+  equity?: FinancialStatementAccount[];
+
+  income?: FinancialStatementAccount[];
+
+  expenses?: FinancialStatementAccount[];
+
+
+  totalAssets?: number;
+
+  totalLiabilities?: number;
+
+  totalEquity?: number;
+
+  currentPeriodNetIncome?: number;
+
+
+  balanceSheetBalanced?: boolean;
+
+
+  totalIncome?: number;
+
+  totalExpenses?: number;
+
+  netIncome?: number;
+
+
+  trialBalanceDebit?: number;
+
+  trialBalanceCredit?: number;
+
+  trialBalanceBalanced?: boolean;
+
+
+  cashUsedForLending?: number;
+
+  cashFromCollections?: number;
+
+  cashFromFees?: number;
+
+  otherCashMovement?: number;
+
+  netChangeInCash?: number;
+
+
+  currency?: string;
+
+  organizationName?: string;
+
+  periodStart?: string;
+
+  periodEnd?: string;
+};
+
+
+// ============================================================
+// CREDIT BUREAU
+// ============================================================
+
 export type CreditRecord = {
   borrowerId?: number;
+
   fullName?: string;
+
   nationalId?: string;
+
   loanNumber?: string;
+
   loanType?: string;
+
   loanStatus?: string;
+
   loanAmount?: number;
+
   outstandingBalance?: number;
+
   daysPastDue?: number;
+
   creditScore?: number;
+
   dateOpened?: string;
+
   lastPaymentDate?: string;
+
   branchName?: string;
 };
 
+
+// ============================================================
+// API CLIENT
+// ============================================================
+
 export type ApiClient = {
   id: number;
+
   name: string;
-  clientType: 'BNR' | 'CREDIT_BUREAU';
+
+  clientType:
+    | 'BNR'
+    | 'CREDIT_BUREAU';
+
   keyPrefix: string;
+
   active: boolean;
+
   contactEmail?: string;
+
   lastUsedAt?: string;
+
   revokedAt?: string;
+
   createdAt?: string;
 };
 
-export type CreateApiClientRequest = {
-  name: string;
-  clientType: 'BNR' | 'CREDIT_BUREAU';
-  contactEmail?: string;
-  description?: string;
-  expiresAt?: string | null;
+
+// ============================================================
+// API RESPONSE
+// ============================================================
+
+type ApiResponse<T> = {
+  success?: boolean;
+
+  message?: string;
+
+  data?: T;
+
+  error?: string;
 };
 
-export type CreateApiClientResponse = {
-  apiKey: string;
-  client: ApiClient;
-};
 
-
-/* ============================================================
-   RESPONSE NORMALIZATION
-   ============================================================ */
-
-/**
- * Some backend/API configurations return arrays directly:
- *
- * [
- *   { label: "Personal", count: 10, amount: 100000 }
- * ]
- *
- * while others may wrap the array:
- *
- * {
- *   data: [...]
- * }
- *
- * {
- *   rows: [...]
- * }
- *
- * {
- *   content: [...]
- * }
- *
- * This function guarantees that the frontend receives an array.
- */
-function asArray<T>(value: unknown): T[] {
-  if (Array.isArray(value)) {
-    return value as T[];
-  }
-
-  if (
-    value !== null &&
-    typeof value === 'object'
-  ) {
-    const object =
-      value as Record<string, unknown>;
-
-    if (Array.isArray(object.data)) {
-      return object.data as T[];
-    }
-
-    if (Array.isArray(object.rows)) {
-      return object.rows as T[];
-    }
-
-    if (Array.isArray(object.content)) {
-      return object.content as T[];
-    }
-
-    if (Array.isArray(object.items)) {
-      return object.items as T[];
-    }
-
-    if (Array.isArray(object.results)) {
-      return object.results as T[];
-    }
-  }
-
-  return [];
-}
-
-
-/**
- * Some API clients return the useful response body
- * directly, while others return an Axios-style object.
- *
- * This safely unwraps common response wrappers.
- */
-function unwrap<T>(value: unknown): T {
-  if (
-    value !== null &&
-    typeof value === 'object'
-  ) {
-    const object =
-      value as Record<string, unknown>;
-
-    if (
-      'data' in object &&
-      object.data !== undefined
-    ) {
-      return object.data as T;
-    }
-  }
-
-  return value as T;
-}
-
-
-/* ============================================================
-   QUERY STRING
-   ============================================================ */
+// ============================================================
+// QUERY STRING
+// ============================================================
 
 function qs(
   params: Record<string, unknown>
 ): string {
+
   const searchParams =
     new URLSearchParams();
+
 
   Object.entries(params).forEach(
     ([key, value]) => {
@@ -229,278 +270,45 @@ function qs(
     }
   );
 
+
   return searchParams.toString();
 }
 
 
-/* ============================================================
-   BNR
-   ============================================================ */
+// ============================================================
+// ERROR MESSAGE
+// ============================================================
 
-export const regulatoryApi = {
+function getErrorMessage(
+  error: unknown,
+  fallback = 'An unexpected error occurred.'
+): string {
 
-  /**
-   * BNR summary
-   */
-  bnrSummary: async (
-    params: BnrReportParams
-  ): Promise<BnrSummary> => {
+  const err =
+    error as {
+      response?: {
+        data?: {
+          message?: string;
+          error?: string;
+        };
+      };
 
-    const response =
-      await get(
-        `/regulatory/bnr/summary?${qs(params)}`
-      );
-
-    return unwrap<BnrSummary>(
-      response
-    );
-  },
+      message?: string;
+    };
 
 
-  /**
-   * BNR breakdown by loan type
-   */
-  bnrByLoanType: async (
-    params: BnrReportParams
-  ): Promise<BreakdownRow[]> => {
-
-    const response =
-      await get(
-        `/regulatory/bnr/breakdown/loan-type?${qs(params)}`
-      );
-
-    return asArray<BreakdownRow>(
-      unwrap<unknown>(response)
-    );
-  },
+  return (
+    err?.response?.data?.message ||
+    err?.response?.data?.error ||
+    err?.message ||
+    fallback
+  );
+}
 
 
-  /**
-   * BNR breakdown by branch
-   */
-  bnrByBranch: async (
-    params: BnrReportParams
-  ): Promise<BreakdownRow[]> => {
-
-    const response =
-      await get(
-        `/regulatory/bnr/breakdown/branch?${qs(params)}`
-      );
-
-    return asArray<BreakdownRow>(
-      unwrap<unknown>(response)
-    );
-  },
-
-
-  /**
-   * BNR breakdown by gender
-   */
-  bnrByGender: async (
-    params: BnrReportParams
-  ): Promise<BreakdownRow[]> => {
-
-    const response =
-      await get(
-        `/regulatory/bnr/breakdown/gender?${qs(params)}`
-      );
-
-    return asArray<BreakdownRow>(
-      unwrap<unknown>(response)
-    );
-  },
-
-
-  /**
-   * BNR export
-   */
-  bnrExport: (
-    format: ExportFormat,
-    params: BnrReportParams
-  ): Promise<void> => {
-
-    return downloadFile(
-      `/regulatory/bnr/export?format=${encodeURIComponent(format)}&${qs(params)}`,
-      `bnr-summary.${format}`
-    );
-  },
-
-
-  /* ==========================================================
-     CREDIT BUREAU
-     ========================================================== */
-
-
-  /**
-   * Credit bureau preview
-   */
-  creditBureauPreview: async (
-    params: CreditBureauParams
-  ): Promise<CreditRecord[]> => {
-
-    const response =
-      await get(
-        `/regulatory/credit-bureau/preview?${qs(params)}`
-      );
-
-    return asArray<CreditRecord>(
-      unwrap<unknown>(response)
-    );
-  },
-
-
-  /**
-   * Credit bureau export
-   */
-  creditBureauExport: (
-    format: ExportFormat,
-    params: CreditBureauParams
-  ): Promise<void> => {
-
-    return downloadFile(
-      `/regulatory/credit-bureau/export?format=${encodeURIComponent(format)}&${qs(params)}`,
-      `credit-bureau-export.${format}`
-    );
-  },
-
-
-  /* ==========================================================
-     API CLIENT MANAGEMENT
-     ========================================================== */
-
-
-  /**
-   * List API clients
-   */
-  listApiClients: async (): Promise<ApiClient[]> => {
-
-    const response =
-      await get(
-        '/regulatory/api-clients'
-      );
-
-    return asArray<ApiClient>(
-      unwrap<unknown>(response)
-    );
-  },
-
-
-  /**
-   * Create API client
-   */
-  createApiClient: async (
-    data: CreateApiClientRequest
-  ): Promise<CreateApiClientResponse> => {
-
-    const response =
-      await post(
-        '/regulatory/api-clients',
-        data
-      );
-
-    return unwrap<CreateApiClientResponse>(
-      response
-    );
-  },
-
-
-  /**
-   * Revoke API client
-   */
-  revokeApiClient: (
-    id: number,
-    reason?: string
-  ): Promise<unknown> => {
-
-    return post(
-      `/regulatory/api-clients/${id}/revoke`,
-      {
-        reason,
-      }
-    );
-  },
-
-
-  /**
-   * Convert API errors into a useful frontend message.
-   */
-  getErrorMessage: (
-    error: unknown,
-    fallback = 'Something went wrong.'
-  ): string => {
-
-    if (
-      error !== null &&
-      typeof error === 'object'
-    ) {
-
-      const object =
-        error as Record<string, unknown>;
-
-      const response =
-        object.response;
-
-      if (
-        response !== null &&
-        typeof response === 'object'
-      ) {
-
-        const responseObject =
-          response as Record<string, unknown>;
-
-        const data =
-          responseObject.data;
-
-        if (
-          data !== null &&
-          typeof data === 'object'
-        ) {
-
-          const dataObject =
-            data as Record<string, unknown>;
-
-          if (
-            typeof dataObject.error === 'string'
-          ) {
-            return dataObject.error;
-          }
-
-          if (
-            typeof dataObject.message === 'string'
-          ) {
-            return dataObject.message;
-          }
-        }
-
-        if (
-          typeof responseObject.statusText === 'string' &&
-          responseObject.statusText
-        ) {
-          return responseObject.statusText;
-        }
-      }
-
-      if (
-        typeof object.message === 'string' &&
-        object.message
-      ) {
-        return object.message;
-      }
-    }
-
-    if (error instanceof Error) {
-      return error.message;
-    }
-
-    return fallback;
-  },
-
-};
-
-
-/* ============================================================
-   FILE DOWNLOAD
-   ============================================================ */
+// ============================================================
+// DOWNLOAD
+// ============================================================
 
 async function downloadFile(
   path: string,
@@ -515,16 +323,20 @@ async function downloadFile(
       }
     );
 
+
   const blob =
     response.data as Blob;
 
+
   const url =
     URL.createObjectURL(blob);
+
 
   const anchor =
     document.createElement('a');
 
   anchor.href = url;
+
   anchor.download = filename;
 
   document.body.appendChild(anchor);
@@ -533,10 +345,362 @@ async function downloadFile(
 
   anchor.remove();
 
+
   setTimeout(
-    () => {
-      URL.revokeObjectURL(url);
-    },
+    () => URL.revokeObjectURL(url),
     60000
   );
 }
+
+
+// ============================================================
+// REGULATORY API
+// ============================================================
+
+export const regulatoryApi = {
+
+  // ==========================================================
+  // BNR SUMMARY
+  // ==========================================================
+
+  bnrSummary: async (
+    params: BnrReportParams
+  ): Promise<BnrSummary> => {
+
+    const response =
+      await get(
+        `/regulatory/bnr/summary?${qs(params)}`
+      ) as BnrSummary | ApiResponse<BnrSummary>;
+
+
+    /*
+     * Supports both:
+     *
+     * {
+     *   data: {...}
+     * }
+     *
+     * and a direct object response.
+     */
+
+    if (
+      response &&
+      typeof response === 'object' &&
+      'data' in response
+    ) {
+
+      return (
+        (response as ApiResponse<BnrSummary>)
+          .data as BnrSummary
+      );
+    }
+
+
+    return response as BnrSummary;
+  },
+
+
+  // ==========================================================
+  // BNR BY LOAN TYPE
+  // ==========================================================
+
+  bnrByLoanType: async (
+    params: BnrReportParams
+  ): Promise<BreakdownRow[]> => {
+
+    const response =
+      await get(
+        `/regulatory/bnr/by-loan-type?${qs(params)}`
+      ) as
+        | BreakdownRow[]
+        | ApiResponse<BreakdownRow[]>;
+
+
+    if (
+      response &&
+      typeof response === 'object' &&
+      'data' in response
+    ) {
+
+      return (
+        (response as ApiResponse<BreakdownRow[]>)
+          .data || []
+      );
+    }
+
+
+    return response as BreakdownRow[];
+  },
+
+
+  // ==========================================================
+  // BNR BY BRANCH
+  // ==========================================================
+
+  bnrByBranch: async (
+    params: BnrReportParams
+  ): Promise<BreakdownRow[]> => {
+
+    const response =
+      await get(
+        `/regulatory/bnr/by-branch?${qs(params)}`
+      ) as
+        | BreakdownRow[]
+        | ApiResponse<BreakdownRow[]>;
+
+
+    if (
+      response &&
+      typeof response === 'object' &&
+      'data' in response
+    ) {
+
+      return (
+        (response as ApiResponse<BreakdownRow[]>)
+          .data || []
+      );
+    }
+
+
+    return response as BreakdownRow[];
+  },
+
+
+  // ==========================================================
+  // BNR BY GENDER
+  // ==========================================================
+
+  bnrByGender: async (
+    params: BnrReportParams
+  ): Promise<BreakdownRow[]> => {
+
+    const response =
+      await get(
+        `/regulatory/bnr/by-gender?${qs(params)}`
+      ) as
+        | BreakdownRow[]
+        | ApiResponse<BreakdownRow[]>;
+
+
+    if (
+      response &&
+      typeof response === 'object' &&
+      'data' in response
+    ) {
+
+      return (
+        (response as ApiResponse<BreakdownRow[]>)
+          .data || []
+      );
+    }
+
+
+    return response as BreakdownRow[];
+  },
+
+
+  // ==========================================================
+  // BNR FINANCIAL STATEMENT
+  // ==========================================================
+
+  bnrFinancialStatement: async (
+    params: BnrReportParams
+  ): Promise<BnrFinancialStatementReport> => {
+
+    const response =
+      await get(
+        `/regulatory/bnr/financial-statement?${qs(params)}`
+      ) as
+        | BnrFinancialStatementReport
+        | ApiResponse<BnrFinancialStatementReport>;
+
+
+    if (
+      response &&
+      typeof response === 'object' &&
+      'data' in response
+    ) {
+
+      return (
+        (response as ApiResponse<BnrFinancialStatementReport>)
+          .data as BnrFinancialStatementReport
+      );
+    }
+
+
+    return response as BnrFinancialStatementReport;
+  },
+
+
+  // ==========================================================
+  // BNR EXPORT
+  //
+  // Summary export
+  // ==========================================================
+
+  bnrExport: (
+    format: ExportFormat,
+    params: BnrReportParams
+  ): Promise<void> => {
+
+    return downloadFile(
+      `/regulatory/bnr/export?format=${format}&${qs(params)}`,
+      `bnr-summary.${format}`
+    );
+  },
+
+
+  // ==========================================================
+  // BNR FINANCIAL STATEMENT EXPORT
+  // ==========================================================
+
+  bnrFinancialStatementExport: (
+    format: ExportFormat,
+    params: BnrReportParams
+  ): Promise<void> => {
+
+    return downloadFile(
+      `/regulatory/bnr/financial-statement/export?format=${format}&${qs(params)}`,
+      `BNR-Financial-Statement.${format}`
+    );
+  },
+
+
+  // ==========================================================
+  // CREDIT BUREAU PREVIEW
+  // ==========================================================
+
+  creditBureauPreview: async (
+    params: {
+      branchId?: number;
+      from?: string;
+      to?: string;
+    }
+  ): Promise<CreditRecord[]> => {
+
+    const response =
+      await get(
+        `/regulatory/credit-bureau/preview?${qs(params)}`
+      ) as
+        | CreditRecord[]
+        | ApiResponse<CreditRecord[]>;
+
+
+    if (
+      response &&
+      typeof response === 'object' &&
+      'data' in response
+    ) {
+
+      return (
+        (response as ApiResponse<CreditRecord[]>)
+          .data || []
+      );
+    }
+
+
+    return response as CreditRecord[];
+  },
+
+
+  // ==========================================================
+  // CREDIT BUREAU EXPORT
+  // ==========================================================
+
+  creditBureauExport: (
+    format: ExportFormat,
+    params: {
+      branchId?: number;
+      from?: string;
+      to?: string;
+    }
+  ): Promise<void> => {
+
+    return downloadFile(
+      `/regulatory/credit-bureau/export?format=${format}&${qs(params)}`,
+      `credit-bureau-export.${format}`
+    );
+  },
+
+
+  // ==========================================================
+  // API CLIENTS
+  // ==========================================================
+
+  listApiClients: async (): Promise<ApiClient[]> => {
+
+    const response =
+      await get(
+        '/regulatory/api-clients'
+      ) as
+        | ApiClient[]
+        | ApiResponse<ApiClient[]>;
+
+
+    if (
+      response &&
+      typeof response === 'object' &&
+      'data' in response
+    ) {
+
+      return (
+        (response as ApiResponse<ApiClient[]>)
+          .data || []
+      );
+    }
+
+
+    return response as ApiClient[];
+  },
+
+
+  // ==========================================================
+  // CREATE API CLIENT
+  // ==========================================================
+
+  createApiClient: (
+    data: {
+      name: string;
+      clientType:
+        | 'BNR'
+        | 'CREDIT_BUREAU';
+      contactEmail?: string;
+      description?: string;
+      expiresAt?: string | null;
+    }
+  ) => {
+
+    return post(
+      '/regulatory/api-clients',
+      data
+    );
+  },
+
+
+  // ==========================================================
+  // REVOKE API CLIENT
+  // ==========================================================
+
+  revokeApiClient: (
+    id: number,
+    reason?: string
+  ) => {
+
+    return post(
+      `/regulatory/api-clients/${id}/revoke`,
+      {
+        reason,
+      }
+    );
+  },
+
+
+  // ==========================================================
+  // ERROR MESSAGE
+  // ==========================================================
+
+  getErrorMessage,
+
+};
+
+export default regulatoryApi;
