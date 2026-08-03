@@ -9,12 +9,10 @@ import React, {
 
 import {
   regulatoryApi,
-  type BnrFinancialStatementReport,
   type BnrReportParams,
   type BnrSummary,
   type BreakdownRow,
   type ExportFormat,
-  type FinancialStatementRow,
   type RegulatoryPeriod,
 } from '@/services/regulatoryService';
 
@@ -29,6 +27,167 @@ type DownloadingFormat =
 
 
 // ============================================================
+// RESPONSE NORMALIZATION
+// ============================================================
+
+/**
+ * The backend returns:
+ *
+ * ApiResponse<List<BnrBreakdownRow>>
+ *
+ * The shared API client normally unwraps ApiResponse.data.
+ * This extra normalization protects the page when a response
+ * arrives as:
+ *
+ * 1. [...]
+ * 2. { data: [...] }
+ * 3. { rows: [...] }
+ * 4. { items: [...] }
+ * 5. { breakdown: [...] }
+ * 6. { content: [...] }
+ *
+ * The page must NEVER pass a non-array value to .map().
+ */
+function normalizeBreakdownRows(
+  value: unknown
+): BreakdownRow[] {
+
+  if (Array.isArray(value)) {
+    return value as BreakdownRow[];
+  }
+
+  if (
+    value &&
+    typeof value === 'object'
+  ) {
+
+    const object =
+      value as Record<string, unknown>;
+
+    const candidates = [
+      object.data,
+      object.rows,
+      object.items,
+      object.breakdown,
+      object.content,
+      object.results,
+    ];
+
+    for (
+      const candidate of candidates
+    ) {
+
+      if (Array.isArray(candidate)) {
+
+        return candidate as BreakdownRow[];
+      }
+
+      if (
+        candidate &&
+        typeof candidate === 'object'
+      ) {
+
+        const nested =
+          candidate as Record<string, unknown>;
+
+        const nestedCandidates = [
+          nested.data,
+          nested.rows,
+          nested.items,
+          nested.breakdown,
+          nested.content,
+          nested.results,
+        ];
+
+        for (
+          const nestedCandidate
+          of nestedCandidates
+        ) {
+
+          if (
+            Array.isArray(
+              nestedCandidate
+            )
+          ) {
+
+            return nestedCandidate as BreakdownRow[];
+          }
+        }
+      }
+    }
+  }
+
+  return [];
+}
+
+
+// ============================================================
+// SUMMARY NORMALIZATION
+// ============================================================
+
+function normalizeSummary(
+  value: unknown
+): BnrSummary | null {
+
+  if (
+    !value ||
+    typeof value !== 'object'
+  ) {
+
+    return null;
+  }
+
+  const object =
+    value as Record<string, unknown>;
+
+  /*
+   * Normal API response:
+   *
+   * {
+   *   organizationName: ...,
+   *   totalLoans: ...
+   * }
+   */
+
+  if (
+    'organizationName' in object ||
+    'totalLoans' in object ||
+    'activeLoans' in object ||
+    'outstandingPrincipal' in object
+  ) {
+
+    return value as BnrSummary;
+  }
+
+  /*
+   * Defensive support for wrapped responses.
+   */
+
+  const candidates = [
+    object.data,
+    object.result,
+    object.summary,
+    object.report,
+  ];
+
+  for (
+    const candidate of candidates
+  ) {
+
+    if (
+      candidate &&
+      typeof candidate === 'object'
+    ) {
+
+      return candidate as BnrSummary;
+    }
+  }
+
+  return null;
+}
+
+
+// ============================================================
 // PAGE
 // ============================================================
 
@@ -39,7 +198,9 @@ export default function BnrReportPage() {
   // ==========================================================
 
   const [period, setPeriod] =
-    useState<RegulatoryPeriod>('MONTHLY');
+    useState<RegulatoryPeriod>(
+      'MONTHLY'
+    );
 
   const [from, setFrom] =
     useState<string>('');
@@ -49,23 +210,34 @@ export default function BnrReportPage() {
 
 
   // ==========================================================
-  // REPORT DATA
+  // DATA
   // ==========================================================
 
   const [summary, setSummary] =
-    useState<BnrSummary | null>(null);
+    useState<BnrSummary | null>(
+      null
+    );
 
-  const [financialStatement, setFinancialStatement] =
-    useState<BnrFinancialStatementReport | null>(null);
+  const [
+    loanTypeBreakdown,
+    setLoanTypeBreakdown,
+  ] = useState<BreakdownRow[]>(
+    []
+  );
 
-  const [loanTypeBreakdown, setLoanTypeBreakdown] =
-    useState<BreakdownRow[]>([]);
+  const [
+    branchBreakdown,
+    setBranchBreakdown,
+  ] = useState<BreakdownRow[]>(
+    []
+  );
 
-  const [branchBreakdown, setBranchBreakdown] =
-    useState<BreakdownRow[]>([]);
-
-  const [genderBreakdown, setGenderBreakdown] =
-    useState<BreakdownRow[]>([]);
+  const [
+    genderBreakdown,
+    setGenderBreakdown,
+  ] = useState<BreakdownRow[]>(
+    []
+  );
 
 
   // ==========================================================
@@ -75,8 +247,12 @@ export default function BnrReportPage() {
   const [loading, setLoading] =
     useState<boolean>(true);
 
-  const [downloadingFormat, setDownloadingFormat] =
-    useState<DownloadingFormat>(null);
+  const [
+    downloadingFormat,
+    setDownloadingFormat,
+  ] = useState<DownloadingFormat>(
+    null
+  );
 
   const [error, setError] =
     useState<string | null>(null);
@@ -87,30 +263,35 @@ export default function BnrReportPage() {
   // ==========================================================
 
   const reportParams =
-    useMemo<BnrReportParams>(() => {
+    useMemo<BnrReportParams>(
+      () => {
 
-      const params: BnrReportParams = {
+        const params: BnrReportParams = {
+          period,
+        };
+
+        if (
+          period === 'CUSTOM'
+        ) {
+
+          if (from) {
+            params.from = from;
+          }
+
+          if (to) {
+            params.to = to;
+          }
+        }
+
+        return params;
+
+      },
+      [
         period,
-      };
-
-      if (period === 'CUSTOM') {
-
-        if (from) {
-          params.from = from;
-        }
-
-        if (to) {
-          params.to = to;
-        }
-      }
-
-      return params;
-
-    }, [
-      period,
-      from,
-      to,
-    ]);
+        from,
+        to,
+      ]
+    );
 
 
   // ==========================================================
@@ -118,173 +299,189 @@ export default function BnrReportPage() {
   // ==========================================================
 
   const validateFilters =
-    useCallback((): string | null => {
+    useCallback(
+      (): string | null => {
 
-      if (period !== 'CUSTOM') {
+        if (
+          period !== 'CUSTOM'
+        ) {
+
+          return null;
+        }
+
+        if (!from) {
+
+          return (
+            'Please select a start date.'
+          );
+        }
+
+        if (!to) {
+
+          return (
+            'Please select an end date.'
+          );
+        }
+
+        if (from > to) {
+
+          return (
+            'The start date cannot be after the end date.'
+          );
+        }
+
         return null;
-      }
-
-      if (!from) {
-        return 'Please select a start date.';
-      }
-
-      if (!to) {
-        return 'Please select an end date.';
-      }
-
-      if (from > to) {
-        return 'The start date cannot be after the end date.';
-      }
-
-      return null;
-
-    }, [
-      period,
-      from,
-      to,
-    ]);
+      },
+      [
+        period,
+        from,
+        to,
+      ]
+    );
 
 
   // ==========================================================
-  // LOAD REPORT
+  // LOAD BNR REPORT
   // ==========================================================
 
   const loadReport =
-    useCallback(async (): Promise<void> => {
+    useCallback(
+      async (): Promise<void> => {
 
-      const validationError =
-        validateFilters();
+        const validationError =
+          validateFilters();
 
-      if (validationError) {
+        if (validationError) {
 
-        setError(
-          validationError
-        );
+          setError(
+            validationError
+          );
 
-        return;
-      }
+          return;
+        }
 
-      try {
+        try {
 
-        setLoading(true);
+          setLoading(true);
+          setError(null);
 
-        setError(null);
+          const [
+            summaryResult,
+            loanTypeResult,
+            branchResult,
+            genderResult,
+          ] = await Promise.all([
 
+            regulatoryApi.bnrSummary(
+              reportParams
+            ),
 
-        const [
-          summaryResult,
-          financialStatementResult,
-          loanTypeResult,
-          branchResult,
-          genderResult,
-        ] = await Promise.all([
+            regulatoryApi.bnrByLoanType(
+              reportParams
+            ),
 
-          // ----------------------------------------------------
-          // BNR SUMMARY
-          // ----------------------------------------------------
+            regulatoryApi.bnrByBranch(
+              reportParams
+            ),
 
-          regulatoryApi.bnrSummary(
-            reportParams
-          ),
+            regulatoryApi.bnrByGender(
+              reportParams
+            ),
 
-
-          // ----------------------------------------------------
-          // BNR FINANCIAL STATEMENT
-          // ----------------------------------------------------
-
-          regulatoryApi.bnrFinancialStatement(
-            reportParams
-          ),
-
-
-          // ----------------------------------------------------
-          // LOAN TYPE
-          // ----------------------------------------------------
-
-          regulatoryApi.bnrByLoanType(
-            reportParams
-          ),
+          ]);
 
 
-          // ----------------------------------------------------
-          // BRANCH
-          // ----------------------------------------------------
+          // ==================================================
+          // IMPORTANT
+          // ==================================================
+          //
+          // NEVER directly assign the breakdown response to
+          // array state.
+          //
+          // The backend returns ApiResponse<List<...>>.
+          // normalizeBreakdownRows guarantees that React
+          // receives an actual array.
+          //
+          // ==================================================
 
-          regulatoryApi.bnrByBranch(
-            reportParams
-          ),
+          setSummary(
+            normalizeSummary(
+              summaryResult
+            )
+          );
 
+          setLoanTypeBreakdown(
+            normalizeBreakdownRows(
+              loanTypeResult
+            )
+          );
 
-          // ----------------------------------------------------
-          // GENDER
-          // ----------------------------------------------------
+          setBranchBreakdown(
+            normalizeBreakdownRows(
+              branchResult
+            )
+          );
 
-          regulatoryApi.bnrByGender(
-            reportParams
-          ),
-        ]);
+          setGenderBreakdown(
+            normalizeBreakdownRows(
+              genderResult
+            )
+          );
 
+        } catch (err) {
 
-        setSummary(
-          summaryResult
-        );
+          console.error(
+            'Failed to load BNR report:',
+            err
+          );
 
-        setFinancialStatement(
-          financialStatementResult
-        );
+          setError(
+            regulatoryApi.getErrorMessage(
+              err,
+              'Failed to load the BNR report.'
+            )
+          );
 
-        setLoanTypeBreakdown(
-          loanTypeResult
-        );
+          /*
+           * Never leave stale/non-array data in state after
+           * an API failure.
+           */
 
-        setBranchBreakdown(
-          branchResult
-        );
+          setLoanTypeBreakdown([]);
+          setBranchBreakdown([]);
+          setGenderBreakdown([]);
 
-        setGenderBreakdown(
-          genderResult
-        );
+        } finally {
 
-      } catch (err) {
+          setLoading(false);
+        }
 
-        console.error(
-          'Failed to load BNR report:',
-          err
-        );
-
-        setError(
-          regulatoryApi.getErrorMessage(
-            err,
-            'Failed to load the BNR report.'
-          )
-        );
-
-      } finally {
-
-        setLoading(false);
-      }
-
-    }, [
-      reportParams,
-      validateFilters,
-    ]);
+      },
+      [
+        reportParams,
+        validateFilters,
+      ]
+    );
 
 
   // ==========================================================
   // INITIAL LOAD
   // ==========================================================
 
-  useEffect(() => {
+  useEffect(
+    () => {
 
-    void loadReport();
+      void loadReport();
 
-  }, [
-    loadReport,
-  ]);
+    },
+    [
+      loadReport,
+    ]
+  );
 
 
   // ==========================================================
-  // DOWNLOAD
+  // DOWNLOAD REPORT
   // ==========================================================
 
   const downloadReport =
@@ -312,6 +509,14 @@ export default function BnrReportPage() {
           setDownloadingFormat(
             format
           );
+
+          /*
+           * The regulatory service handles:
+           *
+           * /regulatory/bnr/export/pdf
+           * /regulatory/bnr/export/xlsx
+           * /regulatory/bnr/export/csv
+           */
 
           await regulatoryApi.bnrExport(
             format,
@@ -348,7 +553,7 @@ export default function BnrReportPage() {
 
 
   // ==========================================================
-  // DOWNLOAD HANDLERS
+  // PDF
   // ==========================================================
 
   const handleDownloadPdf =
@@ -366,6 +571,10 @@ export default function BnrReportPage() {
     );
 
 
+  // ==========================================================
+  // EXCEL
+  // ==========================================================
+
   const handleDownloadExcel =
     useCallback(
       async (): Promise<void> => {
@@ -380,6 +589,10 @@ export default function BnrReportPage() {
       ]
     );
 
+
+  // ==========================================================
+  // CSV
+  // ==========================================================
 
   const handleDownloadCsv =
     useCallback(
@@ -408,37 +621,27 @@ export default function BnrReportPage() {
 
         const currency =
           summary?.currency ||
-          financialStatement?.currency ||
           'RWF';
 
         const amount =
-          Number(value ?? 0);
+          Number(
+            value || 0
+          );
 
-        try {
-
-          return new Intl.NumberFormat(
-            'en-RW',
-            {
-              style: 'currency',
-              currency,
-              maximumFractionDigits: 2,
-            }
-          ).format(amount);
-
-        } catch {
-
-          return `${currency} ${amount.toLocaleString(
-            'en-US',
-            {
-              maximumFractionDigits: 2,
-            }
-          )}`;
-        }
+        return new Intl.NumberFormat(
+          'en-RW',
+          {
+            style: 'currency',
+            currency,
+            maximumFractionDigits: 2,
+          }
+        ).format(
+          amount
+        );
 
       },
       [
         summary?.currency,
-        financialStatement?.currency,
       ]
     );
 
@@ -456,7 +659,9 @@ export default function BnrReportPage() {
         return new Intl.NumberFormat(
           'en-US'
         ).format(
-          Number(value ?? 0)
+          Number(
+            value || 0
+          )
         );
 
       },
@@ -474,7 +679,9 @@ export default function BnrReportPage() {
         value?: number
       ): string => {
 
-        return `${Number(value ?? 0).toFixed(2)}%`;
+        return `${Number(
+          value || 0
+        ).toFixed(2)}%`;
 
       },
       []
@@ -488,22 +695,27 @@ export default function BnrReportPage() {
   if (loading) {
 
     return (
+
       <div className="min-h-screen bg-gray-50 p-6">
 
         <div className="mx-auto max-w-7xl">
 
           <div className="animate-pulse space-y-6">
 
-            <div className="h-10 w-72 rounded bg-gray-200" />
+            <div
+              className="h-10 w-72 rounded bg-gray-200"
+            />
 
-            <div className="h-24 rounded bg-gray-200" />
+            <div
+              className="h-24 rounded bg-gray-200"
+            />
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div
+              className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4"
+            >
 
               {Array.from(
-                {
-                  length: 8,
-                }
+                { length: 4 }
               ).map(
                 (_, index) => (
 
@@ -522,6 +734,7 @@ export default function BnrReportPage() {
         </div>
 
       </div>
+
     );
   }
 
@@ -534,79 +747,160 @@ export default function BnrReportPage() {
 
     <div className="min-h-screen bg-gray-50">
 
-      <div className="mx-auto max-w-7xl space-y-6 p-6">
-
+      <div
+        className="
+          mx-auto
+          max-w-7xl
+          space-y-6
+          p-6
+        "
+      >
 
         {/* ================================================== */}
         {/* HEADER */}
         {/* ================================================== */}
 
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div
+          className="
+            flex
+            flex-col
+            gap-4
+            md:flex-row
+            md:items-center
+            md:justify-between
+          "
+        >
 
           <div>
 
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1
+              className="
+                text-2xl
+                font-bold
+                text-gray-900
+              "
+            >
               BNR Regulatory Report
             </h1>
 
-            <p className="mt-1 text-sm text-gray-500">
-              Regulatory reporting, portfolio quality,
-              financial statements and BNR reporting information.
+            <p
+              className="
+                mt-1
+                text-sm
+                text-gray-500
+              "
+            >
+              Regulatory reporting and
+              portfolio information.
             </p>
 
           </div>
 
 
-          {/* ================================================== */}
+          {/* ================================================= */}
           {/* EXPORT BUTTONS */}
-          {/* ================================================== */}
+          {/* ================================================= */}
 
-          <div className="flex flex-wrap gap-2">
+          <div
+            className="
+              flex
+              flex-wrap
+              gap-2
+            "
+          >
 
             <button
               type="button"
-              onClick={handleDownloadPdf}
+              onClick={
+                handleDownloadPdf
+              }
               disabled={
                 downloadingFormat !== null
               }
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="
+                rounded-lg
+                bg-red-600
+                px-4
+                py-2
+                text-sm
+                font-medium
+                text-white
+                transition
+                hover:bg-red-700
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
             >
 
-              {downloadingFormat === 'pdf'
-                ? 'Downloading PDF...'
-                : 'Download PDF'}
+              {
+                downloadingFormat === 'pdf'
+                  ? 'Downloading PDF...'
+                  : 'Download PDF'
+              }
 
             </button>
 
 
             <button
               type="button"
-              onClick={handleDownloadExcel}
+              onClick={
+                handleDownloadExcel
+              }
               disabled={
                 downloadingFormat !== null
               }
-              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="
+                rounded-lg
+                bg-green-600
+                px-4
+                py-2
+                text-sm
+                font-medium
+                text-white
+                transition
+                hover:bg-green-700
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
             >
 
-              {downloadingFormat === 'xlsx'
-                ? 'Downloading Excel...'
-                : 'Download Excel'}
+              {
+                downloadingFormat === 'xlsx'
+                  ? 'Downloading Excel...'
+                  : 'Download Excel'
+              }
 
             </button>
 
 
             <button
               type="button"
-              onClick={handleDownloadCsv}
+              onClick={
+                handleDownloadCsv
+              }
               disabled={
                 downloadingFormat !== null
               }
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="
+                rounded-lg
+                bg-blue-600
+                px-4
+                py-2
+                text-sm
+                font-medium
+                text-white
+                transition
+                hover:bg-blue-700
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
             >
 
-              {downloadingFormat === 'csv'
-                ? 'Downloading CSV...'
-                : 'Download CSV'}
+              {
+                downloadingFormat === 'csv'
+                  ? 'Downloading CSV...'
+                  : 'Download CSV'
+              }
 
             </button>
 
@@ -621,17 +915,43 @@ export default function BnrReportPage() {
 
         {error && (
 
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <div
+            className="
+              rounded-lg
+              border
+              border-red-200
+              bg-red-50
+              p-4
+            "
+          >
 
-            <div className="flex items-start justify-between gap-4">
+            <div
+              className="
+                flex
+                items-start
+                justify-between
+                gap-4
+              "
+            >
 
               <div>
 
-                <p className="font-semibold text-red-800">
+                <p
+                  className="
+                    font-semibold
+                    text-red-800
+                  "
+                >
                   Report error
                 </p>
 
-                <p className="mt-1 text-sm text-red-700">
+                <p
+                  className="
+                    mt-1
+                    text-sm
+                    text-red-700
+                  "
+                >
                   {error}
                 </p>
 
@@ -640,8 +960,15 @@ export default function BnrReportPage() {
 
               <button
                 type="button"
-                onClick={() => setError(null)}
-                className="text-sm font-medium text-red-700 hover:text-red-900"
+                onClick={
+                  () => setError(null)
+                }
+                className="
+                  text-sm
+                  font-medium
+                  text-red-700
+                  hover:text-red-900
+                "
               >
                 Dismiss
               </button>
@@ -654,26 +981,52 @@ export default function BnrReportPage() {
 
 
         {/* ================================================== */}
-        {/* FILTERS */}
+        {/* REPORT PERIOD */}
         {/* ================================================== */}
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div
+          className="
+            rounded-xl
+            border
+            border-gray-200
+            bg-white
+            p-5
+            shadow-sm
+          "
+        >
 
           <div className="mb-4">
 
-            <h2 className="font-semibold text-gray-900">
-              Reporting Period
+            <h2
+              className="
+                font-semibold
+                text-gray-900
+              "
+            >
+              Report period
             </h2>
 
-            <p className="text-sm text-gray-500">
-              Select the reporting period used for the BNR report.
+            <p
+              className="
+                text-sm
+                text-gray-500
+              "
+            >
+              Select the reporting period
+              used for the BNR report.
             </p>
 
           </div>
 
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-
+          <div
+            className="
+              grid
+              grid-cols-1
+              gap-4
+              md:grid-cols-4
+            "
+          >
 
             {/* PERIOD */}
 
@@ -681,7 +1034,13 @@ export default function BnrReportPage() {
 
               <label
                 htmlFor="bnr-period"
-                className="mb-1 block text-sm font-medium text-gray-700"
+                className="
+                  mb-1
+                  block
+                  text-sm
+                  font-medium
+                  text-gray-700
+                "
               >
                 Period
               </label>
@@ -691,10 +1050,23 @@ export default function BnrReportPage() {
                 value={period}
                 onChange={(event) =>
                   setPeriod(
-                    event.target.value as RegulatoryPeriod
+                    event.target
+                      .value as RegulatoryPeriod
                   )
                 }
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="
+                  w-full
+                  rounded-lg
+                  border
+                  border-gray-300
+                  px-3
+                  py-2
+                  text-sm
+                  outline-none
+                  focus:border-blue-500
+                  focus:ring-2
+                  focus:ring-blue-100
+                "
               >
 
                 <option value="DAILY">
@@ -732,7 +1104,13 @@ export default function BnrReportPage() {
 
               <label
                 htmlFor="bnr-from"
-                className="mb-1 block text-sm font-medium text-gray-700"
+                className="
+                  mb-1
+                  block
+                  text-sm
+                  font-medium
+                  text-gray-700
+                "
               >
                 From
               </label>
@@ -749,7 +1127,20 @@ export default function BnrReportPage() {
                     event.target.value
                   )
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="
+                  w-full
+                  rounded-lg
+                  border
+                  border-gray-300
+                  px-3
+                  py-2
+                  text-sm
+                  outline-none
+                  disabled:bg-gray-100
+                  focus:border-blue-500
+                  focus:ring-2
+                  focus:ring-blue-100
+                "
               />
 
             </div>
@@ -761,7 +1152,13 @@ export default function BnrReportPage() {
 
               <label
                 htmlFor="bnr-to"
-                className="mb-1 block text-sm font-medium text-gray-700"
+                className="
+                  mb-1
+                  block
+                  text-sm
+                  font-medium
+                  text-gray-700
+                "
               >
                 To
               </label>
@@ -778,24 +1175,58 @@ export default function BnrReportPage() {
                     event.target.value
                   )
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="
+                  w-full
+                  rounded-lg
+                  border
+                  border-gray-300
+                  px-3
+                  py-2
+                  text-sm
+                  outline-none
+                  disabled:bg-gray-100
+                  focus:border-blue-500
+                  focus:ring-2
+                  focus:ring-blue-100
+                "
               />
 
             </div>
 
-          </div>
 
+            {/* REFRESH */}
 
-          <div className="mt-4 flex justify-end">
-
-            <button
-              type="button"
-              onClick={() => void loadReport()}
-              disabled={loading}
-              className="rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+            <div
+              className="
+                flex
+                items-end
+              "
             >
-              Refresh Report
-            </button>
+
+              <button
+                type="button"
+                onClick={
+                  () => void loadReport()
+                }
+                disabled={loading}
+                className="
+                  w-full
+                  rounded-lg
+                  bg-gray-900
+                  px-5
+                  py-2
+                  text-sm
+                  font-medium
+                  text-white
+                  hover:bg-gray-800
+                  disabled:cursor-not-allowed
+                  disabled:opacity-50
+                "
+              >
+                Refresh Report
+              </button>
+
+            </div>
 
           </div>
 
@@ -808,54 +1239,79 @@ export default function BnrReportPage() {
 
         {summary && (
 
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div
+            className="
+              rounded-xl
+              border
+              border-gray-200
+              bg-white
+              p-5
+              shadow-sm
+            "
+          >
 
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div
+              className="
+                flex
+                flex-col
+                gap-2
+                md:flex-row
+                md:items-center
+                md:justify-between
+              "
+            >
 
               <div>
 
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {summary.organizationName ||
-                    'Organization'}
+                <h2
+                  className="
+                    text-lg
+                    font-semibold
+                    text-gray-900
+                  "
+                >
+                  {
+                    summary.organizationName ||
+                    'Organization'
+                  }
                 </h2>
 
-                <p className="text-sm text-gray-500">
+                <p
+                  className="
+                    text-sm
+                    text-gray-500
+                  "
+                >
                   BNR Institution Code:{' '}
-                  {summary.bnrInstitutionCode ||
-                    'Not configured'}
-                </p>
 
-                <p className="text-xs text-gray-400">
-                  Registration:{' '}
-                  {summary.registrationNumber ||
-                    'Not configured'}
+                  {
+                    summary.bnrInstitutionCode ||
+                    'Not configured'
+                  }
+
                 </p>
 
               </div>
 
 
-              <div className="text-sm text-gray-500">
+              <div
+                className="
+                  text-sm
+                  text-gray-500
+                "
+              >
 
-                <div>
-                  Period:{' '}
-                  {summary.periodStart ||
-                    '—'}
-                  {' → '}
-                  {summary.periodEnd ||
-                    '—'}
-                </div>
+                {
+                  summary.periodStart ||
+                  '—'
+                }
 
-                <div>
-                  Currency:{' '}
-                  {summary.currency ||
-                    'RWF'}
-                </div>
+                {' → '}
 
-                <div>
-                  Status:{' '}
-                  {summary.reportStatus ||
-                    '—'}
-                </div>
+                {
+                  summary.periodEnd ||
+                  '—'
+                }
 
               </div>
 
@@ -867,237 +1323,100 @@ export default function BnrReportPage() {
 
 
         {/* ================================================== */}
-        {/* KPI CARDS */}
+        {/* KPI SUMMARY */}
         {/* ================================================== */}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div
+          className="
+            grid
+            grid-cols-1
+            gap-4
+            sm:grid-cols-2
+            lg:grid-cols-4
+          "
+        >
 
-
-          <KpiCard
-            label="Total Loans"
-            value={formatNumber(
-              summary?.totalLoans
-            )}
+          <MetricCard
+            label="Total Loans Issued"
+            value={
+              formatNumber(
+                summary?.totalLoans
+              )
+            }
           />
 
-
-          <KpiCard
+          <MetricCard
             label="Active Loans"
-            value={formatNumber(
-              summary?.activeLoans
-            )}
+            value={
+              formatNumber(
+                summary?.activeLoans
+              )
+            }
           />
 
-
-          <KpiCard
+          <MetricCard
             label="Principal Disbursed"
-            value={formatMoney(
-              summary?.totalPrincipalDisbursed
-            )}
+            value={
+              formatMoney(
+                summary?.totalPrincipalDisbursed
+              )
+            }
           />
 
-
-          <KpiCard
+          <MetricCard
             label="Outstanding Principal"
-            value={formatMoney(
-              summary?.outstandingPrincipal
-            )}
+            value={
+              formatMoney(
+                summary?.outstandingPrincipal
+              )
+            }
           />
 
-
-          <KpiCard
+          <MetricCard
             label="Interest Collected"
-            value={formatMoney(
-              summary?.totalInterestCollected
-            )}
+            value={
+              formatMoney(
+                summary?.totalInterestCollected
+              )
+            }
           />
 
-
-          <KpiCard
-            label="Total Collected"
-            value={formatMoney(
-              summary?.totalAmountCollected
-            )}
-          />
-
-
-          <KpiCard
+          <MetricCard
             label="Overdue Loans"
-            value={formatNumber(
-              summary?.overdueLoans
-            )}
+            value={
+              formatNumber(
+                summary?.overdueLoans
+              )
+            }
           />
 
-
-          <KpiCard
-            label="Defaulted Loans"
-            value={formatNumber(
-              summary?.defaultedLoans
-            )}
-          />
-
-        </div>
-
-
-        {/* ================================================== */}
-        {/* PORTFOLIO QUALITY */}
-        {/* ================================================== */}
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Portfolio Quality
-          </h2>
-
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-
-
-            <MetricCard
-              label="PAR"
-              value={formatPercent(
+          <MetricCard
+            label="PAR Ratio"
+            value={
+              formatPercent(
                 summary?.parRatio
-              )}
-              secondary={formatMoney(
+              )
+            }
+            secondary={
+              formatMoney(
                 summary?.parAmount
-              )}
-            />
+              )
+            }
+          />
 
-
-            <MetricCard
-              label="PAR > 30 Days"
-              value={formatPercent(
-                summary?.par30Ratio
-              )}
-              secondary={formatMoney(
-                getPar30Amount(summary)
-              )}
-            />
-
-
-            <MetricCard
-              label="PAR > 60 Days"
-              value={formatPercent(
-                summary?.par60Ratio
-              )}
-              secondary={formatMoney(
-                getPar60Amount(summary)
-              )}
-            />
-
-
-            <MetricCard
-              label="PAR > 90 Days"
-              value={formatPercent(
-                summary?.par90Ratio
-              )}
-              secondary={formatMoney(
-                getPar90Amount(summary)
-              )}
-            />
-
-
-            <MetricCard
-              label="NPL Ratio"
-              value={formatPercent(
+          <MetricCard
+            label="NPL Ratio"
+            value={
+              formatPercent(
                 summary?.nplRatio
-              )}
-              secondary={formatMoney(
+              )
+            }
+            secondary={
+              formatMoney(
                 summary?.nplAmount
-              )}
-            />
-
-
-            <MetricCard
-              label="NPL Loans"
-              value={formatNumber(
-                summary?.nplLoanCount
-              )}
-            />
-
-
-            <MetricCard
-              label="Loans > 30 DPD"
-              value={formatNumber(
-                summary?.loansOver30Days
-              )}
-            />
-
-
-            <MetricCard
-              label="Loans > 90 DPD"
-              value={formatNumber(
-                summary?.loansOver90Days
-              )}
-            />
-
-          </div>
-
-        </div>
-
-
-        {/* ================================================== */}
-        {/* PAR BUCKETS */}
-        {/* ================================================== */}
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Portfolio at Risk Aging
-          </h2>
-
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
-
-            <MetricCard
-              label="1–30 Days"
-              value={formatMoney(
-                summary?.par1To30Amount
-              )}
-            />
-
-
-            <MetricCard
-              label="31–60 Days"
-              value={formatMoney(
-                summary?.par31To60Amount
-              )}
-            />
-
-
-            <MetricCard
-              label="61–90 Days"
-              value={formatMoney(
-                summary?.par61To90Amount
-              )}
-            />
-
-
-            <MetricCard
-              label="91–180 Days"
-              value={formatMoney(
-                summary?.par91To180Amount
-              )}
-            />
-
-
-            <MetricCard
-              label="181–365 Days"
-              value={formatMoney(
-                summary?.par181To365Amount
-              )}
-            />
-
-
-            <MetricCard
-              label="Over 365 Days"
-              value={formatMoney(
-                summary?.parOver365Amount
-              )}
-            />
-
-          </div>
+              )
+            }
+          />
 
         </div>
 
@@ -1106,366 +1425,73 @@ export default function BnrReportPage() {
         {/* LOAN STATUS */}
         {/* ================================================== */}
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div
+          className="
+            rounded-xl
+            border
+            border-gray-200
+            bg-white
+            p-5
+            shadow-sm
+          "
+        >
 
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
+          <h2
+            className="
+              mb-4
+              text-lg
+              font-semibold
+              text-gray-900
+            "
+          >
             Loan Status
           </h2>
 
-
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
-
+          <div
+            className="
+              grid
+              grid-cols-2
+              gap-4
+              md:grid-cols-5
+            "
+          >
 
             <StatusItem
               label="Active"
-              value={summary?.activeLoans}
+              value={
+                summary?.activeLoans
+              }
             />
-
 
             <StatusItem
               label="Closed"
-              value={summary?.closedLoans}
+              value={
+                summary?.closedLoans
+              }
             />
-
-
-            <StatusItem
-              label="Paid"
-              value={summary?.paidLoans}
-            />
-
 
             <StatusItem
               label="Pending"
-              value={summary?.pendingLoans}
+              value={
+                summary?.pendingLoans
+              }
             />
-
-
-            <StatusItem
-              label="Approved"
-              value={summary?.approvedLoans}
-            />
-
 
             <StatusItem
               label="Rejected"
-              value={summary?.rejectedLoans}
+              value={
+                summary?.rejectedLoans
+              }
             />
-
-
-            <StatusItem
-              label="Cancelled"
-              value={summary?.cancelledLoans}
-            />
-
 
             <StatusItem
               label="Defaulted"
-              value={summary?.defaultedLoans}
-            />
-
-
-            <StatusItem
-              label="Written Off"
-              value={summary?.writtenOffLoans}
-            />
-
-
-            <StatusItem
-              label="Overdue"
-              value={summary?.overdueLoans}
+              value={
+                summary?.defaultedLoans
+              }
             />
 
           </div>
-
-        </div>
-
-
-        {/* ================================================== */}
-        {/* BORROWERS */}
-        {/* ================================================== */}
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Borrower Statistics
-          </h2>
-
-
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-
-
-            <StatusItem
-              label="Total Borrowers"
-              value={summary?.totalBorrowers}
-            />
-
-
-            <StatusItem
-              label="Active Borrowers"
-              value={summary?.activeBorrowers}
-            />
-
-
-            <StatusItem
-              label="Male Borrowers"
-              value={summary?.maleBorrowers}
-            />
-
-
-            <StatusItem
-              label="Female Borrowers"
-              value={summary?.femaleBorrowers}
-            />
-
-
-            <StatusItem
-              label="Youth Borrowers"
-              value={summary?.youthBorrowers}
-            />
-
-
-            <StatusItem
-              label="Adult Borrowers"
-              value={summary?.adultBorrowers}
-            />
-
-
-            <StatusItem
-              label="Senior Borrowers"
-              value={summary?.seniorBorrowers}
-            />
-
-
-            <StatusItem
-              label="Multiple Loans"
-              value={summary?.borrowersWithMultipleLoans}
-            />
-
-          </div>
-
-        </div>
-
-
-        {/* ================================================== */}
-        {/* CREDIT INFORMATION */}
-        {/* ================================================== */}
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Credit Information
-          </h2>
-
-
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-
-
-            <StatusItem
-              label="Credit Checked"
-              value={summary?.borrowersCreditChecked}
-            />
-
-
-            <StatusItem
-              label="Default History"
-              value={summary?.borrowersWithDefaultHistory}
-            />
-
-
-            <StatusItem
-              label="Active Listings"
-              value={summary?.borrowersWithActiveListing}
-            />
-
-
-            <StatusItem
-              label="Multiple Facilities"
-              value={summary?.borrowersWithMultipleFacilities}
-            />
-
-
-            <MetricCard
-              label="External Debt"
-              value={formatMoney(
-                summary?.totalExternalDebt
-              )}
-            />
-
-          </div>
-
-        </div>
-
-
-        {/* ================================================== */}
-        {/* REPAYMENT PERFORMANCE */}
-        {/* ================================================== */}
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Repayment Performance
-          </h2>
-
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-
-
-            <MetricCard
-              label="Principal Collected"
-              value={formatMoney(
-                summary?.totalPrincipalCollected
-              )}
-            />
-
-
-            <MetricCard
-              label="Interest Collected"
-              value={formatMoney(
-                summary?.totalInterestCollected
-              )}
-            />
-
-
-            <MetricCard
-              label="Fees Collected"
-              value={formatMoney(
-                summary?.totalFeesCollected
-              )}
-            />
-
-
-            <MetricCard
-              label="Total Collected"
-              value={formatMoney(
-                summary?.totalAmountCollected
-              )}
-            />
-
-
-            <MetricCard
-              label="Unpaid Interest"
-              value={formatMoney(
-                summary?.interestAccruedUnpaid
-              )}
-            />
-
-
-            <MetricCard
-              label="Unpaid Fees"
-              value={formatMoney(
-                summary?.feesAccruedUnpaid
-              )}
-            />
-
-
-            <MetricCard
-              label="Missed Payments"
-              value={formatNumber(
-                summary?.missedPayments
-              )}
-            />
-
-
-            <MetricCard
-              label="Overdue Payments"
-              value={formatNumber(
-                summary?.overduePayments
-              )}
-            />
-
-          </div>
-
-        </div>
-
-
-        {/* ================================================== */}
-        {/* FINANCIAL STATEMENT */}
-        {/* ================================================== */}
-
-        <FinancialStatementSection
-          report={financialStatement}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        {/* ================================================== */}
-        {/* DATA QUALITY */}
-        {/* ================================================== */}
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Data Quality
-          </h2>
-
-
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-
-
-            <StatusItem
-              label="Missing Borrower"
-              value={summary?.loansMissingBorrower}
-            />
-
-
-            <StatusItem
-              label="Missing National ID"
-              value={summary?.borrowersMissingNationalId}
-            />
-
-
-            <StatusItem
-              label="Missing Branch"
-              value={summary?.loansMissingBranch}
-            />
-
-
-            <StatusItem
-              label="Missing Currency"
-              value={summary?.loansMissingCurrency}
-            />
-
-
-            <StatusItem
-              label="Missing Schedule"
-              value={summary?.loansMissingRepaymentSchedule}
-            />
-
-          </div>
-
-
-          {summary?.dataQualityWarnings &&
-            summary.dataQualityWarnings.length > 0 && (
-
-            <div className="mt-5 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-
-              <p className="font-semibold text-yellow-800">
-                Validation warnings
-              </p>
-
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-yellow-700">
-
-                {summary.dataQualityWarnings.map(
-                  (
-                    warning,
-                    index
-                  ) => (
-
-                    <li
-                      key={`${warning}-${index}`}
-                    >
-                      {warning}
-                    </li>
-
-                  )
-                )}
-
-              </ul>
-
-            </div>
-
-          )}
 
         </div>
 
@@ -1474,80 +1500,61 @@ export default function BnrReportPage() {
         {/* BREAKDOWNS */}
         {/* ================================================== */}
 
-        <BreakdownTable
-          title="Borrowers by Gender"
-          rows={genderBreakdown}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
+        <div
+          className="
+            grid
+            grid-cols-1
+            gap-6
+            lg:grid-cols-3
+          "
+        >
 
+          <BreakdownTable
+            title="Borrowers by Gender"
+            rows={genderBreakdown}
+            formatMoney={formatMoney}
+            formatNumber={formatNumber}
+          />
 
-        <BreakdownTable
-          title="Loans by Loan Type"
-          rows={loanTypeBreakdown}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
+          <BreakdownTable
+            title="Loans by Loan Type"
+            rows={loanTypeBreakdown}
+            formatMoney={formatMoney}
+            formatNumber={formatNumber}
+          />
 
+          <BreakdownTable
+            title="Loans by Branch"
+            rows={branchBreakdown}
+            formatMoney={formatMoney}
+            formatNumber={formatNumber}
+          />
 
-        <BreakdownTable
-          title="Loans by Branch"
-          rows={branchBreakdown}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
+        </div>
 
 
         {/* ================================================== */}
         {/* FOOTER */}
         {/* ================================================== */}
 
-        <div className="pb-8 text-center text-xs text-gray-400">
+        <div
+          className="
+            pb-8
+            text-center
+            text-xs
+            text-gray-400
+          "
+        >
 
           BNR regulatory report •{' '}
           {period}
-
-          {summary?.reportReference && (
-            <>
-              {' • '}
-              {summary.reportReference}
-            </>
-          )}
 
         </div>
 
       </div>
 
     </div>
-  );
-}
 
-
-// ============================================================
-// KPI CARD
-// ============================================================
-
-function KpiCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-
-  return (
-
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-      <p className="text-sm text-gray-500">
-        {label}
-      </p>
-
-      <p className="mt-2 text-2xl font-bold text-gray-900">
-        {value}
-      </p>
-
-    </div>
   );
 }
 
@@ -1568,25 +1575,53 @@ function MetricCard({
 
   return (
 
-    <div className="rounded-lg bg-gray-50 p-4">
+    <div
+      className="
+        rounded-xl
+        border
+        border-gray-200
+        bg-white
+        p-5
+        shadow-sm
+      "
+    >
 
-      <p className="text-sm text-gray-500">
+      <p
+        className="
+          text-sm
+          text-gray-500
+        "
+      >
         {label}
       </p>
 
-      <p className="mt-1 text-xl font-semibold text-gray-900">
+      <p
+        className="
+          mt-2
+          text-2xl
+          font-bold
+          text-gray-900
+        "
+      >
         {value}
       </p>
 
       {secondary && (
 
-        <p className="mt-1 text-xs text-gray-500">
+        <p
+          className="
+            mt-1
+            text-xs
+            text-gray-500
+          "
+        >
           {secondary}
         </p>
 
       )}
 
     </div>
+
   );
 }
 
@@ -1605,518 +1640,44 @@ function StatusItem({
 
   return (
 
-    <div className="rounded-lg bg-gray-50 p-4">
-
-      <p className="text-sm text-gray-500">
-        {label}
-      </p>
-
-      <p className="mt-1 text-xl font-semibold text-gray-900">
-        {new Intl.NumberFormat(
-          'en-US'
-        ).format(
-          Number(value ?? 0)
-        )}
-      </p>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// FINANCIAL STATEMENT SECTION
-// ============================================================
-
-function FinancialStatementSection({
-  report,
-  formatMoney,
-  formatNumber,
-}: {
-  report: BnrFinancialStatementReport | null;
-
-  formatMoney: (
-    value?: number
-  ) => string;
-
-  formatNumber: (
-    value?: number
-  ) => string;
-}) {
-
-  if (!report) {
-
-    return (
-
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-        <h2 className="text-lg font-semibold text-gray-900">
-          BNR Financial Statement
-        </h2>
-
-        <p className="mt-2 text-sm text-gray-500">
-          Financial statement data is not available for this period.
-        </p>
-
-      </div>
-    );
-  }
-
-
-  return (
-
-    <div className="space-y-6">
-
-      {/* ================================================== */}
-      {/* HEADER */}
-      {/* ================================================== */}
-
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-
-          <div>
-
-            <h2 className="text-lg font-semibold text-gray-900">
-              BNR Financial Statement
-            </h2>
-
-            <p className="text-sm text-gray-500">
-              Statement of financial position, income,
-              expenses, cash flow and trial balance.
-            </p>
-
-          </div>
-
-
-          <div className="text-sm text-gray-500">
-
-            {report.periodStart ||
-              '—'}
-
-            {' → '}
-
-            {report.periodEnd ||
-              '—'}
-
-          </div>
-
-        </div>
-
-      </div>
-
-
-      {/* ================================================== */}
-      {/* BALANCE SHEET */}
-      {/* ================================================== */}
-
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-
-        <div className="border-b border-gray-200 p-5">
-
-          <h3 className="text-lg font-semibold text-gray-900">
-            Statement of Financial Position
-          </h3>
-
-        </div>
-
-
-        <FinancialRows
-          title="Assets"
-          rows={report.assets}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        <FinancialRows
-          title="Liabilities"
-          rows={report.liabilities}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        <FinancialRows
-          title="Equity"
-          rows={report.equity}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        <div className="grid grid-cols-1 gap-4 border-t border-gray-200 p-5 sm:grid-cols-2 lg:grid-cols-4">
-
-          <MetricCard
-            label="Total Assets"
-            value={formatMoney(
-              report.totalAssets
-            )}
-          />
-
-          <MetricCard
-            label="Total Liabilities"
-            value={formatMoney(
-              report.totalLiabilities
-            )}
-          />
-
-          <MetricCard
-            label="Total Equity"
-            value={formatMoney(
-              report.totalEquity
-            )}
-          />
-
-          <MetricCard
-            label="Current Period Net Income"
-            value={formatMoney(
-              report.currentPeriodNetIncome
-            )}
-          />
-
-        </div>
-
-
-        <div className="border-t border-gray-200 p-5">
-
-          <BalanceIndicator
-            label="Balance Sheet"
-            balanced={
-              report.balanceSheetBalanced
-            }
-          />
-
-        </div>
-
-      </div>
-
-
-      {/* ================================================== */}
-      {/* INCOME STATEMENT */}
-      {/* ================================================== */}
-
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-
-        <div className="border-b border-gray-200 p-5">
-
-          <h3 className="text-lg font-semibold text-gray-900">
-            Income Statement
-          </h3>
-
-        </div>
-
-
-        <FinancialRows
-          title="Income"
-          rows={report.income}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        <FinancialRows
-          title="Expenses"
-          rows={report.expenses}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        <div className="grid grid-cols-1 gap-4 border-t border-gray-200 p-5 sm:grid-cols-3">
-
-          <MetricCard
-            label="Total Income"
-            value={formatMoney(
-              report.totalIncome
-            )}
-          />
-
-          <MetricCard
-            label="Total Expenses"
-            value={formatMoney(
-              report.totalExpenses
-            )}
-          />
-
-          <MetricCard
-            label="Net Income"
-            value={formatMoney(
-              report.netIncome
-            )}
-          />
-
-        </div>
-
-      </div>
-
-
-      {/* ================================================== */}
-      {/* CASH FLOW */}
-      {/* ================================================== */}
-
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">
-          Cash Flow
-        </h3>
-
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-
-          <MetricCard
-            label="Cash Used For Lending"
-            value={formatMoney(
-              report.cashUsedForLending
-            )}
-          />
-
-          <MetricCard
-            label="Cash From Collections"
-            value={formatMoney(
-              report.cashFromCollections
-            )}
-          />
-
-          <MetricCard
-            label="Cash From Fees"
-            value={formatMoney(
-              report.cashFromFees
-            )}
-          />
-
-          <MetricCard
-            label="Other Cash Movement"
-            value={formatMoney(
-              report.otherCashMovement
-            )}
-          />
-
-          <MetricCard
-            label="Net Change In Cash"
-            value={formatMoney(
-              report.netChangeInCash
-            )}
-          />
-
-        </div>
-
-      </div>
-
-
-      {/* ================================================== */}
-      {/* TRIAL BALANCE */}
-      {/* ================================================== */}
-
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">
-          Trial Balance
-        </h3>
-
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-
-          <MetricCard
-            label="Total Debit"
-            value={formatMoney(
-              report.trialBalanceDebit
-            )}
-          />
-
-          <MetricCard
-            label="Total Credit"
-            value={formatMoney(
-              report.trialBalanceCredit
-            )}
-          />
-
-          <BalanceIndicator
-            label="Trial Balance"
-            balanced={
-              report.trialBalanceBalanced
-            }
-          />
-
-        </div>
-
-      </div>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// FINANCIAL ROWS
-// ============================================================
-
-function FinancialRows({
-  title,
-  rows,
-  formatMoney,
-  formatNumber,
-}: {
-  title: string;
-
-  rows?: FinancialStatementRow[];
-
-  formatMoney: (
-    value?: number
-  ) => string;
-
-  formatNumber: (
-    value?: number
-  ) => string;
-}) {
-
-  if (!rows || rows.length === 0) {
-
-    return (
-
-      <div className="border-b border-gray-200 p-5">
-
-        <h4 className="mb-2 font-medium text-gray-800">
-          {title}
-        </h4>
-
-        <p className="text-sm text-gray-500">
-          No accounts reported.
-        </p>
-
-      </div>
-    );
-  }
-
-
-  return (
-
-    <div className="border-b border-gray-200">
-
-      <div className="p-5 pb-2">
-
-        <h4 className="font-medium text-gray-800">
-          {title}
-        </h4>
-
-      </div>
-
-
-      <div className="overflow-x-auto px-5 pb-5">
-
-        <table className="min-w-full text-sm">
-
-          <thead>
-
-            <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
-
-              <th className="px-3 py-2">
-                Code
-              </th>
-
-              <th className="px-3 py-2">
-                Account
-              </th>
-
-              <th className="px-3 py-2 text-right">
-                Balance
-              </th>
-
-            </tr>
-
-          </thead>
-
-
-          <tbody className="divide-y divide-gray-100">
-
-            {rows.map(
-              (
-                row,
-                index
-              ) => {
-
-                const value =
-                  row.balance ??
-                  row.amount ??
-                  row.credit ??
-                  row.debit ??
-                  0;
-
-                return (
-
-                  <tr
-                    key={`${row.code || row.name || 'row'}-${index}`}
-                  >
-
-                    <td className="px-3 py-2 text-gray-500">
-                      {row.code ||
-                        '—'}
-                    </td>
-
-                    <td className="px-3 py-2 font-medium text-gray-800">
-                      {row.name ||
-                        'Unnamed Account'}
-                    </td>
-
-                    <td className="px-3 py-2 text-right font-medium text-gray-900">
-                      {formatMoney(
-                        value
-                      )}
-                    </td>
-
-                  </tr>
-
-                );
-              }
-            )}
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// BALANCE INDICATOR
-// ============================================================
-
-function BalanceIndicator({
-  label,
-  balanced,
-}: {
-  label: string;
-  balanced?: boolean;
-}) {
-
-  const isBalanced =
-    balanced === true;
-
-  return (
-
-    <div className="rounded-lg bg-gray-50 p-4">
-
-      <p className="text-sm text-gray-500">
+    <div
+      className="
+        rounded-lg
+        bg-gray-50
+        p-4
+      "
+    >
+
+      <p
+        className="
+          text-sm
+          text-gray-500
+        "
+      >
         {label}
       </p>
 
       <p
-        className={
-          isBalanced
-            ? 'mt-1 text-lg font-semibold text-green-700'
-            : 'mt-1 text-lg font-semibold text-red-700'
-        }
+        className="
+          mt-1
+          text-xl
+          font-semibold
+          text-gray-900
+        "
       >
-        {isBalanced
-          ? 'Balanced'
-          : 'Not Balanced'}
+        {
+          new Intl.NumberFormat(
+            'en-US'
+          ).format(
+            Number(
+              value || 0
+            )
+          )
+        }
       </p>
 
     </div>
+
   );
 }
 
@@ -2132,56 +1693,142 @@ function BreakdownTable({
   formatNumber,
 }: {
   title: string;
-
   rows: BreakdownRow[];
-
   formatMoney: (
     value?: number
   ) => string;
-
   formatNumber: (
     value?: number
   ) => string;
 }) {
 
+  /*
+   * FINAL SAFETY CHECK
+   *
+   * Even if something unexpected comes through from the API,
+   * this prevents:
+   *
+   * TypeError: rows.map is not a function
+   */
+
+  const safeRows =
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+
   return (
 
-    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div
+      className="
+        rounded-xl
+        border
+        border-gray-200
+        bg-white
+        shadow-sm
+      "
+    >
 
-      <div className="border-b border-gray-200 p-5">
+      <div
+        className="
+          border-b
+          border-gray-200
+          p-5
+        "
+      >
 
-        <h2 className="text-lg font-semibold text-gray-900">
+        <h2
+          className="
+            text-lg
+            font-semibold
+            text-gray-900
+          "
+        >
           {title}
         </h2>
 
       </div>
 
 
-      {rows.length === 0 ? (
+      {safeRows.length === 0 ? (
 
-        <div className="p-6 text-center text-sm text-gray-500">
+        <div
+          className="
+            p-6
+            text-center
+            text-sm
+            text-gray-500
+          "
+        >
           No data available for this period.
         </div>
 
       ) : (
 
-        <div className="overflow-x-auto">
+        <div
+          className="
+            overflow-x-auto
+          "
+        >
 
-          <table className="min-w-full divide-y divide-gray-200">
+          <table
+            className="
+              min-w-full
+              divide-y
+              divide-gray-200
+            "
+          >
 
-            <thead className="bg-gray-50">
+            <thead
+              className="
+                bg-gray-50
+              "
+            >
 
               <tr>
 
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <th
+                  className="
+                    px-5
+                    py-3
+                    text-left
+                    text-xs
+                    font-semibold
+                    uppercase
+                    tracking-wide
+                    text-gray-500
+                  "
+                >
                   Category
                 </th>
 
-                <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Loans
+                <th
+                  className="
+                    px-5
+                    py-3
+                    text-right
+                    text-xs
+                    font-semibold
+                    uppercase
+                    tracking-wide
+                    text-gray-500
+                  "
+                >
+                  Count
                 </th>
 
-                <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <th
+                  className="
+                    px-5
+                    py-3
+                    text-right
+                    text-xs
+                    font-semibold
+                    uppercase
+                    tracking-wide
+                    text-gray-500
+                  "
+                >
                   Amount
                 </th>
 
@@ -2190,33 +1837,77 @@ function BreakdownTable({
             </thead>
 
 
-            <tbody className="divide-y divide-gray-100 bg-white">
+            <tbody
+              className="
+                divide-y
+                divide-gray-100
+                bg-white
+              "
+            >
 
-              {rows.map(
+              {safeRows.map(
                 (
                   row,
                   index
                 ) => (
 
                   <tr
-                    key={`${row.label}-${index}`}
-                    className="hover:bg-gray-50"
+                    key={
+                      `${row.label}-${index}`
+                    }
+                    className="
+                      hover:bg-gray-50
+                    "
                   >
 
-                    <td className="whitespace-nowrap px-5 py-3 text-sm font-medium text-gray-900">
-                      {row.label}
+                    <td
+                      className="
+                        whitespace-nowrap
+                        px-5
+                        py-3
+                        text-sm
+                        text-gray-700
+                      "
+                    >
+                      {
+                        row.label ||
+                        'Unknown'
+                      }
                     </td>
 
-                    <td className="whitespace-nowrap px-5 py-3 text-right text-sm text-gray-600">
-                      {formatNumber(
-                        row.count
-                      )}
+                    <td
+                      className="
+                        whitespace-nowrap
+                        px-5
+                        py-3
+                        text-right
+                        text-sm
+                        font-medium
+                        text-gray-800
+                      "
+                    >
+                      {
+                        formatNumber(
+                          row.count
+                        )
+                      }
                     </td>
 
-                    <td className="whitespace-nowrap px-5 py-3 text-right text-sm font-medium text-gray-900">
-                      {formatMoney(
-                        row.amount
-                      )}
+                    <td
+                      className="
+                        whitespace-nowrap
+                        px-5
+                        py-3
+                        text-right
+                        text-sm
+                        text-gray-600
+                      "
+                    >
+                      {
+                        formatMoney(
+                          row.amount
+                        )
+                      }
                     </td>
 
                   </tr>
@@ -2233,68 +1924,6 @@ function BreakdownTable({
       )}
 
     </div>
-  );
-}
 
-
-// ============================================================
-// PAR 30 AMOUNT
-// ============================================================
-
-function getPar30Amount(
-  summary: BnrSummary | null
-): number {
-
-  if (!summary) {
-    return 0;
-  }
-
-  return (
-    Number(summary.par31To60Amount ?? 0) +
-    Number(summary.par61To90Amount ?? 0) +
-    Number(summary.par91To180Amount ?? 0) +
-    Number(summary.par181To365Amount ?? 0) +
-    Number(summary.parOver365Amount ?? 0)
-  );
-}
-
-
-// ============================================================
-// PAR 60 AMOUNT
-// ============================================================
-
-function getPar60Amount(
-  summary: BnrSummary | null
-): number {
-
-  if (!summary) {
-    return 0;
-  }
-
-  return (
-    Number(summary.par61To90Amount ?? 0) +
-    Number(summary.par91To180Amount ?? 0) +
-    Number(summary.par181To365Amount ?? 0) +
-    Number(summary.parOver365Amount ?? 0)
-  );
-}
-
-
-// ============================================================
-// PAR 90 AMOUNT
-// ============================================================
-
-function getPar90Amount(
-  summary: BnrSummary | null
-): number {
-
-  if (!summary) {
-    return 0;
-  }
-
-  return (
-    Number(summary.par91To180Amount ?? 0) +
-    Number(summary.par181To365Amount ?? 0) +
-    Number(summary.parOver365Amount ?? 0)
   );
 }
