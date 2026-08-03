@@ -3,22 +3,11 @@ package com.patrick.fintech.loan_backend.dto.regulatory;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
-
-/**
- * One row of a regulatory breakdown.
- *
- * Examples:
- * PERSONAL
- * BUSINESS
- * Kigali Main Branch
- * MALE
- * FEMALE
- * 31-60 DAYS
- */
 @Data
 @Builder
+@NoArgsConstructor
 @AllArgsConstructor
 public class BnrBreakdownRow {
 
@@ -26,5 +15,5 @@ public class BnrBreakdownRow {
 
     private long count;
 
-    private Double amount;
+    private double amount;
 }

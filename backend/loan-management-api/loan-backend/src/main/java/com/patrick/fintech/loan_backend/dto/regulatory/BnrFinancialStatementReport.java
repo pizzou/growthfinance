@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -42,14 +43,20 @@ public class BnrFinancialStatementReport {
 
 
     // ============================================================
-    // BALANCE SHEET
+    // STATEMENT OF FINANCIAL POSITION
     // ============================================================
 
-    private List<Map<String, Object>> assets;
+    @Builder.Default
+    private List<Map<String, Object>> assets =
+            new ArrayList<>();
 
-    private List<Map<String, Object>> liabilities;
+    @Builder.Default
+    private List<Map<String, Object>> liabilities =
+            new ArrayList<>();
 
-    private List<Map<String, Object>> equity;
+    @Builder.Default
+    private List<Map<String, Object>> equity =
+            new ArrayList<>();
 
     private double totalAssets;
 
@@ -63,18 +70,33 @@ public class BnrFinancialStatementReport {
 
 
     // ============================================================
-    // PROFIT AND LOSS
+    // INCOME STATEMENT
     // ============================================================
 
-    private List<Map<String, Object>> income;
+    @Builder.Default
+    private List<Map<String, Object>> income =
+            new ArrayList<>();
 
-    private List<Map<String, Object>> expenses;
+    @Builder.Default
+    private List<Map<String, Object>> expenses =
+            new ArrayList<>();
 
     private double totalIncome;
 
     private double totalExpenses;
 
     private double netIncome;
+
+
+    // ============================================================
+    // TRIAL BALANCE
+    // ============================================================
+
+    private double trialBalanceDebit;
+
+    private double trialBalanceCredit;
+
+    private boolean trialBalanceBalanced;
 
 
     // ============================================================
@@ -90,15 +112,4 @@ public class BnrFinancialStatementReport {
     private double otherCashMovement;
 
     private double netChangeInCash;
-
-
-    // ============================================================
-    // TRIAL BALANCE CONTROL
-    // ============================================================
-
-    private double trialBalanceDebit;
-
-    private double trialBalanceCredit;
-
-    private boolean trialBalanceBalanced;
 }

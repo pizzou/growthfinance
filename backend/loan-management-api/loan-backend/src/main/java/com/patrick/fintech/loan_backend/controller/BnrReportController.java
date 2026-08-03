@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
@@ -38,27 +37,17 @@ public class BnrReportController {
     private final AuditService auditService;
     private final CurrentUserUtil currentUserUtil;
 
-    // ============================================================
-    // BNR SUMMARY
-    // ============================================================
 
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<BnrSummaryReport>> summary(
-
-            @RequestParam(required = false)
-            Long branchId,
-
+            @RequestParam(required = false) Long branchId,
             @RequestParam(
                     required = false,
                     defaultValue = "MONTHLY"
             )
             ReportPeriod period,
-
-            @RequestParam(required = false)
-            String from,
-
-            @RequestParam(required = false)
-            String to
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) {
 
         Long organizationId =
@@ -73,16 +62,10 @@ public class BnrReportController {
                         parseDate(to)
                 );
 
-        auditService.log(
-                currentUserUtil.getCurrentUser().getOrganization(),
-                currentUserUtil.getCurrentUser(),
-                "VIEW",
+        auditView(
                 "BnrReport",
-                period.name(),
-                "Viewed BNR portfolio summary (" + period.name() + ")",
-                null,
-                null,
-                "Regulatory Reporting"
+                period,
+                "Viewed BNR portfolio summary"
         );
 
         return ResponseEntity.ok(
@@ -90,28 +73,18 @@ public class BnrReportController {
         );
     }
 
-    // ============================================================
-    // BNR FINANCIAL STATEMENT
-    // ============================================================
 
     @GetMapping("/financial-statement")
     public ResponseEntity<ApiResponse<BnrFinancialStatementReport>>
     financialStatement(
-
-            @RequestParam(required = false)
-            Long branchId,
-
+            @RequestParam(required = false) Long branchId,
             @RequestParam(
                     required = false,
                     defaultValue = "MONTHLY"
             )
             ReportPeriod period,
-
-            @RequestParam(required = false)
-            String from,
-
-            @RequestParam(required = false)
-            String to
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) {
 
         Long organizationId =
@@ -126,18 +99,10 @@ public class BnrReportController {
                         parseDate(to)
                 );
 
-        auditService.log(
-                currentUserUtil.getCurrentUser().getOrganization(),
-                currentUserUtil.getCurrentUser(),
-                "VIEW",
+        auditView(
                 "BnrFinancialStatement",
-                period.name(),
-                "Viewed BNR accounting financial statement (" +
-                        period.name() +
-                        ")",
-                null,
-                null,
-                "Regulatory Reporting"
+                period,
+                "Viewed BNR financial statement"
         );
 
         return ResponseEntity.ok(
@@ -145,200 +110,107 @@ public class BnrReportController {
         );
     }
 
-    // ============================================================
-    // BNR BREAKDOWN BY LOAN TYPE
-    //
-    // FRONTEND URL:
-    // /api/regulatory/bnr/by-loan-type
-    // ============================================================
 
-    @GetMapping("/by-loan-type")
+    @GetMapping("/breakdown/loan-type")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     byLoanType(
-
-            @RequestParam(required = false)
-            Long branchId,
-
+            @RequestParam(required = false) Long branchId,
             @RequestParam(
                     required = false,
                     defaultValue = "MONTHLY"
             )
             ReportPeriod period,
-
-            @RequestParam(required = false)
-            String from,
-
-            @RequestParam(required = false)
-            String to
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) {
 
         Long organizationId =
                 currentUserUtil.getCurrentOrganizationId();
 
-        List<BnrBreakdownRow> rows =
-                reportingService.breakdownByLoanType(
-                        organizationId,
-                        branchId,
-                        period,
-                        parseDate(from),
-                        parseDate(to)
-                );
-
-        auditService.log(
-                currentUserUtil.getCurrentUser().getOrganization(),
-                currentUserUtil.getCurrentUser(),
-                "VIEW",
-                "BnrLoanTypeBreakdown",
-                period.name(),
-                "Viewed BNR loan-type breakdown (" +
-                        period.name() +
-                        ")",
-                null,
-                null,
-                "Regulatory Reporting"
-        );
-
         return ResponseEntity.ok(
-                ApiResponse.ok(rows)
+                ApiResponse.ok(
+                        reportingService.breakdownByLoanType(
+                                organizationId,
+                                branchId,
+                                period,
+                                parseDate(from),
+                                parseDate(to)
+                        )
+                )
         );
     }
 
-    // ============================================================
-    // BNR BREAKDOWN BY BRANCH
-    //
-    // FRONTEND URL:
-    // /api/regulatory/bnr/by-branch
-    // ============================================================
 
-    @GetMapping("/by-branch")
+    @GetMapping("/breakdown/branch")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     byBranch(
-
             @RequestParam(
                     required = false,
                     defaultValue = "MONTHLY"
             )
             ReportPeriod period,
-
-            @RequestParam(required = false)
-            String from,
-
-            @RequestParam(required = false)
-            String to
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) {
 
         Long organizationId =
                 currentUserUtil.getCurrentOrganizationId();
 
-        List<BnrBreakdownRow> rows =
-                reportingService.breakdownByBranch(
-                        organizationId,
-                        period,
-                        parseDate(from),
-                        parseDate(to)
-                );
-
-        auditService.log(
-                currentUserUtil.getCurrentUser().getOrganization(),
-                currentUserUtil.getCurrentUser(),
-                "VIEW",
-                "BnrBranchBreakdown",
-                period.name(),
-                "Viewed BNR branch breakdown (" +
-                        period.name() +
-                        ")",
-                null,
-                null,
-                "Regulatory Reporting"
-        );
-
         return ResponseEntity.ok(
-                ApiResponse.ok(rows)
+                ApiResponse.ok(
+                        reportingService.breakdownByBranch(
+                                organizationId,
+                                period,
+                                parseDate(from),
+                                parseDate(to)
+                        )
+                )
         );
     }
 
-    // ============================================================
-    // BNR BREAKDOWN BY GENDER
-    //
-    // FRONTEND URL:
-    // /api/regulatory/bnr/by-gender
-    // ============================================================
 
-    @GetMapping("/by-gender")
+    @GetMapping("/breakdown/gender")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     byGender(
-
-            @RequestParam(required = false)
-            Long branchId,
-
+            @RequestParam(required = false) Long branchId,
             @RequestParam(
                     required = false,
                     defaultValue = "MONTHLY"
             )
             ReportPeriod period,
-
-            @RequestParam(required = false)
-            String from,
-
-            @RequestParam(required = false)
-            String to
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) {
 
         Long organizationId =
                 currentUserUtil.getCurrentOrganizationId();
 
-        List<BnrBreakdownRow> rows =
-                reportingService.breakdownByGender(
-                        organizationId,
-                        branchId,
-                        period,
-                        parseDate(from),
-                        parseDate(to)
-                );
-
-        auditService.log(
-                currentUserUtil.getCurrentUser().getOrganization(),
-                currentUserUtil.getCurrentUser(),
-                "VIEW",
-                "BnrGenderBreakdown",
-                period.name(),
-                "Viewed BNR gender breakdown (" +
-                        period.name() +
-                        ")",
-                null,
-                null,
-                "Regulatory Reporting"
-        );
-
         return ResponseEntity.ok(
-                ApiResponse.ok(rows)
+                ApiResponse.ok(
+                        reportingService.breakdownByGender(
+                                organizationId,
+                                branchId,
+                                period,
+                                parseDate(from),
+                                parseDate(to)
+                        )
+                )
         );
     }
 
-    // ============================================================
-    // BNR FINANCIAL STATEMENT EXPORT
-    // ============================================================
 
     @GetMapping("/financial-statement/export")
     public ResponseEntity<byte[]> exportFinancialStatement(
-
             @RequestParam(defaultValue = "xlsx")
             String format,
-
-            @RequestParam(required = false)
-            Long branchId,
-
+            @RequestParam(required = false) Long branchId,
             @RequestParam(
                     required = false,
                     defaultValue = "MONTHLY"
             )
             ReportPeriod period,
-
-            @RequestParam(required = false)
-            String from,
-
-            @RequestParam(required = false)
-            String to
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) {
 
         Long organizationId =
@@ -354,11 +226,7 @@ public class BnrReportController {
                 );
 
         List<String> columns =
-                List.of(
-                        "Section",
-                        "Account",
-                        "Value"
-                );
+                List.of("Section", "Account", "Value");
 
         List<Map<String, Object>> rows =
                 financialStatementRows(report);
@@ -371,21 +239,14 @@ public class BnrReportController {
 
         String filename =
                 "BNR-Financial-Statement-" +
-                        LocalDate.now().format(
-                                DateTimeFormatter.ISO_DATE
-                        );
+                LocalDate.now().format(
+                        DateTimeFormatter.ISO_DATE
+                );
 
-        auditService.log(
-                currentUserUtil.getCurrentUser().getOrganization(),
-                currentUserUtil.getCurrentUser(),
-                "EXPORT",
+        auditExport(
                 "BnrFinancialStatement",
-                period.name(),
-                "Exported BNR financial statement as " +
-                        format.toUpperCase(),
-                null,
-                null,
-                "Regulatory Reporting"
+                period,
+                format
         );
 
         return respond(
@@ -398,9 +259,6 @@ public class BnrReportController {
         );
     }
 
-    // ============================================================
-    // FINANCIAL STATEMENT ROWS
-    // ============================================================
 
     private List<Map<String, Object>> financialStatementRows(
             BnrFinancialStatementReport report
@@ -409,23 +267,9 @@ public class BnrReportController {
         List<Map<String, Object>> rows =
                 new ArrayList<>();
 
-        addSectionRows(
-                rows,
-                "ASSETS",
-                report.getAssets()
-        );
-
-        addSectionRows(
-                rows,
-                "LIABILITIES",
-                report.getLiabilities()
-        );
-
-        addSectionRows(
-                rows,
-                "EQUITY",
-                report.getEquity()
-        );
+        addSectionRows(rows, "ASSETS", report.getAssets());
+        addSectionRows(rows, "LIABILITIES", report.getLiabilities());
+        addSectionRows(rows, "EQUITY", report.getEquity());
 
         addRow(
                 rows,
@@ -458,21 +302,12 @@ public class BnrReportController {
         addRow(
                 rows,
                 "BALANCE SHEET",
-                "Balance Sheet Balanced",
+                "Balanced",
                 report.isBalanceSheetBalanced()
         );
 
-        addSectionRows(
-                rows,
-                "INCOME",
-                report.getIncome()
-        );
-
-        addSectionRows(
-                rows,
-                "EXPENSES",
-                report.getExpenses()
-        );
+        addSectionRows(rows, "INCOME", report.getIncome());
+        addSectionRows(rows, "EXPENSES", report.getExpenses());
 
         addRow(
                 rows,
@@ -554,9 +389,6 @@ public class BnrReportController {
         return rows;
     }
 
-    // ============================================================
-    // SECTION ROWS
-    // ============================================================
 
     private void addSectionRows(
             List<Map<String, Object>> rows,
@@ -564,7 +396,7 @@ public class BnrReportController {
             List<Map<String, Object>> sectionRows
     ) {
 
-        if (sectionRows == null || sectionRows.isEmpty()) {
+        if (sectionRows == null) {
             return;
         }
 
@@ -574,13 +406,23 @@ public class BnrReportController {
                 continue;
             }
 
-            String account =
-                    String.valueOf(item.get("code")) +
-                            " - " +
-                            String.valueOf(item.get("name"));
+            String code =
+                    String.valueOf(
+                            item.getOrDefault("code", "")
+                    );
+
+            String name =
+                    String.valueOf(
+                            item.getOrDefault("name", "")
+                    );
 
             Object value =
                     item.get("balance");
+
+            String account =
+                    code.isBlank()
+                            ? name
+                            : code + " - " + name;
 
             addRow(
                     rows,
@@ -591,9 +433,6 @@ public class BnrReportController {
         }
     }
 
-    // ============================================================
-    // ADD ROW
-    // ============================================================
 
     private void addRow(
             List<Map<String, Object>> rows,
@@ -612,9 +451,6 @@ public class BnrReportController {
         rows.add(row);
     }
 
-    // ============================================================
-    // EXPORT RESPONSE
-    // ============================================================
 
     private ResponseEntity<byte[]> respond(
             String format,
@@ -625,31 +461,25 @@ public class BnrReportController {
             String organizationName
     ) {
 
-        if (format == null || format.isBlank()) {
-            format = "xlsx";
-        }
+        String normalized =
+                format == null || format.isBlank()
+                        ? "xlsx"
+                        : format.trim().toLowerCase();
 
         byte[] bytes;
         MediaType contentType;
         String extension;
 
-        switch (format.toLowerCase()) {
+        switch (normalized) {
 
             case "csv" -> {
-
-                bytes =
-                        toCsv(columns, rows);
-
+                bytes = toCsv(columns, rows);
                 contentType =
-                        MediaType.parseMediaType(
-                                "text/csv"
-                        );
-
+                        MediaType.parseMediaType("text/csv");
                 extension = "csv";
             }
 
             case "pdf" -> {
-
                 bytes =
                         exportService.toPdf(
                                 title,
@@ -657,35 +487,31 @@ public class BnrReportController {
                                 rows,
                                 organizationName
                         );
-
                 contentType =
                         MediaType.APPLICATION_PDF;
-
                 extension = "pdf";
             }
 
             case "xlsx" -> {
-
                 bytes =
                         exportService.toExcel(
                                 title,
                                 columns,
                                 rows
                         );
-
                 contentType =
                         MediaType.parseMediaType(
                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         );
-
                 extension = "xlsx";
             }
 
-            default -> throw new IllegalArgumentException(
-                    "Unsupported export format: " +
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported export format: " +
                             format +
                             ". Supported formats: csv, pdf, xlsx."
-            );
+                    );
         }
 
         return ResponseEntity.ok()
@@ -693,61 +519,119 @@ public class BnrReportController {
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" +
-                                filename +
-                                "." +
-                                extension +
-                                "\""
+                        filename +
+                        "." +
+                        extension +
+                        "\""
                 )
                 .body(bytes);
     }
 
-    // ============================================================
-    // CSV
-    // ============================================================
 
-    static byte[] toCsv(List<String> columns, List<Map<String, Object>> rows) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(String.join(",", columns));
-        sb.append("\n");
+    static byte[] toCsv(
+            List<String> columns,
+            List<Map<String, Object>> rows
+    ) {
+
+        StringBuilder sb =
+                new StringBuilder();
+
+        sb.append(
+                String.join(",", columns)
+        );
+
+        sb.append('\n');
 
         for (Map<String, Object> row : rows) {
+
             for (int i = 0; i < columns.size(); i++) {
-                Object value = row.get(columns.get(i));
-                String cell = value == null ? "" : value.toString();
 
-                cell = cell.replace("\"", "\"\"");
+                Object value =
+                        row.get(columns.get(i));
 
-                /*
-                 * CSV formula-injection guard (OWASP CSV Injection).
-                 * If a cell's first character would be interpreted by
-                 * Excel/Sheets/LibreOffice as the start of a formula
-                 * (=, +, -, @, or tab), prefix it with a single quote so
-                 * spreadsheet software renders it as literal text instead
-                 * of executing it. This data can come from free-text
-                 * borrower fields (name, notes) and this file is opened
-                 * directly by external BNR / credit-bureau staff.
-                 */
-                if (!cell.isEmpty() && "=+-@\t".indexOf(cell.charAt(0)) >= 0) {
+                String cell =
+                        value == null
+                                ? ""
+                                : value.toString();
+
+                cell =
+                        cell.replace("\"", "\"\"");
+
+                if (
+                        !cell.isEmpty() &&
+                        "=+-@\t".indexOf(
+                                cell.charAt(0)
+                        ) >= 0
+                ) {
                     cell = "'" + cell;
                 }
 
-                if (cell.contains(",") || cell.contains("\"") || cell.contains("\n")) {
+                if (
+                        cell.contains(",") ||
+                        cell.contains("\"") ||
+                        cell.contains("\n") ||
+                        cell.contains("\r")
+                ) {
                     cell = "\"" + cell + "\"";
                 }
 
                 sb.append(cell);
+
                 if (i < columns.size() - 1) {
-                    sb.append(",");
+                    sb.append(',');
                 }
             }
-            sb.append("\n");
+
+            sb.append('\n');
         }
 
-        return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return sb.toString()
+                .getBytes(StandardCharsets.UTF_8);
     }
-    // ============================================================
-    // DATE PARSER
-    // ============================================================
+
+
+    private void auditView(
+            String entity,
+            ReportPeriod period,
+            String description
+    ) {
+
+        auditService.log(
+                currentUserUtil.getCurrentUser().getOrganization(),
+                currentUserUtil.getCurrentUser(),
+                "VIEW",
+                entity,
+                period.name(),
+                description + " (" + period.name() + ")",
+                null,
+                null,
+                "Regulatory Reporting"
+        );
+    }
+
+
+    private void auditExport(
+            String entity,
+            ReportPeriod period,
+            String format
+    ) {
+
+        auditService.log(
+                currentUserUtil.getCurrentUser().getOrganization(),
+                currentUserUtil.getCurrentUser(),
+                "EXPORT",
+                entity,
+                period.name(),
+                "Exported " +
+                        entity +
+                        " as " +
+                        format.toUpperCase(),
+                null,
+                null,
+                "Regulatory Reporting"
+        );
+    }
+
 
     private LocalDate parseDate(String value) {
 
