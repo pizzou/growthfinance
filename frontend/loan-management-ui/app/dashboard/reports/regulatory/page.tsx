@@ -260,7 +260,7 @@ function BnrTab() {
     financialStatement,
     setFinancialStatement,
   ] =
-    useState<BnrFinancialStatement | null>(
+    useState<BnrFinancialStatementReport | null>(
       null
     );
 
@@ -1039,7 +1039,7 @@ function FinancialStatementSection({
   report,
   currency,
 }: {
-  report: BnrFinancialStatement | null;
+  report: BnrFinancialStatementReport | null;
   currency: string;
 }) {
 
@@ -1448,7 +1448,7 @@ function StatementAccountTable({
   currency,
 }: {
   title: string;
-  rows: FinancialStatementRow[];
+  rows: FinancialStatementAccount[];
   currency: string;
 }) {
 
