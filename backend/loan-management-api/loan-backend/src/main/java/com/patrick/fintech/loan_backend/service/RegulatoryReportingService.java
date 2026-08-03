@@ -1060,15 +1060,7 @@ public class RegulatoryReportingService {
 
         double parRatio = ratio(parAmount, outstandingPrincipal);
 
-        /*
-         * Standard PAR buckets (PAR1 / PAR30 / PAR60 / PAR90): outstanding
-         * balance of loans overdue by AT LEAST that many days, as a
-         * fraction of total outstanding portfolio. BNR and standard
-         * microfinance regulatory templates specifically ask for PAR30 --
-         * the broad "parRatio" above (any days overdue at all) is kept
-         * for internal use, but these four are the ones that belong in
-         * the regulator-facing summary.
-         */
+       
         double par1Amount = parAmount; // dpd > 0, same set backing the broad parRatio
         double par30Amount = par31To60 + par61To90 + par91To180 + par181To365 + parOver365;
         double par60Amount = par61To90 + par91To180 + par181To365 + parOver365;
