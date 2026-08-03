@@ -22,182 +22,53 @@ import {
 // TYPES
 // ============================================================
 
-type DownloadingFormat = ExportFormat | null;
+type DownloadingFormat =
+  | ExportFormat
+  | null;
+
+
 
 function normalizeBreakdownRows(
   value: unknown
 ): BreakdownRow[] {
 
- 
-
+  // Normal expected response
   if (Array.isArray(value)) {
-    return value.filter(
-      (row): row is BreakdownRow =>
-        row !== null &&
-        typeof row === 'object'
-    );
+    return value as BreakdownRow[];
   }
 
-
-  // ----------------------------------------------------------
-  // Object response
-  // ----------------------------------------------------------
-
+  // Wrapped API response
   if (
-    value !== null &&
+    value &&
     typeof value === 'object'
   ) {
 
     const response =
       value as Record<string, unknown>;
 
+    const possibleArrays: unknown[] = [
+      response.data,
+      response.content,
+      response.items,
+      response.results,
+      response.rows,
+    ];
 
-    // Common Spring/API wrapper:
-    //
-    // { data: [...] }
-
-    if (Array.isArray(response.data)) {
-
-      return response.data.filter(
-        (row): row is BreakdownRow =>
-          row !== null &&
-          typeof row === 'object'
-      );
-    }
-
-
-    // Common Spring Page response:
-    //
-    // { content: [...] }
-
-    if (Array.isArray(response.content)) {
-
-      return response.content.filter(
-        (row): row is BreakdownRow =>
-          row !== null &&
-          typeof row === 'object'
-      );
-    }
-
-
-    // Possible custom wrapper:
-    //
-    // { rows: [...] }
-
-    if (Array.isArray(response.rows)) {
-
-      return response.rows.filter(
-        (row): row is BreakdownRow =>
-          row !== null &&
-          typeof row === 'object'
-      );
-    }
-
-
-    // Possible custom wrapper:
-    //
-    // { items: [...] }
-
-    if (Array.isArray(response.items)) {
-
-      return response.items.filter(
-        (row): row is BreakdownRow =>
-          row !== null &&
-          typeof row === 'object'
-      );
-    }
-
-
-    // Possible Axios-style response:
-    //
-    // { data: { data: [...] } }
-
-    if (
-      response.data !== null &&
-      typeof response.data === 'object'
+    for (
+      const item of possibleArrays
     ) {
 
-      const nested =
-        response.data as Record<string, unknown>;
+      if (Array.isArray(item)) {
 
+        return item as BreakdownRow[];
 
-      if (Array.isArray(nested.data)) {
-
-        return nested.data.filter(
-          (row): row is BreakdownRow =>
-            row !== null &&
-            typeof row === 'object'
-        );
-      }
-
-
-      if (Array.isArray(nested.content)) {
-
-        return nested.content.filter(
-          (row): row is BreakdownRow =>
-            row !== null &&
-            typeof row === 'object'
-        );
-      }
-
-
-      if (Array.isArray(nested.rows)) {
-
-        return nested.rows.filter(
-          (row): row is BreakdownRow =>
-            row !== null &&
-            typeof row === 'object'
-        );
-      }
-
-
-      if (Array.isArray(nested.items)) {
-
-        return nested.items.filter(
-          (row): row is BreakdownRow =>
-            row !== null &&
-            typeof row === 'object'
-        );
       }
     }
   }
 
-
-  // ----------------------------------------------------------
-  // Unknown response
-  // ----------------------------------------------------------
-
-  console.warn(
-    'BNR breakdown response was not an array:',
-    value
-  );
-
+  // Never allow the UI to receive
+  // an object where .map() is expected.
   return [];
-}
-
-
-// ============================================================
-// SAFE NUMBER
-// ============================================================
-
-function safeNumber(
-  value: unknown
-): number {
-
-  if (
-    value === null ||
-    value === undefined ||
-    value === ''
-  ) {
-    return 0;
-  }
-
-  const number =
-    Number(value);
-
-  return Number.isFinite(number)
-    ? number
-    : 0;
 }
 
 
@@ -263,6 +134,12 @@ export default function BnrReportPage() {
         period,
       };
 
+      /*
+       * Only send from/to when:
+       *
+       * 1. period is CUSTOM
+       * 2. the value actually exists
+       */
 
       if (period === 'CUSTOM') {
 
@@ -275,7 +152,6 @@ export default function BnrReportPage() {
         }
       }
 
-
       return params;
 
     }, [
@@ -286,7 +162,7 @@ export default function BnrReportPage() {
 
 
   // ==========================================================
-  // VALIDATE FILTERS
+  // VALIDATE CUSTOM DATES
   // ==========================================================
 
   const validateFilters =
@@ -296,21 +172,17 @@ export default function BnrReportPage() {
         return null;
       }
 
-
       if (!from) {
         return 'Please select a start date.';
       }
-
 
       if (!to) {
         return 'Please select an end date.';
       }
 
-
       if (from > to) {
         return 'The start date cannot be after the end date.';
       }
-
 
       return null;
 
@@ -331,25 +203,20 @@ export default function BnrReportPage() {
       const validationError =
         validateFilters();
 
-
       if (validationError) {
 
         setError(
           validationError
         );
 
-        setLoading(false);
-
         return;
       }
-
 
       try {
 
         setLoading(true);
 
         setError(null);
-
 
         const [
           summaryResult,
@@ -376,49 +243,30 @@ export default function BnrReportPage() {
         ]);
 
 
-        // ----------------------------------------------------
-        // DEBUGGING
-        // ----------------------------------------------------
-        //
-        // These logs will show exactly what the backend is
-        // returning in production.
-        //
-        // They can be removed later.
-        // ----------------------------------------------------
-
-        console.log(
-          '[BNR] summary:',
-          summaryResult
-        );
-
-        console.log(
-          '[BNR] loan type:',
-          loanTypeResult
-        );
-
-        console.log(
-          '[BNR] branch:',
-          branchResult
-        );
-
-        console.log(
-          '[BNR] gender:',
-          genderResult
-        );
-
-
-        // ----------------------------------------------------
+        // ======================================================
         // SUMMARY
-        // ----------------------------------------------------
+        // ======================================================
 
         setSummary(
           summaryResult
         );
 
 
-        // ----------------------------------------------------
-        // NORMALIZE ALL BREAKDOWNS
-        // ----------------------------------------------------
+        // ======================================================
+        // IMPORTANT FIX
+        // ======================================================
+        //
+        // Never put the raw API response directly into the
+        // breakdown state.
+        //
+        // The backend may return an array OR a wrapped object.
+        // normalizeBreakdownRows() always produces an array.
+        //
+        // This prevents:
+        //
+        // TypeError: a.map is not a function
+        //
+        // ======================================================
 
         setLoanTypeBreakdown(
           normalizeBreakdownRows(
@@ -426,13 +274,11 @@ export default function BnrReportPage() {
           )
         );
 
-
         setBranchBreakdown(
           normalizeBreakdownRows(
             branchResult
           )
         );
-
 
         setGenderBreakdown(
           normalizeBreakdownRows(
@@ -447,26 +293,12 @@ export default function BnrReportPage() {
           err
         );
 
-
         setError(
           regulatoryApi.getErrorMessage(
             err,
             'Failed to load the BNR report.'
           )
         );
-
-
-        // ----------------------------------------------------
-        // Clear stale data after failure
-        // ----------------------------------------------------
-
-        setSummary(null);
-
-        setLoanTypeBreakdown([]);
-
-        setBranchBreakdown([]);
-
-        setGenderBreakdown([]);
 
       } finally {
 
@@ -479,9 +311,9 @@ export default function BnrReportPage() {
     ]);
 
 
-  // ==========================================================
-  // INITIAL LOAD / FILTER CHANGE
-  // ==========================================================
+  // ============================================================
+  // INITIAL LOAD
+  // ============================================================
 
   useEffect(() => {
 
@@ -492,9 +324,9 @@ export default function BnrReportPage() {
   ]);
 
 
-  // ==========================================================
+  // ============================================================
   // DOWNLOAD
-  // ==========================================================
+  // ============================================================
 
   const downloadReport =
     useCallback(
@@ -505,7 +337,6 @@ export default function BnrReportPage() {
         const validationError =
           validateFilters();
 
-
         if (validationError) {
 
           setError(
@@ -515,7 +346,6 @@ export default function BnrReportPage() {
           return;
         }
 
-
         try {
 
           setError(null);
@@ -524,6 +354,27 @@ export default function BnrReportPage() {
             format
           );
 
+          /*
+           * Format is explicitly supplied.
+           *
+           * PDF:
+           * regulatoryApi.bnrExport(
+           *   'pdf',
+           *   reportParams
+           * )
+           *
+           * XLSX:
+           * regulatoryApi.bnrExport(
+           *   'xlsx',
+           *   reportParams
+           * )
+           *
+           * CSV:
+           * regulatoryApi.bnrExport(
+           *   'csv',
+           *   reportParams
+           * )
+           */
 
           await regulatoryApi.bnrExport(
             format,
@@ -536,7 +387,6 @@ export default function BnrReportPage() {
             `Failed to download BNR ${format} report:`,
             err
           );
-
 
           setError(
             regulatoryApi.getErrorMessage(
@@ -560,9 +410,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ==========================================================
-  // DOWNLOAD HANDLERS
-  // ==========================================================
+  // ============================================================
+  // DEDICATED DOWNLOAD HANDLERS
+  // ============================================================
 
   const handleDownloadPdf =
     useCallback(
@@ -609,9 +459,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ==========================================================
+  // ============================================================
   // FORMAT MONEY
-  // ==========================================================
+  // ============================================================
 
   const formatMoney =
     useCallback(
@@ -623,34 +473,17 @@ export default function BnrReportPage() {
           summary?.currency ||
           'RWF';
 
-
         const amount =
-          safeNumber(value);
+          Number(value || 0);
 
-
-        try {
-
-          return new Intl.NumberFormat(
-            'en-RW',
-            {
-              style: 'currency',
-              currency,
-              maximumFractionDigits: 2,
-            }
-          ).format(amount);
-
-        } catch {
-
-          // Fallback in case the backend sends an
-          // unsupported currency code.
-
-          return `${currency} ${amount.toLocaleString(
-            'en-US',
-            {
-              maximumFractionDigits: 2,
-            }
-          )}`;
-        }
+        return new Intl.NumberFormat(
+          'en-RW',
+          {
+            style: 'currency',
+            currency,
+            maximumFractionDigits: 2,
+          }
+        ).format(amount);
 
       },
       [
@@ -659,9 +492,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ==========================================================
+  // ============================================================
   // FORMAT NUMBER
-  // ==========================================================
+  // ============================================================
 
   const formatNumber =
     useCallback(
@@ -672,7 +505,7 @@ export default function BnrReportPage() {
         return new Intl.NumberFormat(
           'en-US'
         ).format(
-          safeNumber(value)
+          Number(value || 0)
         );
 
       },
@@ -680,9 +513,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ==========================================================
+  // ============================================================
   // FORMAT PERCENT
-  // ==========================================================
+  // ============================================================
 
   const formatPercent =
     useCallback(
@@ -690,16 +523,16 @@ export default function BnrReportPage() {
         value?: number
       ): string => {
 
-        return `${safeNumber(value).toFixed(2)}%`;
+        return `${Number(value || 0).toFixed(2)}%`;
 
       },
       []
     );
 
 
-  // ==========================================================
+  // ============================================================
   // LOADING
-  // ==========================================================
+  // ============================================================
 
   if (loading) {
 
@@ -720,12 +553,10 @@ export default function BnrReportPage() {
                 { length: 4 }
               ).map(
                 (_, index) => (
-
                   <div
                     key={index}
                     className="h-32 rounded bg-gray-200"
                   />
-
                 )
               )}
 
@@ -740,9 +571,9 @@ export default function BnrReportPage() {
   }
 
 
-  // ==========================================================
+  // ============================================================
   // RENDER
-  // ==========================================================
+  // ============================================================
 
   return (
 
@@ -887,7 +718,6 @@ export default function BnrReportPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
 
-
             {/* PERIOD */}
 
             <div>
@@ -956,9 +786,7 @@ export default function BnrReportPage() {
                 id="bnr-from"
                 type="date"
                 value={from}
-                disabled={
-                  period !== 'CUSTOM'
-                }
+                disabled={period !== 'CUSTOM'}
                 onChange={(event) =>
                   setFrom(
                     event.target.value
@@ -985,9 +813,7 @@ export default function BnrReportPage() {
                 id="bnr-to"
                 type="date"
                 value={to}
-                disabled={
-                  period !== 'CUSTOM'
-                }
+                disabled={period !== 'CUSTOM'}
                 onChange={(event) =>
                   setTo(
                     event.target.value
@@ -1339,7 +1165,7 @@ function StatusItem({
         {new Intl.NumberFormat(
           'en-US'
         ).format(
-          safeNumber(value)
+          Number(value || 0)
         )}
       </p>
 
@@ -1371,18 +1197,17 @@ function BreakdownTable({
   ) => string;
 }) {
 
-  /*
-   * FINAL DEFENSIVE GUARD
-   *
-   * Even if another component accidentally passes an object,
-   * this component will NEVER execute:
-   *
-   * object.map(...)
-   *
-   * because safeRows is always an array.
-   */
+  // ==========================================================
+  // SECOND SAFETY CHECK
+  // ==========================================================
+  //
+  // Even if something unexpected gets passed into this
+  // component in the future, .map() will never be called on
+  // an object.
+  //
+  // ==========================================================
 
-  const safeRows =
+  const safeRows: BreakdownRow[] =
     Array.isArray(rows)
       ? rows
       : [];
@@ -1446,43 +1271,32 @@ function BreakdownTable({
             <tbody className="divide-y divide-gray-200 bg-white">
 
               {safeRows.map(
-                (row, index) => {
+                (row, index) => (
 
-                  const label =
-                    typeof row.label === 'string'
-                      ? row.label
-                      : String(
-                          row.label ?? 'Unknown'
-                        );
+                  <tr
+                    key={`${row.label}-${index}`}
+                    className="hover:bg-gray-50"
+                  >
 
+                    <td className="px-5 py-3 text-sm font-medium text-gray-900">
+                      {row.label}
+                    </td>
 
-                  return (
+                    <td className="px-5 py-3 text-right text-sm text-gray-700">
+                      {formatNumber(
+                        row.count
+                      )}
+                    </td>
 
-                    <tr
-                      key={`${label}-${index}`}
-                      className="hover:bg-gray-50"
-                    >
+                    <td className="px-5 py-3 text-right text-sm text-gray-700">
+                      {formatMoney(
+                        row.amount
+                      )}
+                    </td>
 
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900">
-                        {label}
-                      </td>
+                  </tr>
 
-                      <td className="px-5 py-3 text-right text-sm text-gray-700">
-                        {formatNumber(
-                          safeNumber(row.count)
-                        )}
-                      </td>
-
-                      <td className="px-5 py-3 text-right text-sm text-gray-700">
-                        {formatMoney(
-                          safeNumber(row.amount)
-                        )}
-                      </td>
-
-                    </tr>
-
-                  );
-                }
+                )
               )}
 
             </tbody>
@@ -1496,3 +1310,5 @@ function BreakdownTable({
     </div>
   );
 }
+
+
