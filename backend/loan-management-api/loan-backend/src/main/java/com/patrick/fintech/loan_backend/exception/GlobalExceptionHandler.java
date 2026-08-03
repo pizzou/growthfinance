@@ -61,6 +61,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(error("File is too large for the server to accept. Please upload a smaller file.", null));
     }
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<Map<String,Object>> handleNoResource(
+            org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+        // A request hit a URL with no matching @RequestMapping (typo, removed endpoint,
+        // frontend/backend out of sync). This is an ordinary 404, not a server fault —
+        // don't log it at ERROR with a full stack trace like the generic handler below does.
+        log.warn("No endpoint found: {}", ex.getResourcePath());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(error("Not found", null));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String,Object>> handleRuntime(RuntimeException ex) {
         log.warn("Business error: {}", ex.getMessage());

@@ -81,10 +81,6 @@ public class PaymentService {
         User recordedBy
     ) {
 
-        // ------------------------------------------------------------
-        // 1. Basic validation
-        // ------------------------------------------------------------
-
         if (amount == null || amount <= 0) {
             throw new IllegalArgumentException(
                 "Payment amount must be greater than zero"
@@ -93,19 +89,13 @@ public class PaymentService {
 
         amount = round(amount);
 
-        // ------------------------------------------------------------
-        // 2. Find loan
-        // ------------------------------------------------------------
-
+       
         Loan loan = loanRepo.findById(loanId)
             .orElseThrow(() ->
                 new RuntimeException("Loan not found: " + loanId)
             );
 
-        // ------------------------------------------------------------
-        // 3. Organization security
-        // ------------------------------------------------------------
-
+     
         if (
             recordedBy != null
             && loan.getOrganization() != null
@@ -116,9 +106,7 @@ public class PaymentService {
             throw new RuntimeException("Access denied");
         }
 
-        // ------------------------------------------------------------
-        // 4. Loan status validation
-        // ------------------------------------------------------------
+      
 
         if (
             loan.getStatus() != LoanStatus.ACTIVE
@@ -129,10 +117,7 @@ public class PaymentService {
             );
         }
 
-        // ------------------------------------------------------------
-        // 5. Prevent duplicate gateway/bank/mobile-money transactions
-        // ------------------------------------------------------------
-
+       
         if (txnId != null && !txnId.isBlank()) {
 
             Optional<Payment> existingPayment =
@@ -144,10 +129,7 @@ public class PaymentService {
             if (existingPayment.isPresent()) {
                 Payment existing = existingPayment.get();
 
-                /*
-                 * If the same transaction was already successfully recorded,
-                 * return it rather than creating a second payment.
-                 */
+               
                 if (
                     existing.getLoan() != null
                     && existing.getLoan().getId().equals(loanId)
@@ -169,9 +151,7 @@ public class PaymentService {
             }
         }
 
-        // ------------------------------------------------------------
-        // 6. Find the CURRENT payment cycle
-        // ------------------------------------------------------------
+       
 
         List<Payment> loanPayments =
             paymentRepo.findByLoanId(loanId);
@@ -206,9 +186,6 @@ public class PaymentService {
                 )
                 : 0;
 
-        // ------------------------------------------------------------
-        // 7. Determine current cycle/installment
-        // ------------------------------------------------------------
 
         Payment installment = nextInstallmentOpt.orElse(null);
 
@@ -229,31 +206,18 @@ public class PaymentService {
                 .build();
         }
 
-        // ------------------------------------------------------------
-        // 8. Existing interest already paid in THIS cycle
-        // ------------------------------------------------------------
+        
+        double amountPaidSoFarThisCycle =
+            installment.getAmountPaid() != null
+                ? installment.getAmountPaid()
+                : 0.0;
 
-        /*
-         * This is the most important correction.
-         *
-         * Previously the system did:
-         *
-         *     interestDue = balance * monthlyRate
-         *
-         * every time recordPayment() was called.
-         *
-         * Therefore:
-         *
-         * Payment 1 -> charged 100 interest
-         * Payment 2 -> calculated another 100 interest
-         *
-         * That is wrong.
-         *
-         * The current installment stores the interest already applied
-         * against this cycle.
-         */
+        boolean cycleAlreadyReceivedARealPayment =
+            amountPaidSoFarThisCycle > 0.0;
+
         double interestAlreadyPaid =
-            installment.getInterestComponent() != null
+            (cycleAlreadyReceivedARealPayment
+                && installment.getInterestComponent() != null)
                 ? installment.getInterestComponent()
                 : 0.0;
 
@@ -446,7 +410,6 @@ public class PaymentService {
         boolean fullyPaidOff =
             newBalance <= 0.01;
 
-        // ------------------------------------------------------------
         // 15. Update payment installment
         // ------------------------------------------------------------
 
@@ -487,10 +450,14 @@ public class PaymentService {
 
         /*
          * Principal is also accumulated across multiple payments
-         * against the same cycle.
+         * against the same cycle — but same caveat as interestAlreadyPaid
+         * above: on the first real payment, installment.getPrincipalComponent()
+         * still holds the schedule generator's PROJECTED figure, not an
+         * actually-paid amount, so it must not be added to.
          */
         double oldPrincipal =
-            installment.getPrincipalComponent() != null
+            (cycleAlreadyReceivedARealPayment
+                && installment.getPrincipalComponent() != null)
                 ? installment.getPrincipalComponent()
                 : 0.0;
 
