@@ -14,11 +14,117 @@ import {
   type BreakdownRow,
   type ExportFormat,
   type RegulatoryPeriod,
-} from '@/services/regulatoryService'
+} from '@/services/regulatoryService';
 
 type DownloadingFormat =
   | ExportFormat
   | null;
+
+/**
+ * Safely converts a breakdown API response into BreakdownRow[].
+ *
+ * The backend may return:
+ *
+ * [
+ *   {...},
+ *   {...}
+ * ]
+ *
+ * OR:
+ *
+ * {
+ *   data: [...]
+ * }
+ *
+ * OR:
+ *
+ * {
+ *   content: [...]
+ * }
+ *
+ * OR:
+ *
+ * {
+ *   items: [...]
+ * }
+ *
+ * OR:
+ *
+ * {
+ *   results: [...]
+ * }
+ *
+ * This prevents:
+ *
+ * TypeError: a.map is not a function
+ */
+function toBreakdownRows(
+  value: unknown
+): BreakdownRow[] {
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (
+    value &&
+    typeof value === 'object'
+  ) {
+
+    const response =
+      value as Record<string, unknown>;
+
+    if (Array.isArray(response.data)) {
+      return response.data as BreakdownRow[];
+    }
+
+    if (Array.isArray(response.content)) {
+      return response.content as BreakdownRow[];
+    }
+
+    if (Array.isArray(response.items)) {
+      return response.items as BreakdownRow[];
+    }
+
+    if (Array.isArray(response.results)) {
+      return response.results as BreakdownRow[];
+    }
+
+    /*
+     * Some APIs return:
+     *
+     * {
+     *   data: {
+     *     content: [...]
+     *   }
+     * }
+     */
+
+    if (
+      response.data &&
+      typeof response.data === 'object'
+    ) {
+
+      const nestedData =
+        response.data as Record<string, unknown>;
+
+      if (Array.isArray(nestedData.content)) {
+        return nestedData.content as BreakdownRow[];
+      }
+
+      if (Array.isArray(nestedData.items)) {
+        return nestedData.items as BreakdownRow[];
+      }
+
+      if (Array.isArray(nestedData.results)) {
+        return nestedData.results as BreakdownRow[];
+      }
+    }
+  }
+
+  return [];
+}
+
 
 export default function BnrReportPage() {
 
@@ -52,6 +158,7 @@ export default function BnrReportPage() {
   const [error, setError] =
     useState<string | null>(null);
 
+
   const reportParams =
     useMemo<BnrReportParams>(() => {
 
@@ -77,6 +184,7 @@ export default function BnrReportPage() {
       from,
       to,
     ]);
+
 
   const validateFilters =
     useCallback((): string | null => {
@@ -105,6 +213,7 @@ export default function BnrReportPage() {
       to,
     ]);
 
+
   const loadReport =
     useCallback(async (): Promise<void> => {
 
@@ -126,6 +235,9 @@ export default function BnrReportPage() {
 
         setError(null);
 
+        /*
+         * Load all BNR report sections.
+         */
         const [
           summaryResult,
           loanTypeResult,
@@ -148,24 +260,46 @@ export default function BnrReportPage() {
           regulatoryApi.bnrByGender(
             reportParams
           ),
+
         ]);
 
 
+        /*
+         * Summary stays exactly as before.
+         */
         setSummary(
           summaryResult
         );
 
+
+        /*
+         * IMPORTANT:
+         *
+         * Normalize all breakdown responses before
+         * passing them into state.
+         *
+         * This fixes:
+         *
+         * TypeError: a.map is not a function
+         */
         setLoanTypeBreakdown(
-          loanTypeResult
+          toBreakdownRows(
+            loanTypeResult
+          )
         );
 
         setBranchBreakdown(
-          branchResult
+          toBreakdownRows(
+            branchResult
+          )
         );
 
         setGenderBreakdown(
-          genderResult
+          toBreakdownRows(
+            genderResult
+          )
         );
+
 
       } catch (err) {
 
@@ -191,6 +325,7 @@ export default function BnrReportPage() {
       validateFilters,
     ]);
 
+
   useEffect(() => {
 
     void loadReport();
@@ -198,6 +333,7 @@ export default function BnrReportPage() {
   }, [
     loadReport,
   ]);
+
 
   const downloadReport =
     useCallback(
@@ -382,10 +518,12 @@ export default function BnrReportPage() {
                 { length: 4 }
               ).map(
                 (_, index) => (
+
                   <div
                     key={index}
                     className="h-32 rounded bg-gray-200"
                   />
+
                 )
               )}
 
@@ -406,6 +544,7 @@ export default function BnrReportPage() {
 
       <div className="mx-auto max-w-7xl space-y-6 p-6">
 
+
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 
           <div>
@@ -422,6 +561,7 @@ export default function BnrReportPage() {
 
 
           <div className="flex flex-wrap gap-2">
+
 
             <button
               type="button"
@@ -525,6 +665,7 @@ export default function BnrReportPage() {
 
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+
 
             {/* PERIOD */}
 
@@ -650,6 +791,7 @@ export default function BnrReportPage() {
 
         </div>
 
+
         {summary && (
 
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -689,6 +831,7 @@ export default function BnrReportPage() {
           </div>
 
         )}
+
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
@@ -888,6 +1031,7 @@ export default function BnrReportPage() {
           formatNumber={formatNumber}
         />
 
+
         <BreakdownTable
           title="Loans by Loan Type"
           rows={loanTypeBreakdown}
@@ -896,14 +1040,12 @@ export default function BnrReportPage() {
         />
 
 
-
         <BreakdownTable
           title="Loans by Branch"
           rows={branchBreakdown}
           formatMoney={formatMoney}
           formatNumber={formatNumber}
         />
-
 
 
         <div className="pb-8 text-center text-xs text-gray-400">
@@ -937,11 +1079,13 @@ function StatusItem({
       </p>
 
       <p className="mt-1 text-xl font-semibold text-gray-900">
+
         {new Intl.NumberFormat(
           'en-US'
         ).format(
           Number(value || 0)
         )}
+
       </p>
 
     </div>
@@ -968,6 +1112,18 @@ function BreakdownTable({
   ) => string;
 }) {
 
+  /*
+   * Extra protection at the component level.
+   *
+   * Even if something unexpected reaches this component,
+   * .map() will always receive an array.
+   */
+  const safeRows =
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+
   return (
 
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -981,7 +1137,7 @@ function BreakdownTable({
       </div>
 
 
-      {rows.length === 0 ? (
+      {safeRows.length === 0 ? (
 
         <div className="p-6 text-center text-sm text-gray-500">
           No data available for this period.
@@ -1025,7 +1181,7 @@ function BreakdownTable({
 
             <tbody className="divide-y divide-gray-200 bg-white">
 
-              {rows.map(
+              {safeRows.map(
                 (row, index) => (
 
                   <tr
