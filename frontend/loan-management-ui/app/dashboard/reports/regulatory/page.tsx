@@ -20,44 +20,7 @@ type DownloadingFormat =
   | ExportFormat
   | null;
 
-/**
- * Safely converts a breakdown API response into BreakdownRow[].
- *
- * The backend may return:
- *
- * [
- *   {...},
- *   {...}
- * ]
- *
- * OR:
- *
- * {
- *   data: [...]
- * }
- *
- * OR:
- *
- * {
- *   content: [...]
- * }
- *
- * OR:
- *
- * {
- *   items: [...]
- * }
- *
- * OR:
- *
- * {
- *   results: [...]
- * }
- *
- * This prevents:
- *
- * TypeError: a.map is not a function
- */
+
 function toBreakdownRows(
   value: unknown
 ): BreakdownRow[] {
