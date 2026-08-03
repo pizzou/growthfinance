@@ -1,1186 +1,508 @@
 'use client';
-
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-
-import {
-  regulatoryApi,
-  type BnrReportParams,
-  type BnrSummary,
-  type BreakdownRow,
-  type ExportFormat,
-  type RegulatoryPeriod,
-} from '@/services/regulatoryService';
-
-type DownloadingFormat =
-  | ExportFormat
-  | null;
-
-
-function toBreakdownRows(
-  value: unknown
-): BreakdownRow[] {
-
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  if (
-    value &&
-    typeof value === 'object'
-  ) {
-
-    const response =
-      value as Record<string, unknown>;
-
-    if (Array.isArray(response.data)) {
-      return response.data as BreakdownRow[];
-    }
-
-    if (Array.isArray(response.content)) {
-      return response.content as BreakdownRow[];
-    }
-
-    if (Array.isArray(response.items)) {
-      return response.items as BreakdownRow[];
-    }
-
-    if (Array.isArray(response.results)) {
-      return response.results as BreakdownRow[];
-    }
-
-    /*
-     * Some APIs return:
-     *
-     * {
-     *   data: {
-     *     content: [...]
-     *   }
-     * }
-     */
-
-    if (
-      response.data &&
-      typeof response.data === 'object'
-    ) {
-
-      const nestedData =
-        response.data as Record<string, unknown>;
-
-      if (Array.isArray(nestedData.content)) {
-        return nestedData.content as BreakdownRow[];
-      }
-
-      if (Array.isArray(nestedData.items)) {
-        return nestedData.items as BreakdownRow[];
-      }
-
-      if (Array.isArray(nestedData.results)) {
-        return nestedData.results as BreakdownRow[];
-      }
-    }
-  }
-
-  return [];
-}
-
-
-export default function BnrReportPage() {
-
-  const [period, setPeriod] =
-    useState<RegulatoryPeriod>('MONTHLY');
-
-  const [from, setFrom] =
-    useState<string>('');
-
-  const [to, setTo] =
-    useState<string>('');
-
-  const [summary, setSummary] =
-    useState<BnrSummary | null>(null);
-
-  const [loanTypeBreakdown, setLoanTypeBreakdown] =
-    useState<BreakdownRow[]>([]);
-
-  const [branchBreakdown, setBranchBreakdown] =
-    useState<BreakdownRow[]>([]);
-
-  const [genderBreakdown, setGenderBreakdown] =
-    useState<BreakdownRow[]>([]);
-
-  const [loading, setLoading] =
-    useState<boolean>(true);
-
-  const [downloadingFormat, setDownloadingFormat] =
-    useState<DownloadingFormat>(null);
-
-  const [error, setError] =
-    useState<string | null>(null);
-
-
-  const reportParams =
-    useMemo<BnrReportParams>(() => {
-
-      const params: BnrReportParams = {
-        period,
-      };
-
-      if (period === 'CUSTOM') {
-
-        if (from) {
-          params.from = from;
-        }
-
-        if (to) {
-          params.to = to;
-        }
-      }
-
-      return params;
-
-    }, [
-      period,
-      from,
-      to,
-    ]);
-
-
-  const validateFilters =
-    useCallback((): string | null => {
-
-      if (period !== 'CUSTOM') {
-        return null;
-      }
-
-      if (!from) {
-        return 'Please select a start date.';
-      }
-
-      if (!to) {
-        return 'Please select an end date.';
-      }
-
-      if (from > to) {
-        return 'The start date cannot be after the end date.';
-      }
-
-      return null;
-
-    }, [
-      period,
-      from,
-      to,
-    ]);
-
-
-  const loadReport =
-    useCallback(async (): Promise<void> => {
-
-      const validationError =
-        validateFilters();
-
-      if (validationError) {
-
-        setError(
-          validationError
-        );
-
-        return;
-      }
-
-      try {
-
-        setLoading(true);
-
-        setError(null);
-
-        /*
-         * Load all BNR report sections.
-         */
-        const [
-          summaryResult,
-          loanTypeResult,
-          branchResult,
-          genderResult,
-        ] = await Promise.all([
-
-          regulatoryApi.bnrSummary(
-            reportParams
-          ),
-
-          regulatoryApi.bnrByLoanType(
-            reportParams
-          ),
-
-          regulatoryApi.bnrByBranch(
-            reportParams
-          ),
-
-          regulatoryApi.bnrByGender(
-            reportParams
-          ),
-
-        ]);
-
-
-        /*
-         * Summary stays exactly as before.
-         */
-        setSummary(
-          summaryResult
-        );
-
-
-        /*
-         * IMPORTANT:
-         *
-         * Normalize all breakdown responses before
-         * passing them into state.
-         *
-         * This fixes:
-         *
-         * TypeError: a.map is not a function
-         */
-        setLoanTypeBreakdown(
-          toBreakdownRows(
-            loanTypeResult
-          )
-        );
-
-        setBranchBreakdown(
-          toBreakdownRows(
-            branchResult
-          )
-        );
-
-        setGenderBreakdown(
-          toBreakdownRows(
-            genderResult
-          )
-        );
-
-
-      } catch (err) {
-
-        console.error(
-          'Failed to load BNR report:',
-          err
-        );
-
-        setError(
-          regulatoryApi.getErrorMessage(
-            err,
-            'Failed to load the BNR report.'
-          )
-        );
-
-      } finally {
-
-        setLoading(false);
-      }
-
-    }, [
-      reportParams,
-      validateFilters,
-    ]);
-
-
-  useEffect(() => {
-
-    void loadReport();
-
-  }, [
-    loadReport,
-  ]);
-
-
-  const downloadReport =
-    useCallback(
-      async (
-        format: ExportFormat
-      ): Promise<void> => {
-
-        const validationError =
-          validateFilters();
-
-        if (validationError) {
-
-          setError(
-            validationError
-          );
-
-          return;
-        }
-
-        try {
-
-          setError(null);
-
-          setDownloadingFormat(
-            format
-          );
-
-          await regulatoryApi.bnrExport(
-            format,
-            reportParams
-          );
-
-        } catch (err) {
-
-          console.error(
-            `Failed to download BNR ${format} report:`,
-            err
-          );
-
-          setError(
-            regulatoryApi.getErrorMessage(
-              err,
-              `Failed to download BNR ${format.toUpperCase()} report.`
-            )
-          );
-
-        } finally {
-
-          setDownloadingFormat(
-            null
-          );
-        }
-
-      },
-      [
-        reportParams,
-        validateFilters,
-      ]
-    );
-
-
-  const handleDownloadPdf =
-    useCallback(
-      async (): Promise<void> => {
-
-        await downloadReport(
-          'pdf'
-        );
-
-      },
-      [
-        downloadReport,
-      ]
-    );
-
-
-  const handleDownloadExcel =
-    useCallback(
-      async (): Promise<void> => {
-
-        await downloadReport(
-          'xlsx'
-        );
-
-      },
-      [
-        downloadReport,
-      ]
-    );
-
-
-  const handleDownloadCsv =
-    useCallback(
-      async (): Promise<void> => {
-
-        await downloadReport(
-          'csv'
-        );
-
-      },
-      [
-        downloadReport,
-      ]
-    );
-
-
-  const formatMoney =
-    useCallback(
-      (
-        value?: number
-      ): string => {
-
-        const currency =
-          summary?.currency ||
-          'RWF';
-
-        const amount =
-          Number(value || 0);
-
-        return new Intl.NumberFormat(
-          'en-RW',
-          {
-            style: 'currency',
-            currency,
-            maximumFractionDigits: 2,
-          }
-        ).format(amount);
-
-      },
-      [
-        summary?.currency,
-      ]
-    );
-
-
-  const formatNumber =
-    useCallback(
-      (
-        value?: number
-      ): string => {
-
-        return new Intl.NumberFormat(
-          'en-US'
-        ).format(
-          Number(value || 0)
-        );
-
-      },
-      []
-    );
-
-
-  const formatPercent =
-    useCallback(
-      (
-        value?: number
-      ): string => {
-
-        return `${Number(value || 0).toFixed(2)}%`;
-
-      },
-      []
-    );
-
-
-  if (loading) {
-
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { regulatoryApi } from '@/services/regulatoryService';
+import { PageSpinner } from '@/components/ui/Skeleton';
+import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+
+const fmt = (n?: number, currency = 'RWF') =>
+  n == null ? '—' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n) + ' ' + currency;
+
+const PERIODS = ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY', 'CUSTOM'];
+
+type BnrSummary = {
+  organizationName?: string;
+  bnrInstitutionCode?: string;
+  reportPeriod?: string;
+  periodStart?: string;
+  periodEnd?: string;
+
+  totalLoans?: number; // changed
+  activeLoans?: number;
+  closedLoans?: number;
+  pendingLoans?: number;
+  rejectedLoans?: number;
+  overdueLoans?: number;
+  defaultedLoans?: number;
+
+  totalPrincipalDisbursed?: number;
+  outstandingPrincipal?: number;
+  totalInterestCollected?: number;
+  interestAccruedUnpaid?: number;
+  totalProcessingFees?: number;
+  maleBorrowers?: number;
+  femaleBorrowers?: number;
+  otherGenderBorrowers?: number;
+  parAmount?: number;
+  parRatio?: number;
+  nplAmount?: number;
+  nplRatio?: number;
+  currency?: string;
+};
+type BreakdownRow = { label: string; count: number; amount: number };
+type CreditRecord = {
+  borrowerId?: number; fullName?: string; nationalId?: string; loanNumber?: string; loanType?: string;
+  loanStatus?: string; loanAmount?: number; outstandingBalance?: number; daysPastDue?: number;
+  creditScore?: number; dateOpened?: string; lastPaymentDate?: string; branchName?: string;
+};
+type ApiClient = {
+  id: number; name: string; clientType: 'BNR' | 'CREDIT_BUREAU'; keyPrefix: string; active: boolean;
+  contactEmail?: string; lastUsedAt?: string; revokedAt?: string; createdAt?: string;
+};
+
+export default function RegulatoryReportsPage() {
+  const { isAdmin, user } = useAuth();
+  const canView = isAdmin || ['MANAGER', 'AUDITOR'].includes(user?.role || '');
+  const [tab, setTab] = useState<'bnr' | 'credit-bureau' | 'api-keys'>('bnr');
+
+  if (!canView) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-
-        <div className="mx-auto max-w-7xl">
-
-          <div className="animate-pulse space-y-6">
-
-            <div className="h-10 w-72 rounded bg-gray-200" />
-
-            <div className="h-24 rounded bg-gray-200" />
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-
-              {Array.from(
-                { length: 4 }
-              ).map(
-                (_, index) => (
-
-                  <div
-                    key={index}
-                    className="h-32 rounded bg-gray-200"
-                  />
-
-                )
-              )}
-
-            </div>
-
-          </div>
-
-        </div>
-
+      <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
+        <p className="text-3xl mb-2">🔒</p>
+        <p className="text-gray-600 text-sm">You don&apos;t have access to Regulatory Reports.</p>
       </div>
     );
   }
 
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">Regulatory Reporting</h1>
+        <p className="text-sm text-gray-500">BNR portfolio reports and credit bureau data exports, with secure API access for external systems.</p>
+      </div>
+
+      <div className="flex gap-2 border-b border-gray-200">
+        {[
+          { key: 'bnr', label: '🏦 BNR Reports' },
+          { key: 'credit-bureau', label: '📇 Credit Bureau' },
+          { key: 'api-keys', label: '🔑 API Access', adminOnly: true },
+        ].filter(t => !t.adminOnly || isAdmin).map(t => (
+          <button key={t.key} onClick={() => setTab(t.key as any)}
+            className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors
+              ${tab === t.key ? 'border-teal-600 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'bnr' && <BnrTab />}
+      {tab === 'credit-bureau' && <CreditBureauTab isAdmin={!!isAdmin} />}
+      {tab === 'api-keys' && isAdmin && <ApiKeysTab />}
+    </div>
+  );
+}
+
+// ---------------- BNR tab ----------------
+
+function BnrTab() {
+  const [period, setPeriod] = useState('MONTHLY');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [summary, setSummary] = useState<BnrSummary | null>(null);
+  const [loanTypes, setLoanTypes] = useState<BreakdownRow[]>([]);
+  const [branches, setBranches] = useState<BreakdownRow[]>([]);
+  const [gender, setGender] = useState<BreakdownRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const params = { period, from: period === 'CUSTOM' ? from : undefined, to: period === 'CUSTOM' ? to : undefined };
+
+  const load = () => {
+    setLoading(true);
+    setLoadError('');
+    Promise.all([
+      regulatoryApi.bnrSummary(params),
+      regulatoryApi.bnrByLoanType(params),
+      regulatoryApi.bnrByBranch(params),
+      regulatoryApi.bnrByGender(params),
+    ]).then(([s, lt, b, g]) => {
+      setSummary(s as BnrSummary);
+      setLoanTypes(lt as BreakdownRow[]);
+      setBranches(b as BreakdownRow[]);
+      setGender(g as BreakdownRow[]);
+    }).catch((e) => {
+      console.error(e);
+      setLoadError(e?.response?.data?.error || e?.message || 'Could not load BNR reports.');
+    }).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [period]);
+
+  const doExport = async (format: 'xlsx' | 'csv' | 'pdf') => {
+    setExporting(true);
+    try { await regulatoryApi.bnrExport(format, params); }
+    catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); }
+    finally { setExporting(false); }
+  };
+
+  const currency = summary?.currency || 'RWF';
 
   return (
-
-    <div className="min-h-screen bg-gray-50">
-
-      <div className="mx-auto max-w-7xl space-y-6 p-6">
-
-
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
+    <div className="space-y-6">
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div className="flex items-end gap-3 flex-wrap">
           <div>
-
-            <h1 className="text-2xl font-bold text-gray-900">
-              BNR Regulatory Report
-            </h1>
-
-            <p className="mt-1 text-sm text-gray-500">
-              Regulatory reporting and portfolio information.
-            </p>
-
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Report Period</label>
+            <select value={period} onChange={e => setPeriod(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              {PERIODS.map(p => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
+            </select>
           </div>
-
-
-          <div className="flex flex-wrap gap-2">
-
-
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={
-                downloadingFormat !== null
-              }
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-
-              {downloadingFormat === 'pdf'
-                ? 'Downloading PDF...'
-                : 'Download PDF'}
-
-            </button>
-
-
-            <button
-              type="button"
-              onClick={handleDownloadExcel}
-              disabled={
-                downloadingFormat !== null
-              }
-              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-
-              {downloadingFormat === 'xlsx'
-                ? 'Downloading Excel...'
-                : 'Download Excel'}
-
-            </button>
-
-
-            <button
-              type="button"
-              onClick={handleDownloadCsv}
-              disabled={
-                downloadingFormat !== null
-              }
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-
-              {downloadingFormat === 'csv'
-                ? 'Downloading CSV...'
-                : 'Download CSV'}
-
-            </button>
-
-          </div>
-
-        </div>
-
-
-        {error && (
-
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-
-            <div className="flex items-start justify-between gap-4">
-
+          {period === 'CUSTOM' && (
+            <>
               <div>
-
-                <p className="font-semibold text-red-800">
-                  Report error
-                </p>
-
-                <p className="mt-1 text-sm text-red-700">
-                  {error}
-                </p>
-
+                <label className="block text-xs font-semibold text-gray-500 mb-1">From</label>
+                <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
               </div>
-
-
-              <button
-                type="button"
-                onClick={() => setError(null)}
-                className="text-sm font-medium text-red-700 hover:text-red-900"
-              >
-                Dismiss
-              </button>
-
-            </div>
-
-          </div>
-
-        )}
-
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-          <div className="mb-4">
-
-            <h2 className="font-semibold text-gray-900">
-              Report period
-            </h2>
-
-            <p className="text-sm text-gray-500">
-              Select the reporting period used for the BNR report.
-            </p>
-
-          </div>
-
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-
-
-            {/* PERIOD */}
-
-            <div>
-
-              <label
-                htmlFor="bnr-period"
-                className="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Period
-              </label>
-
-              <select
-                id="bnr-period"
-                value={period}
-                onChange={(event) => {
-
-                  setPeriod(
-                    event.target.value as RegulatoryPeriod
-                  );
-
-                }}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              >
-
-                <option value="DAILY">
-                  Daily
-                </option>
-
-                <option value="WEEKLY">
-                  Weekly
-                </option>
-
-                <option value="MONTHLY">
-                  Monthly
-                </option>
-
-                <option value="QUARTERLY">
-                  Quarterly
-                </option>
-
-                <option value="YEARLY">
-                  Yearly
-                </option>
-
-                <option value="CUSTOM">
-                  Custom
-                </option>
-
-              </select>
-
-            </div>
-
-
-            {/* FROM */}
-
-            <div>
-
-              <label
-                htmlFor="bnr-from"
-                className="mb-1 block text-sm font-medium text-gray-700"
-              >
-                From
-              </label>
-
-              <input
-                id="bnr-from"
-                type="date"
-                value={from}
-                disabled={period !== 'CUSTOM'}
-                onChange={(event) =>
-                  setFrom(
-                    event.target.value
-                  )
-                }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-
-            </div>
-
-
-            {/* TO */}
-
-            <div>
-
-              <label
-                htmlFor="bnr-to"
-                className="mb-1 block text-sm font-medium text-gray-700"
-              >
-                To
-              </label>
-
-              <input
-                id="bnr-to"
-                type="date"
-                value={to}
-                disabled={period !== 'CUSTOM'}
-                onChange={(event) =>
-                  setTo(
-                    event.target.value
-                  )
-                }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-
-            </div>
-
-          </div>
-
-
-          <div className="mt-4 flex justify-end">
-
-            <button
-              type="button"
-              onClick={() => void loadReport()}
-              disabled={loading}
-              className="rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Refresh Report
-            </button>
-
-          </div>
-
-        </div>
-
-
-        {summary && (
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-
               <div>
-
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {summary.organizationName ||
-                    'Organization'}
-                </h2>
-
-                <p className="text-sm text-gray-500">
-                  BNR Institution Code:{' '}
-                  {summary.bnrInstitutionCode ||
-                    'Not configured'}
-                </p>
-
+                <label className="block text-xs font-semibold text-gray-500 mb-1">To</label>
+                <input type="date" value={to} onChange={e => setTo(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
               </div>
-
-
-              <div className="text-sm text-gray-500">
-
-                {summary.periodStart ||
-                  '—'}
-
-                {' → '}
-
-                {summary.periodEnd ||
-                  '—'}
-
-              </div>
-
-            </div>
-
-          </div>
-
-        )}
-
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-
-
-          {/* TOTAL LOANS */}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              Total Loans Issued
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {formatNumber(
-                summary?.totalLoansIssued
-              )}
-            </p>
-
-          </div>
-
-
-          {/* ACTIVE */}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              Active Loans
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {formatNumber(
-                summary?.activeLoans
-              )}
-            </p>
-
-          </div>
-
-
-          {/* DISBURSED */}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              Principal Disbursed
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {formatMoney(
-                summary?.totalPrincipalDisbursed
-              )}
-            </p>
-
-          </div>
-
-
-          {/* OUTSTANDING */}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              Outstanding Principal
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {formatMoney(
-                summary?.outstandingPrincipal
-              )}
-            </p>
-
-          </div>
-
-
-          {/* INTEREST */}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              Interest Collected
-            </p>
-
-            <p className="mt-2 text-xl font-bold text-gray-900">
-              {formatMoney(
-                summary?.totalInterestCollected
-              )}
-            </p>
-
-          </div>
-
-
-          {/* OVERDUE */}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              Overdue Loans
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {formatNumber(
-                summary?.overdueLoans
-              )}
-            </p>
-
-          </div>
-
-
-          {/* PAR */}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              PAR Ratio
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {formatPercent(
-                summary?.parRatio
-              )}
-            </p>
-
-            <p className="mt-1 text-xs text-gray-500">
-              {formatMoney(
-                summary?.parAmount
-              )}
-            </p>
-
-          </div>
-
-
-          {/* NPL */}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              NPL Ratio
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {formatPercent(
-                summary?.nplRatio
-              )}
-            </p>
-
-            <p className="mt-1 text-xs text-gray-500">
-              {formatMoney(
-                summary?.nplAmount
-              )}
-            </p>
-
-          </div>
-
+              <Button size="sm" variant="secondary" onClick={load}>Apply</Button>
+            </>
+          )}
         </div>
-
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Loan Status
-          </h2>
-
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-
-            <StatusItem
-              label="Active"
-              value={summary?.activeLoans}
-            />
-
-            <StatusItem
-              label="Closed"
-              value={summary?.closedLoans}
-            />
-
-            <StatusItem
-              label="Pending"
-              value={summary?.pendingLoans}
-            />
-
-            <StatusItem
-              label="Rejected"
-              value={summary?.rejectedLoans}
-            />
-
-            <StatusItem
-              label="Defaulted"
-              value={summary?.defaultedLoans}
-            />
-
-          </div>
-
+        <div className="flex gap-2">
+          {(['xlsx', 'csv', 'pdf'] as const).map(f => (
+            <Button key={f} size="sm" variant="outline" loading={exporting} onClick={() => doExport(f)}>
+              ⬇ {f.toUpperCase()}
+            </Button>
+          ))}
         </div>
-
-
-        <BreakdownTable
-          title="Borrowers by Gender"
-          rows={genderBreakdown}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        <BreakdownTable
-          title="Loans by Loan Type"
-          rows={loanTypeBreakdown}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        <BreakdownTable
-          title="Loans by Branch"
-          rows={branchBreakdown}
-          formatMoney={formatMoney}
-          formatNumber={formatNumber}
-        />
-
-
-        <div className="pb-8 text-center text-xs text-gray-400">
-
-          BNR regulatory report •{' '}
-          {period}
-
-        </div>
-
       </div>
 
-    </div>
-  );
-}
-
-
-function StatusItem({
-  label,
-  value,
-}: {
-  label: string;
-  value?: number;
-}) {
-
-  return (
-
-    <div className="rounded-lg bg-gray-50 p-4">
-
-      <p className="text-sm text-gray-500">
-        {label}
-      </p>
-
-      <p className="mt-1 text-xl font-semibold text-gray-900">
-
-        {new Intl.NumberFormat(
-          'en-US'
-        ).format(
-          Number(value || 0)
-        )}
-
-      </p>
-
-    </div>
-  );
-}
-
-
-function BreakdownTable({
-  title,
-  rows,
-  formatMoney,
-  formatNumber,
-}: {
-  title: string;
-
-  rows: BreakdownRow[];
-
-  formatMoney: (
-    value?: number
-  ) => string;
-
-  formatNumber: (
-    value?: number
-  ) => string;
-}) {
-
-  /*
-   * Extra protection at the component level.
-   *
-   * Even if something unexpected reaches this component,
-   * .map() will always receive an array.
-   */
-  const safeRows =
-    Array.isArray(rows)
-      ? rows
-      : [];
-
-
-  return (
-
-    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-
-      <div className="border-b border-gray-200 p-5">
-
-        <h2 className="text-lg font-semibold text-gray-900">
-          {title}
-        </h2>
-
-      </div>
-
-
-      {safeRows.length === 0 ? (
-
-        <div className="p-6 text-center text-sm text-gray-500">
-          No data available for this period.
+      {loading ? <PageSpinner /> : loadError ? (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
+          <p className="text-red-700 text-sm font-semibold mb-3">{loadError}</p>
+          <Button size="sm" variant="secondary" onClick={load}>Try Again</Button>
         </div>
-
+      ) : !summary ? (
+        <p className="text-sm text-gray-400 text-center py-8">No data available.</p>
       ) : (
+        <>
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+              <h2 className="font-semibold text-gray-800 text-sm">Loan Portfolio Summary</h2>
+              <span className="text-xs text-gray-400">
+                {summary.organizationName}{summary.bnrInstitutionCode ? ` · Institution Code: ${summary.bnrInstitutionCode}` : ''}
+                {' '}· {summary.periodStart} to {summary.periodEnd}
+              </span>
+            </div>
+          </div>
 
-        <div className="overflow-x-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Loans Issued', value: summary.totalLoans },
+              { label: 'Active Loans', value: summary.activeLoans },
+              { label: 'Closed Loans', value: summary.closedLoans },
+              { label: 'Pending Loans', value: summary.pendingLoans },
+              { label: 'Rejected Loans', value: summary.rejectedLoans },
+              { label: 'Overdue Loans', value: summary.overdueLoans },
+              { label: 'Defaulted / Written-off', value: summary.defaultedLoans },
+            ].map(c => (
+              <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4">
+                <p className="text-gray-500 text-xs uppercase tracking-wide">{c.label}</p>
+                <p className="text-xl font-bold mt-1 text-gray-900">{c.value ?? 0}</p>
+              </div>
+            ))}
+          </div>
 
-          <table className="min-w-full divide-y divide-gray-200">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {[
+              { label: 'Total Principal Disbursed', value: fmt(summary.totalPrincipalDisbursed, currency), color: 'text-indigo-600' },
+              { label: 'Outstanding Principal', value: fmt(summary.outstandingPrincipal, currency), color: 'text-blue-600' },
+              { label: 'Total Interest Collected', value: fmt(summary.totalInterestCollected, currency), color: 'text-green-600' },
+              { label: 'Interest Accrued (Unpaid)', value: fmt(summary.interestAccruedUnpaid, currency), color: 'text-orange-600' },
+              { label: 'Portfolio at Risk (PAR)', value: `${fmt(summary.parAmount, currency)} (${((summary.parRatio || 0) * 100).toFixed(1)}%)`, color: 'text-amber-600' },
+              { label: 'NPL (>90 days)', value: `${fmt(summary.nplAmount, currency)} (${((summary.nplRatio || 0) * 100).toFixed(1)}%)`, color: 'text-red-600' },
+            ].map(c => (
+              <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-5">
+                <p className="text-gray-500 text-xs uppercase tracking-wide">{c.label}</p>
+                <p className={`text-lg font-bold mt-1 ${c.color}`}>{c.value}</p>
+              </div>
+            ))}
+          </div>
 
-            <thead className="bg-gray-50">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="font-semibold text-gray-800 text-sm mb-3">Financial Inclusion (Gender)</h3>
+              <BreakdownTable rows={gender} currency={currency} />
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="font-semibold text-gray-800 text-sm mb-3">By Loan Type</h3>
+              <BreakdownTable rows={loanTypes} currency={currency} />
+            </div>
+          </div>
 
-              <tr>
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="font-semibold text-gray-800 text-sm mb-3">By Branch</h3>
+            <BreakdownTable rows={branches} currency={currency} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
-                <th
-                  scope="col"
-                  className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
-                >
-                  Category
-                </th>
+function BreakdownTable({ rows, currency }: { rows: BreakdownRow[]; currency: string }) {
+  if (rows.length === 0) return <p className="text-sm text-gray-400">No data for this period.</p>;
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-gray-500 text-xs uppercase">
+          <th className="pb-2">Category</th><th className="pb-2 text-right">Count</th><th className="pb-2 text-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(r => (
+          <tr key={r.label} className="border-t border-gray-50">
+            <td className="py-2 text-gray-700">{r.label}</td>
+            <td className="py-2 text-right text-gray-800 font-medium">{r.count}</td>
+            <td className="py-2 text-right text-gray-600">{fmt(r.amount, currency)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
-                <th
-                  scope="col"
-                  className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500"
-                >
-                  Count
-                </th>
+// ---------------- Credit Bureau tab ----------------
 
-                <th
-                  scope="col"
-                  className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500"
-                >
-                  Amount
-                </th>
+function CreditBureauTab({ isAdmin }: { isAdmin: boolean }) {
+  const [records, setRecords] = useState<CreditRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
-              </tr>
+  const load = () => {
+    setLoading(true);
+    setLoadError('');
+    regulatoryApi.creditBureauPreview({ from: from || undefined, to: to || undefined })
+      .then(r => setRecords(r as CreditRecord[]))
+      .catch((e) => {
+        console.error(e);
+        setLoadError(e?.response?.data?.error || e?.message || 'Could not load credit bureau records.');
+      }).finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-            </thead>
+  const doExport = async (format: 'xlsx' | 'csv' | 'pdf') => {
+    setExporting(true);
+    try { await regulatoryApi.creditBureauExport(format, { from: from || undefined, to: to || undefined }); }
+    catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); }
+    finally { setExporting(false); }
+  };
 
+  return (
+    <div className="space-y-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
+        This screen contains borrower-level personal data (national ID, phone, date of birth). Every view and export here is written to the audit log.
+      </div>
 
-            <tbody className="divide-y divide-gray-200 bg-white">
-
-              {safeRows.map(
-                (row, index) => (
-
-                  <tr
-                    key={`${row.label}-${index}`}
-                    className="hover:bg-gray-50"
-                  >
-
-                    <td className="px-5 py-3 text-sm font-medium text-gray-900">
-                      {row.label}
-                    </td>
-
-                    <td className="px-5 py-3 text-right text-sm text-gray-700">
-                      {formatNumber(
-                        row.count
-                      )}
-                    </td>
-
-                    <td className="px-5 py-3 text-right text-sm text-gray-700">
-                      {formatMoney(
-                        row.amount
-                      )}
-                    </td>
-
-                  </tr>
-
-                )
-              )}
-
-            </tbody>
-
-          </table>
-
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div className="flex items-end gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">From</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">To</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <Button size="sm" variant="secondary" onClick={load}>Apply</Button>
         </div>
+        <div className="flex gap-2">
+          {(['xlsx', 'csv', 'pdf'] as const).map(f => (
+            <Button key={f} size="sm" variant="outline" loading={exporting} onClick={() => doExport(f)}>⬇ {f.toUpperCase()}</Button>
+          ))}
+        </div>
+      </div>
 
+      {loading ? <PageSpinner /> : loadError ? (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
+          <p className="text-red-700 text-sm font-semibold mb-3">{loadError}</p>
+          <Button size="sm" variant="secondary" onClick={load}>Try Again</Button>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-500 text-xs uppercase bg-gray-50">
+                <th className="px-4 py-2">Borrower</th><th className="px-4 py-2">Loan #</th><th className="px-4 py-2">Type</th>
+                <th className="px-4 py-2">Status</th><th className="px-4 py-2 text-right">Amount</th>
+                <th className="px-4 py-2 text-right">Outstanding</th><th className="px-4 py-2 text-right">Days Past Due</th>
+                <th className="px-4 py-2">Branch</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.slice(0, 200).map((r, i) => (
+                <tr key={i} className="border-t border-gray-50">
+                  <td className="px-4 py-2 text-gray-800">{r.fullName}</td>
+                  <td className="px-4 py-2 text-gray-600">{r.loanNumber}</td>
+                  <td className="px-4 py-2 text-gray-600">{r.loanType}</td>
+                  <td className="px-4 py-2"><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{r.loanStatus}</span></td>
+                  <td className="px-4 py-2 text-right">{fmt(r.loanAmount)}</td>
+                  <td className="px-4 py-2 text-right">{fmt(r.outstandingBalance)}</td>
+                  <td className="px-4 py-2 text-right">{r.daysPastDue ?? 0}</td>
+                  <td className="px-4 py-2 text-gray-500">{r.branchName}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {records.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No records for this period.</p>}
+          {records.length > 200 && <p className="text-center text-xs text-gray-400 py-3">Showing first 200 of {records.length} — full data is in the export.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- API Keys tab ----------------
+
+function ApiKeysTab() {
+  const [clients, setClients] = useState<ApiClient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [newKey, setNewKey] = useState<{ apiKey: string; client: ApiClient } | null>(null);
+  const [form, setForm] = useState({ name: '', clientType: 'BNR' as 'BNR' | 'CREDIT_BUREAU', contactEmail: '', description: '' });
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    setLoadError('');
+    regulatoryApi.listApiClients().then(r => setClients(r as ApiClient[])).catch((e) => {
+      console.error(e);
+      setLoadError(e?.response?.data?.error || e?.message || 'Could not load API keys.');
+    }).finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!form.name.trim()) { alert('Name is required'); return; }
+    setSaving(true);
+    try {
+      const res = await regulatoryApi.createApiClient(form) as { apiKey: string; client: ApiClient };
+      setNewKey(res);
+      setShowCreate(false);
+      setForm({ name: '', clientType: 'BNR', contactEmail: '', description: '' });
+      load();
+    } catch (e) { alert(e instanceof Error ? e.message : 'Failed to create API key'); }
+    finally { setSaving(false); }
+  };
+
+  const revoke = async (id: number) => {
+    if (!confirm('Revoke this API key? Any system using it will immediately lose access.')) return;
+    try { await regulatoryApi.revokeApiClient(id); load(); }
+    catch (e) { alert(e instanceof Error ? e.message : 'Failed to revoke'); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500 max-w-2xl">
+          Issue API keys for external regulatory systems. A BNR key can only call the BNR report endpoints;
+          a Credit Bureau key can only call the credit bureau export endpoints. Keys are scoped to your organization.
+        </p>
+        <Button onClick={() => setShowCreate(true)}>+ New API Key</Button>
+      </div>
+
+      {loading ? <PageSpinner /> : loadError ? (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
+          <p className="text-red-700 text-sm font-semibold mb-3">{loadError}</p>
+          <Button size="sm" variant="secondary" onClick={load}>Try Again</Button>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-500 text-xs uppercase bg-gray-50">
+                <th className="px-4 py-2">Name</th><th className="px-4 py-2">Type</th><th className="px-4 py-2">Key Prefix</th>
+                <th className="px-4 py-2">Status</th><th className="px-4 py-2">Last Used</th><th className="px-4 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map(c => (
+                <tr key={c.id} className="border-t border-gray-50">
+                  <td className="px-4 py-2 text-gray-800 font-medium">{c.name}</td>
+                  <td className="px-4 py-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${c.clientType === 'BNR' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                      {c.clientType === 'BNR' ? 'National Bank of Rwanda' : 'Credit Bureau'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 font-mono text-xs text-gray-500">{c.keyPrefix}…</td>
+                  <td className="px-4 py-2">
+                    {c.revokedAt || !c.active
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">Revoked</span>
+                      : <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">Active</span>}
+                  </td>
+                  <td className="px-4 py-2 text-gray-500 text-xs">{c.lastUsedAt ? new Date(c.lastUsedAt).toLocaleString() : 'Never'}</td>
+                  <td className="px-4 py-2 text-right">
+                    {c.active && !c.revokedAt && (
+                      <Button size="xs" variant="danger" onClick={() => revoke(c.id)}>Revoke</Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {clients.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No API keys issued yet.</p>}
+        </div>
       )}
 
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Issue New API Key"
+        footer={<>
+          <Button variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
+          <Button loading={saving} onClick={create}>Create Key</Button>
+        </>}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Integration Name</label>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="e.g. BNR Production Integration"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Client Type</label>
+            <select value={form.clientType} onChange={e => setForm(f => ({ ...f, clientType: e.target.value as any }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <option value="BNR">National Bank of Rwanda (BNR)</option>
+              <option value="CREDIT_BUREAU">Credit Bureau</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Contact Email (optional)</label>
+            <input value={form.contactEmail} onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Description (optional)</label>
+            <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" rows={2} />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!newKey} onClose={() => setNewKey(null)} title="API Key Created"
+        footer={<Button onClick={() => setNewKey(null)}>Done</Button>}>
+        {newKey && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">
+              Copy this key now — for security, it won&apos;t be shown again. Give it to {newKey.client.clientType === 'BNR' ? 'BNR' : 'the credit bureau'} to use in the <code className="bg-gray-100 px-1 rounded">X-Api-Key</code> header.
+            </p>
+            <div className="bg-gray-900 text-teal-400 font-mono text-xs p-3 rounded-lg break-all select-all">
+              {newKey.apiKey}
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(newKey.apiKey)}>📋 Copy to Clipboard</Button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
