@@ -1,7 +1,3 @@
-// ============================================================
-// REGULATORY REPORTING SERVICE
-// ============================================================
-
 import api from '@/services/api';
 
 
@@ -30,27 +26,20 @@ export type RegulatoryApiClientType =
 
 
 // ============================================================
-// REPORT PARAMETERS
+// PARAMETERS
 // ============================================================
 
 export interface BnrReportParams {
-
   branchId?: number;
-
   period?: RegulatoryPeriod;
-
   from?: string;
-
   to?: string;
 }
 
 
 export interface CreditBureauReportParams {
-
   branchId?: number;
-
   from?: string;
-
   to?: string;
 }
 
@@ -64,11 +53,8 @@ type QueryParams =
 // ============================================================
 
 export interface BreakdownRow {
-
   label: string;
-
   count: number;
-
   amount: number;
 }
 
@@ -84,193 +70,130 @@ export type BnrBreakdownRow =
 export interface BnrSummary {
 
   organizationId?: number;
-
   organizationName?: string;
 
   bnrInstitutionCode?: string;
-
   registrationNumber?: string;
-
   institutionType?: string;
 
   country?: string;
-
   currency?: string;
 
   reportPeriod?: string;
-
   periodStart?: string;
-
   periodEnd?: string;
 
   reportDate?: string;
-
   generatedAt?: string;
-
   generatedBy?: string;
 
   reportReference?: string;
 
   branchId?: number;
-
   branchName?: string;
 
   totalLoans?: number;
-
   loansDisbursedDuringPeriod?: number;
 
   activeLoans?: number;
-
   closedLoans?: number;
-
   paidLoans?: number;
 
   pendingLoans?: number;
-
   approvedLoans?: number;
-
   rejectedLoans?: number;
-
   cancelledLoans?: number;
 
   overdueLoans?: number;
-
   defaultedLoans?: number;
-
   writtenOffLoans?: number;
-
   restructuredLoans?: number;
 
   totalPrincipalDisbursed?: number;
-
   totalApprovedAmount?: number;
 
   averageLoanSize?: number;
-
   largestLoanAmount?: number;
-
   smallestLoanAmount?: number;
 
   outstandingPrincipal?: number;
-
   outstandingInterest?: number;
-
   outstandingFees?: number;
-
   totalOutstanding?: number;
 
   totalPrincipalCollected?: number;
-
   totalInterestCollected?: number;
-
   totalFeesCollected?: number;
-
   totalAmountCollected?: number;
 
   interestAccruedUnpaid?: number;
-
   feesAccruedUnpaid?: number;
 
   totalPayments?: number;
-
   missedPayments?: number;
-
   overduePayments?: number;
 
   parAmount?: number;
-
   parRatio?: number;
 
   par1Ratio?: number;
-
   par30Ratio?: number;
-
   par60Ratio?: number;
-
   par90Ratio?: number;
 
   par1To30Amount?: number;
-
   par31To60Amount?: number;
-
   par61To90Amount?: number;
-
   par91To180Amount?: number;
-
   par181To365Amount?: number;
-
   parOver365Amount?: number;
 
   nplAmount?: number;
-
   nplRatio?: number;
-
   nplLoanCount?: number;
 
   loansOver30Days?: number;
-
   loansOver60Days?: number;
-
   loansOver90Days?: number;
-
   loansOver180Days?: number;
-
   loansOver365Days?: number;
 
   defaultedAmount?: number;
-
   writtenOffAmount?: number;
-
   recoveriesAfterWriteOff?: number;
 
   requiredProvision?: number;
-
   existingProvision?: number;
-
   provisionShortfall?: number;
 
   totalBorrowers?: number;
-
   activeBorrowers?: number;
 
   maleBorrowers?: number;
-
   femaleBorrowers?: number;
-
   otherGenderBorrowers?: number;
 
   borrowersWithMultipleLoans?: number;
 
   youthBorrowers?: number;
-
   adultBorrowers?: number;
-
   seniorBorrowers?: number;
 
   borrowersCreditChecked?: number;
-
   borrowersWithDefaultHistory?: number;
-
   borrowersWithActiveListing?: number;
-
   borrowersWithMultipleFacilities?: number;
 
   totalExternalDebt?: number;
 
   loanTypeBreakdown?: BreakdownRow[];
-
   branchBreakdown?: BreakdownRow[];
-
   genderBreakdown?: BreakdownRow[];
 
   loansMissingBorrower?: number;
-
   borrowersMissingNationalId?: number;
-
   loansMissingBranch?: number;
-
   loansMissingCurrency?: number;
-
   loansMissingRepaymentSchedule?: number;
 
   dataQualityWarnings?: string[];
@@ -288,15 +211,11 @@ export interface BnrSummary {
 export interface FinancialStatementRow {
 
   code?: string;
-
   name?: string;
 
   balance?: number;
-
   debit?: number;
-
   credit?: number;
-
   amount?: number;
 
   [key: string]: unknown;
@@ -306,35 +225,27 @@ export interface FinancialStatementRow {
 export interface BnrFinancialStatementReport {
 
   organizationId?: number;
-
   organizationName?: string;
 
   bnrInstitutionCode?: string;
 
   branchId?: number;
-
   branchName?: string;
 
   currency?: string;
 
   reportPeriod?: string;
-
   periodStart?: string;
-
   periodEnd?: string;
 
   generatedAt?: string;
 
   assets?: FinancialStatementRow[];
-
   liabilities?: FinancialStatementRow[];
-
   equity?: FinancialStatementRow[];
 
   totalAssets?: number;
-
   totalLiabilities?: number;
-
   totalEquity?: number;
 
   currentPeriodNetIncome?: number;
@@ -342,27 +253,21 @@ export interface BnrFinancialStatementReport {
   balanceSheetBalanced?: boolean;
 
   income?: FinancialStatementRow[];
-
   expenses?: FinancialStatementRow[];
 
   totalIncome?: number;
-
   totalExpenses?: number;
 
   netIncome?: number;
 
   cashUsedForLending?: number;
-
   cashFromCollections?: number;
-
   cashFromFees?: number;
 
   otherCashMovement?: number;
-
   netChangeInCash?: number;
 
   trialBalanceDebit?: number;
-
   trialBalanceCredit?: number;
 
   trialBalanceBalanced?: boolean;
@@ -374,7 +279,7 @@ export type BnrFinancialStatement =
 
 
 // ============================================================
-// CREDIT BUREAU
+// CREDIT BUREAU RECORD
 // ============================================================
 
 export interface CreditRecord {
@@ -382,39 +287,29 @@ export interface CreditRecord {
   borrowerId?: number;
 
   fullName?: string;
-
   nationalId?: string;
 
   dateOfBirth?: string;
-
   gender?: string;
-
   phone?: string;
 
   loanNumber?: string;
-
   loanType?: string;
-
   loanStatus?: string;
 
   loanAmount?: number;
-
   outstandingBalance?: number;
 
   daysPastDue?: number;
-
   creditScore?: number;
 
   dateOpened?: string;
-
   lastPaymentDate?: string;
 
   maturityDate?: string;
-
   dateClosed?: string;
 
   branchName?: string;
-
   currency?: string;
 }
 
@@ -424,81 +319,7 @@ export type CreditBureauRecord =
 
 
 // ============================================================
-// CREDIT BUREAU CHECK RESPONSE
-// ============================================================
-
-export interface CreditBureauCheckResponse {
-
-  id?: number;
-
-  borrowerId?: number;
-
-  borrowerName?: string;
-
-  nationalId?: string;
-
-  creditScore?: number;
-
-  status?: string;
-
-  result?: string;
-
-  riskLevel?: string;
-
-  totalLoans?: number;
-
-  activeLoans?: number;
-
-  outstandingBalance?: number;
-
-  overdueAmount?: number;
-
-  daysPastDue?: number;
-
-  defaultHistory?: boolean;
-
-  checkedAt?: string;
-
-  requestedBy?: string;
-
-  message?: string;
-
-  [key: string]: unknown;
-}
-
-
-// ============================================================
-// CREDIT BUREAU PREVIEW
-// ============================================================
-
-export interface CreditBureauPreview {
-
-  records?: CreditRecord[];
-
-  totalRecords?: number;
-
-  totalBorrowers?: number;
-
-  totalLoans?: number;
-
-  generatedAt?: string;
-
-  periodStart?: string;
-
-  periodEnd?: string;
-
-  branchId?: number;
-
-  branchName?: string;
-
-  currency?: string;
-
-  [key: string]: unknown;
-}
-
-
-// ============================================================
-// REGULATORY API CLIENT
+// API CLIENT
 // ============================================================
 
 export interface RegulatoryApiClient {
@@ -516,11 +337,9 @@ export interface RegulatoryApiClient {
   description?: string;
 
   apiKey?: string;
-
   key?: string;
 
   active?: boolean;
-
   revoked?: boolean;
 
   createdAt?: string;
@@ -536,7 +355,7 @@ export interface RegulatoryApiClient {
 
 
 // ============================================================
-// API ENVELOPE
+// ENVELOPE
 // ============================================================
 
 interface ApiEnvelope<T = unknown> {
@@ -552,30 +371,14 @@ interface ApiEnvelope<T = unknown> {
 
 
 // ============================================================
-// AXIOS RESPONSE
+// PAYLOAD
 // ============================================================
 
-interface ApiResponseLike<T = unknown> {
-
-  data?: T;
-
-  status?: number;
-
-  statusText?: string;
-
-  headers?: unknown;
-}
-
-
-// ============================================================
-// EXTRACT PAYLOAD
-// ============================================================
-
-function extractPayload<T>(
+function unwrap<T>(
   response: unknown
 ): T {
 
-  let current: unknown =
+  let current =
     response;
 
 
@@ -584,15 +387,18 @@ function extractPayload<T>(
     typeof current === 'object'
   ) {
 
-    const axiosResponse =
-      current as ApiResponseLike;
+    const value =
+      current as {
+        data?: unknown;
+      };
+
 
     if (
-      axiosResponse.data !== undefined
+      value.data !== undefined
     ) {
 
       current =
-        axiosResponse.data;
+        value.data;
     }
   }
 
@@ -628,28 +434,14 @@ function extractPayload<T>(
 
 
 // ============================================================
-// UNWRAP
-// ============================================================
-
-function unwrap<T>(
-  response: unknown
-): T {
-
-  return extractPayload<T>(
-    response
-  );
-}
-
-
-// ============================================================
-// UNWRAP ARRAY
+// ARRAY UNWRAP
 // ============================================================
 
 function unwrapArray<T>(
   response: unknown
 ): T[] {
 
-  let current: unknown =
+  let current =
     response;
 
 
@@ -658,15 +450,18 @@ function unwrapArray<T>(
     typeof current === 'object'
   ) {
 
-    const axiosResponse =
-      current as ApiResponseLike;
+    const value =
+      current as {
+        data?: unknown;
+      };
+
 
     if (
-      axiosResponse.data !== undefined
+      value.data !== undefined
     ) {
 
       current =
-        axiosResponse.data;
+        value.data;
     }
   }
 
@@ -813,25 +608,18 @@ function unwrapArray<T>(
 
 
 // ============================================================
-// QUERY PARAMETERS
+// BNR QUERY
 // ============================================================
 
 function toQueryParams(
   params?: BnrReportParams
 ): QueryParams {
 
-  if (!params) {
-
-    return {};
-  }
-
-
   const query: QueryParams = {};
 
 
   if (
-    params.branchId !== undefined &&
-    params.branchId !== null
+    params?.branchId !== undefined
   ) {
 
     query.branchId =
@@ -840,8 +628,7 @@ function toQueryParams(
 
 
   if (
-    params.period !== undefined &&
-    params.period !== null
+    params?.period
   ) {
 
     query.period =
@@ -850,8 +637,7 @@ function toQueryParams(
 
 
   if (
-    params.from !== undefined &&
-    params.from !== ''
+    params?.from
   ) {
 
     query.from =
@@ -860,8 +646,7 @@ function toQueryParams(
 
 
   if (
-    params.to !== undefined &&
-    params.to !== ''
+    params?.to
   ) {
 
     query.to =
@@ -881,18 +666,11 @@ function toCreditBureauQueryParams(
   params?: CreditBureauReportParams
 ): QueryParams {
 
-  if (!params) {
-
-    return {};
-  }
-
-
   const query: QueryParams = {};
 
 
   if (
-    params.branchId !== undefined &&
-    params.branchId !== null
+    params?.branchId !== undefined
   ) {
 
     query.branchId =
@@ -901,8 +679,7 @@ function toCreditBureauQueryParams(
 
 
   if (
-    params.from !== undefined &&
-    params.from !== ''
+    params?.from
   ) {
 
     query.from =
@@ -911,8 +688,7 @@ function toCreditBureauQueryParams(
 
 
   if (
-    params.to !== undefined &&
-    params.to !== ''
+    params?.to
   ) {
 
     query.to =
@@ -940,13 +716,12 @@ function triggerDownload(
 
 
   const anchor =
-    document.createElement(
-      'a'
-    );
+    document.createElement('a');
 
 
   anchor.href =
     url;
+
 
   anchor.download =
     filename;
@@ -959,91 +734,13 @@ function triggerDownload(
 
   anchor.click();
 
+
   anchor.remove();
 
 
   window.URL.revokeObjectURL(
     url
   );
-}
-
-
-// ============================================================
-// ERROR
-// ============================================================
-
-function extractErrorMessage(
-  error: unknown,
-  fallback: string
-): string {
-
-  if (
-    error &&
-    typeof error === 'object'
-  ) {
-
-    const value =
-      error as {
-        response?: {
-          data?: {
-            message?: string;
-            error?: string;
-          };
-        };
-
-        message?: string;
-      };
-
-
-    const apiMessage =
-      value.response
-        ?.data
-        ?.message;
-
-
-    if (
-      apiMessage &&
-      typeof apiMessage === 'string'
-    ) {
-
-      return apiMessage;
-    }
-
-
-    const apiError =
-      value.response
-        ?.data
-        ?.error;
-
-
-    if (
-      apiError &&
-      typeof apiError === 'string'
-    ) {
-
-      return apiError;
-    }
-
-
-    if (
-      value.message &&
-      typeof value.message === 'string'
-    ) {
-
-      return value.message;
-    }
-  }
-
-
-  if (
-    typeof error === 'string'
-  ) {
-
-    return error;
-  }
-
-
-  return fallback;
 }
 
 
@@ -1102,7 +799,6 @@ export const regulatoryApi = {
 
 
     return {
-
       ...report,
 
       assets:
@@ -1223,8 +919,7 @@ export const regulatoryApi = {
             format,
           },
 
-          responseType:
-            'blob',
+          responseType: 'blob',
         }
       );
 
@@ -1253,7 +948,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // CREDIT BUREAU PREVIEW
+  // REGULATORY CREDIT BUREAU PREVIEW
   // ==========================================================
 
   async creditBureauPreview(
@@ -1279,7 +974,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // CREDIT BUREAU EXPORT
+  // REGULATORY CREDIT BUREAU EXPORT
   // ==========================================================
 
   async creditBureauExport(
@@ -1299,8 +994,7 @@ export const regulatoryApi = {
             format,
           },
 
-          responseType:
-            'blob',
+          responseType: 'blob',
         }
       );
 
@@ -1309,7 +1003,15 @@ export const regulatoryApi = {
       response.data instanceof Blob
         ? response.data
         : new Blob(
-            [response.data]
+            [response.data],
+            {
+              type:
+                format === 'pdf'
+                  ? 'application/pdf'
+                  : format === 'csv'
+                    ? 'text/csv'
+                    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            }
           );
 
 
@@ -1321,12 +1023,12 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // CREDIT BUREAU HISTORY
+  // ACTUAL CREDIT BUREAU HISTORY
   // ==========================================================
 
   async creditBureauHistory(
     borrowerId: number
-  ): Promise<CreditBureauCheckResponse[]> {
+  ): Promise<unknown[]> {
 
     const response =
       await api.get(
@@ -1334,19 +1036,19 @@ export const regulatoryApi = {
       );
 
 
-    return unwrapArray<CreditBureauCheckResponse>(
+    return unwrapArray<unknown>(
       response
     );
   },
 
 
   // ==========================================================
-  // CREDIT BUREAU LATEST
+  // ACTUAL CREDIT BUREAU LATEST
   // ==========================================================
 
   async creditBureauLatest(
     borrowerId: number
-  ): Promise<CreditBureauCheckResponse | null> {
+  ): Promise<unknown | null> {
 
     try {
 
@@ -1356,13 +1058,11 @@ export const regulatoryApi = {
         );
 
 
-      const result =
-        unwrap<CreditBureauCheckResponse>(
+      return (
+        unwrap<unknown>(
           response
-        );
-
-
-      return result ?? null;
+        ) ?? null
+      );
 
     } catch {
 
@@ -1372,47 +1072,22 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // RUN CREDIT BUREAU CHECK
+  // ACTUAL CREDIT BUREAU CHECK
   // ==========================================================
 
   async runCreditBureauCheck(
     borrowerId: number
-  ): Promise<CreditBureauCheckResponse> {
+  ): Promise<unknown> {
 
     const response =
       await api.post(
-        `/credit-bureau/borrowers/${borrowerId}/check`
+        `/credit-bureau/borrowers/${borrowerId}/check`,
+        undefined
       );
 
 
-    return unwrap<CreditBureauCheckResponse>(
+    return unwrap<unknown>(
       response
-    );
-  },
-
-
-  // ==========================================================
-  // LEGACY CREDIT BUREAU
-  // ==========================================================
-
-  async creditBureau(
-    _params?: BnrReportParams
-  ): Promise<CreditRecord[]> {
-
-    return [];
-  },
-
-
-  // ==========================================================
-  // CREDIT BUREAU REPORT
-  // ==========================================================
-
-  async creditBureauReport(
-    params?: BnrReportParams
-  ): Promise<CreditRecord[]> {
-
-    return this.creditBureau(
-      params
     );
   },
 
@@ -1493,7 +1168,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // ERROR MESSAGE
+  // ERROR
   // ==========================================================
 
   getErrorMessage(
@@ -1502,10 +1177,65 @@ export const regulatoryApi = {
       'An error occurred while loading the regulatory report.'
   ): string {
 
-    return extractErrorMessage(
-      error,
-      fallback
-    );
+    if (
+      error &&
+      typeof error === 'object'
+    ) {
+
+      const value =
+        error as {
+          response?: {
+            data?: {
+              message?: string;
+              error?: string;
+            };
+          };
+
+          message?: string;
+        };
+
+
+      const message =
+        value.response
+          ?.data
+          ?.message;
+
+
+      if (
+        typeof message === 'string' &&
+        message
+      ) {
+
+        return message;
+      }
+
+
+      const errorMessage =
+        value.response
+          ?.data
+          ?.error;
+
+
+      if (
+        typeof errorMessage === 'string' &&
+        errorMessage
+      ) {
+
+        return errorMessage;
+      }
+
+
+      if (
+        typeof value.message === 'string' &&
+        value.message
+      ) {
+
+        return value.message;
+      }
+    }
+
+
+    return fallback;
   },
 };
 
