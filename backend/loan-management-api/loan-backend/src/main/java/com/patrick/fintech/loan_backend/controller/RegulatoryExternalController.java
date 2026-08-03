@@ -1,16 +1,20 @@
+
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
 import com.patrick.fintech.loan_backend.dto.regulatory.CreditBureauRecord;
+import com.patrick.fintech.loan_backend.model.User;
+import com.patrick.fintech.loan_backend.repository.OrganizationRepository;
 import com.patrick.fintech.loan_backend.security.RegulatoryApiPrincipal;
 import com.patrick.fintech.loan_backend.service.AuditService;
 import com.patrick.fintech.loan_backend.service.RegulatoryReportingService;
 import com.patrick.fintech.loan_backend.service.ReportExportService;
-import com.patrick.fintech.loan_backend.repository.OrganizationRepository;
+import com.patrick.fintech.loan_backend.util.CurrentUserUtil;
 
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -38,82 +42,133 @@ public class RegulatoryExternalController {
 
     private final OrganizationRepository organizationRepository;
 
-    // ============================================================
-    // REGULATORY API PRINCIPAL
-    // ============================================================
+    private final CurrentUserUtil currentUserUtil;
 
-    private RegulatoryApiPrincipal principal() {
 
-        return (RegulatoryApiPrincipal)
-                SecurityContextHolder
-                        .getContext()
-                        .getAuthentication()
-                        .getPrincipal();
-    }
+    
 
-    // ============================================================
-    // AUDIT
-    // ============================================================
+    @GetMapping(
+            value = "/credit-bureau/preview",
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<CreditBureauRecord>>>
+    creditBureauPreview() {
 
-    private void audit(
-            String action,
-            String description
-    ) {
+        User currentUser =
+                currentUserUtil.getCurrentUser();
 
-        RegulatoryApiPrincipal p =
-                principal();
+        // --------------------------------------------------------
+        // AUTHENTICATION
+        // --------------------------------------------------------
+
+        if (currentUser == null) {
+
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(
+                            ApiResponse.error(
+                                    "Authentication required."
+                            )
+                    );
+        }
+
+        // --------------------------------------------------------
+        // ORGANIZATION
+        // --------------------------------------------------------
+
+        if (currentUser.getOrganization() == null) {
+
+            return ResponseEntity
+                    .status(HttpStatus.FORBIDDEN)
+                    .body(
+                            ApiResponse.error(
+                                    "User is not associated with an organization."
+                            )
+                    );
+        }
+
+        Long organizationId =
+                currentUser
+                        .getOrganization()
+                        .getId();
+
+        // --------------------------------------------------------
+        // BUILD CREDIT BUREAU DATA
+        // --------------------------------------------------------
+
+        List<CreditBureauRecord> records =
+                reportingService.buildCreditBureauExport(
+                        organizationId,
+                        null,
+                        null,
+                        null
+                );
+
+        // --------------------------------------------------------
+        // AUDIT
+        // --------------------------------------------------------
 
         auditService.log(
 
-                organizationRepository
-                        .findById(
-                                p.getOrganizationId()
-                        )
-                        .orElse(null),
+                currentUser.getOrganization(),
+
+                currentUser,
+
+                "VIEW",
+
+                "CreditBureauReport",
+
+                String.valueOf(
+                        currentUser.getId()
+                ),
+
+                "Admin viewed Credit Bureau records.",
 
                 null,
 
-                action,
-
-                "RegulatoryApiAccess",
-
-                p.getClientName(),
-
-                "[" +
-                        p.getClientType() +
-                        " API: " +
-                        p.getClientName() +
-                        "] " +
-                        description,
-
-                null,
                 null,
 
-                "Regulatory Reporting"
+                "Credit Bureau"
+        );
+
+        // --------------------------------------------------------
+        // RESPONSE
+        // --------------------------------------------------------
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(records)
         );
     }
 
+
     // ============================================================
-    // CREDIT BUREAU EXPORT
+    // ============================================================
+    // ADMIN / MANAGER CREDIT BUREAU EXPORT
     //
-    // IMPORTANT:
-    // BNR endpoints are intentionally NOT here.
+    // Frontend URL:
     //
-    // BNR frontend endpoints are handled by:
-    // BnrReportController
+    // GET
+    // /api/regulatory/credit-bureau/export?format=pdf
+    //
+    // Authentication:
+    // Normal logged-in application user.
+    //
+    // This is the endpoint your Credit Bureau frontend button uses.
+    // ============================================================
     // ============================================================
 
     @GetMapping(
             value = "/credit-bureau/export",
             produces = {
-                    "application/json",
+                    MediaType.APPLICATION_JSON_VALUE,
                     "text/csv",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     MediaType.APPLICATION_PDF_VALUE
             }
     )
-    @PreAuthorize("hasAuthority('ROLE_CREDIT_BUREAU_API')")
-    public ResponseEntity<?> creditBureauExport(
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<?> creditBureauAdminExport(
 
             @RequestParam(
                     defaultValue = "json"
@@ -131,15 +186,57 @@ public class RegulatoryExternalController {
             String to
     ) {
 
+        User currentUser =
+                currentUserUtil.getCurrentUser();
+
+        // --------------------------------------------------------
+        // AUTHENTICATION
+        // --------------------------------------------------------
+
+        if (currentUser == null) {
+
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(
+                            ApiResponse.error(
+                                    "Authentication required."
+                            )
+                    );
+        }
+
+        // --------------------------------------------------------
+        // ORGANIZATION
+        // --------------------------------------------------------
+
+        if (currentUser.getOrganization() == null) {
+
+            return ResponseEntity
+                    .status(HttpStatus.FORBIDDEN)
+                    .body(
+                            ApiResponse.error(
+                                    "User is not associated with an organization."
+                            )
+                    );
+        }
+
         Long organizationId =
-                principal()
-                        .getOrganizationId();
+                currentUser
+                        .getOrganization()
+                        .getId();
+
+        // --------------------------------------------------------
+        // DATES
+        // --------------------------------------------------------
 
         LocalDate fromDate =
                 parseDate(from);
 
         LocalDate toDate =
                 parseDate(to);
+
+        // --------------------------------------------------------
+        // BUILD CREDIT BUREAU REPORT
+        // --------------------------------------------------------
 
         List<CreditBureauRecord> records =
                 reportingService.buildCreditBureauExport(
@@ -149,13 +246,39 @@ public class RegulatoryExternalController {
                         toDate
                 );
 
-        audit(
+        // --------------------------------------------------------
+        // AUDIT
+        // --------------------------------------------------------
+
+        auditService.log(
+
+                currentUser.getOrganization(),
+
+                currentUser,
+
                 "EXPORT",
-                "Exported " +
+
+                "CreditBureauReport",
+
+                String.valueOf(
+                        currentUser.getId()
+                ),
+
+                "Admin exported " +
                         records.size() +
-                        " borrower credit records as " +
-                        format.toUpperCase()
+                        " Credit Bureau records as " +
+                        format.toUpperCase(),
+
+                null,
+
+                null,
+
+                "Credit Bureau"
         );
+
+        // --------------------------------------------------------
+        // JSON
+        // --------------------------------------------------------
 
         if ("json".equalsIgnoreCase(format)) {
 
@@ -164,11 +287,18 @@ public class RegulatoryExternalController {
             );
         }
 
+        // --------------------------------------------------------
+        // ORGANIZATION NAME
+        // --------------------------------------------------------
+
         String organizationName =
-                organizationRepository
-                        .findById(organizationId)
-                        .map(o -> o.getName())
-                        .orElse("");
+                currentUser
+                        .getOrganization()
+                        .getName();
+
+        // --------------------------------------------------------
+        // COLUMNS
+        // --------------------------------------------------------
 
         List<String> columns =
                 List.of(
@@ -187,8 +317,13 @@ public class RegulatoryExternalController {
                         "Date Opened",
                         "Last Payment",
                         "Date Closed",
-                        "Branch"
+                        "Branch",
+                        "Currency"
                 );
+
+        // --------------------------------------------------------
+        // ROWS
+        // --------------------------------------------------------
 
         List<Map<String, Object>> rows =
                 records.stream()
@@ -277,9 +412,18 @@ public class RegulatoryExternalController {
                                     record.getBranchName()
                             );
 
+                            row.put(
+                                    "Currency",
+                                    record.getCurrency()
+                            );
+
                             return row;
                         })
                         .toList();
+
+        // --------------------------------------------------------
+        // GENERATE FILE
+        // --------------------------------------------------------
 
         return fileResponse(
                 format,
@@ -291,8 +435,344 @@ public class RegulatoryExternalController {
         );
     }
 
+
+    // ============================================================
+    // ============================================================
+    // EXTERNAL CREDIT BUREAU API
+    //
+    // IMPORTANT:
+    //
+    // This is kept separate from the admin frontend endpoint.
+    //
+    // External URL:
+    //
+    // /api/regulatory/external/credit-bureau/export
+    //
+    // Authentication:
+    // ROLE_CREDIT_BUREAU_API
+    //
+    // Your RegulatoryApiPrincipal/API-key mechanism can continue
+    // using this endpoint.
+    // ============================================================
+    // ============================================================
+
+    @GetMapping(
+            value = "/external/credit-bureau/export",
+            produces = {
+                    MediaType.APPLICATION_JSON_VALUE,
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    MediaType.APPLICATION_PDF_VALUE
+            }
+    )
+    @PreAuthorize("hasAuthority('ROLE_CREDIT_BUREAU_API')")
+    public ResponseEntity<?> externalCreditBureauExport(
+
+            @RequestParam(
+                    defaultValue = "json"
+            )
+            String format,
+
+            @RequestParam(
+                    required = false
+            )
+            String from,
+
+            @RequestParam(
+                    required = false
+            )
+            String to
+    ) {
+
+        RegulatoryApiPrincipal regulatoryPrincipal =
+                principal();
+
+        Long organizationId =
+                regulatoryPrincipal
+                        .getOrganizationId();
+
+        LocalDate fromDate =
+                parseDate(from);
+
+        LocalDate toDate =
+                parseDate(to);
+
+        // --------------------------------------------------------
+        // BUILD REPORT
+        // --------------------------------------------------------
+
+        List<CreditBureauRecord> records =
+                reportingService.buildCreditBureauExport(
+                        organizationId,
+                        null,
+                        fromDate,
+                        toDate
+                );
+
+        // --------------------------------------------------------
+        // AUDIT
+        // --------------------------------------------------------
+
+        auditExternal(
+                "EXPORT",
+                "Exported " +
+                        records.size() +
+                        " borrower credit records as " +
+                        format.toUpperCase()
+        );
+
+        // --------------------------------------------------------
+        // JSON
+        // --------------------------------------------------------
+
+        if ("json".equalsIgnoreCase(format)) {
+
+            return ResponseEntity.ok(
+                    ApiResponse.ok(records)
+            );
+        }
+
+        // --------------------------------------------------------
+        // ORGANIZATION NAME
+        // --------------------------------------------------------
+
+        String organizationName =
+                organizationRepository
+                        .findById(organizationId)
+                        .map(o -> o.getName())
+                        .orElse("");
+
+        // --------------------------------------------------------
+        // COLUMNS
+        // --------------------------------------------------------
+
+        List<String> columns =
+                List.of(
+                        "National ID",
+                        "Full Name",
+                        "Date of Birth",
+                        "Gender",
+                        "Phone",
+                        "Loan Number",
+                        "Loan Type",
+                        "Loan Amount",
+                        "Outstanding Balance",
+                        "Status",
+                        "Days Past Due",
+                        "Credit Score",
+                        "Date Opened",
+                        "Last Payment",
+                        "Date Closed",
+                        "Branch",
+                        "Currency"
+                );
+
+        // --------------------------------------------------------
+        // ROWS
+        // --------------------------------------------------------
+
+        List<Map<String, Object>> rows =
+                records.stream()
+                        .map(record -> {
+
+                            Map<String, Object> row =
+                                    new LinkedHashMap<>();
+
+                            row.put(
+                                    "National ID",
+                                    record.getNationalId()
+                            );
+
+                            row.put(
+                                    "Full Name",
+                                    record.getFullName()
+                            );
+
+                            row.put(
+                                    "Date of Birth",
+                                    record.getDateOfBirth()
+                            );
+
+                            row.put(
+                                    "Gender",
+                                    record.getGender()
+                            );
+
+                            row.put(
+                                    "Phone",
+                                    record.getPhone()
+                            );
+
+                            row.put(
+                                    "Loan Number",
+                                    record.getLoanNumber()
+                            );
+
+                            row.put(
+                                    "Loan Type",
+                                    record.getLoanType()
+                            );
+
+                            row.put(
+                                    "Loan Amount",
+                                    record.getLoanAmount()
+                            );
+
+                            row.put(
+                                    "Outstanding Balance",
+                                    record.getOutstandingBalance()
+                            );
+
+                            row.put(
+                                    "Status",
+                                    record.getLoanStatus()
+                            );
+
+                            row.put(
+                                    "Days Past Due",
+                                    record.getDaysPastDue()
+                            );
+
+                            row.put(
+                                    "Credit Score",
+                                    record.getCreditScore()
+                            );
+
+                            row.put(
+                                    "Date Opened",
+                                    record.getDateOpened()
+                            );
+
+                            row.put(
+                                    "Last Payment",
+                                    record.getLastPaymentDate()
+                            );
+
+                            row.put(
+                                    "Date Closed",
+                                    record.getDateClosed()
+                            );
+
+                            row.put(
+                                    "Branch",
+                                    record.getBranchName()
+                            );
+
+                            row.put(
+                                    "Currency",
+                                    record.getCurrency()
+                            );
+
+                            return row;
+                        })
+                        .toList();
+
+        // --------------------------------------------------------
+        // GENERATE FILE
+        // --------------------------------------------------------
+
+        return fileResponse(
+                format,
+                "credit-bureau-export",
+                "Credit Bureau Export",
+                columns,
+                rows,
+                organizationName
+        );
+    }
+
+
+    // ============================================================
+    // ============================================================
+    // REGULATORY API PRINCIPAL
+    // ============================================================
+    // ============================================================
+
+    private RegulatoryApiPrincipal principal() {
+
+        if (
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication()
+                == null
+        ) {
+
+            throw new IllegalStateException(
+                    "No authenticated regulatory API principal."
+            );
+        }
+
+        Object authenticatedPrincipal =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication()
+                        .getPrincipal();
+
+        if (
+                !(authenticatedPrincipal
+                        instanceof RegulatoryApiPrincipal)
+        ) {
+
+            throw new IllegalStateException(
+                    "Authenticated principal is not a RegulatoryApiPrincipal."
+            );
+        }
+
+        return (RegulatoryApiPrincipal)
+                authenticatedPrincipal;
+    }
+
+
+    // ============================================================
+    // ============================================================
+    // EXTERNAL API AUDIT
+    // ============================================================
+    // ============================================================
+
+    private void auditExternal(
+            String action,
+            String description
+    ) {
+
+        RegulatoryApiPrincipal p =
+                principal();
+
+        auditService.log(
+
+                organizationRepository
+                        .findById(
+                                p.getOrganizationId()
+                        )
+                        .orElse(null),
+
+                null,
+
+                action,
+
+                "RegulatoryApiAccess",
+
+                p.getClientName(),
+
+                "[" +
+                        p.getClientType() +
+                        " API: " +
+                        p.getClientName() +
+                        "] " +
+                        description,
+
+                null,
+
+                null,
+
+                "Regulatory Reporting"
+        );
+    }
+
+
+    // ============================================================
     // ============================================================
     // FILE RESPONSE
+    // ============================================================
     // ============================================================
 
     private ResponseEntity<byte[]> fileResponse(
@@ -310,7 +790,11 @@ public class RegulatoryExternalController {
             String organizationName
     ) {
 
-        if (format == null || format.isBlank()) {
+        if (
+                format == null ||
+                format.isBlank()
+        ) {
+
             format = "xlsx";
         }
 
@@ -321,6 +805,10 @@ public class RegulatoryExternalController {
         String extension;
 
         switch (format.toLowerCase()) {
+
+            // ----------------------------------------------------
+            // CSV
+            // ----------------------------------------------------
 
             case "csv" -> {
 
@@ -338,6 +826,10 @@ public class RegulatoryExternalController {
                 extension = "csv";
             }
 
+            // ----------------------------------------------------
+            // PDF
+            // ----------------------------------------------------
+
             case "pdf" -> {
 
                 bytes =
@@ -353,6 +845,10 @@ public class RegulatoryExternalController {
 
                 extension = "pdf";
             }
+
+            // ----------------------------------------------------
+            // XLSX
+            // ----------------------------------------------------
 
             case "xlsx" -> {
 
@@ -371,6 +867,10 @@ public class RegulatoryExternalController {
                 extension = "xlsx";
             }
 
+            // ----------------------------------------------------
+            // INVALID FORMAT
+            // ----------------------------------------------------
+
             default -> throw new IllegalArgumentException(
                     "Unsupported export format: " +
                             format +
@@ -379,7 +879,9 @@ public class RegulatoryExternalController {
         }
 
         return ResponseEntity.ok()
+
                 .contentType(contentType)
+
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" +
@@ -388,11 +890,15 @@ public class RegulatoryExternalController {
                                 extension +
                                 "\""
                 )
+
                 .body(bytes);
     }
 
+
+    // ============================================================
     // ============================================================
     // DATE PARSER
+    // ============================================================
     // ============================================================
 
     private LocalDate parseDate(
