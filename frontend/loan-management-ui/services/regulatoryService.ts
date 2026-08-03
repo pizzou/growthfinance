@@ -34,6 +34,12 @@ export interface BnrReportParams {
   to?: string;
 }
 
+export interface CreditBureauReportParams {
+  branchId?: number;
+  from?: string;
+  to?: string;
+}
+
 type QueryParams = Record<string, unknown>;
 
 
@@ -47,7 +53,8 @@ export interface BreakdownRow {
   amount: number;
 }
 
-export type BnrBreakdownRow = BreakdownRow;
+export type BnrBreakdownRow =
+  BreakdownRow;
 
 
 // ============================================================
@@ -58,6 +65,7 @@ export interface BnrSummary {
 
   organizationId?: number;
   organizationName?: string;
+
   bnrInstitutionCode?: string;
   registrationNumber?: string;
   institutionType?: string;
@@ -75,47 +83,85 @@ export interface BnrSummary {
   branchId?: number;
   branchName?: string;
 
+
+  // ----------------------------------------------------------
+  // LOANS
+  // ----------------------------------------------------------
+
   totalLoans?: number;
   loansDisbursedDuringPeriod?: number;
+
   activeLoans?: number;
   closedLoans?: number;
   paidLoans?: number;
+
   pendingLoans?: number;
   approvedLoans?: number;
   rejectedLoans?: number;
   cancelledLoans?: number;
+
   overdueLoans?: number;
   defaultedLoans?: number;
   writtenOffLoans?: number;
   restructuredLoans?: number;
 
+
+  // ----------------------------------------------------------
+  // DISBURSEMENT
+  // ----------------------------------------------------------
+
   totalPrincipalDisbursed?: number;
   totalApprovedAmount?: number;
+
   averageLoanSize?: number;
   largestLoanAmount?: number;
   smallestLoanAmount?: number;
+
+
+  // ----------------------------------------------------------
+  // OUTSTANDING
+  // ----------------------------------------------------------
 
   outstandingPrincipal?: number;
   outstandingInterest?: number;
   outstandingFees?: number;
   totalOutstanding?: number;
 
+
+  // ----------------------------------------------------------
+  // COLLECTIONS
+  // ----------------------------------------------------------
+
   totalPrincipalCollected?: number;
   totalInterestCollected?: number;
   totalFeesCollected?: number;
   totalAmountCollected?: number;
+
   interestAccruedUnpaid?: number;
   feesAccruedUnpaid?: number;
+
   totalPayments?: number;
+
   missedPayments?: number;
   overduePayments?: number;
 
+
+  // ----------------------------------------------------------
+  // PAR
+  // ----------------------------------------------------------
+
   parAmount?: number;
   parRatio?: number;
+
   par1Ratio?: number;
   par30Ratio?: number;
   par60Ratio?: number;
   par90Ratio?: number;
+
+
+  // ----------------------------------------------------------
+  // PAR AGING
+  // ----------------------------------------------------------
 
   par1To30Amount?: number;
   par31To60Amount?: number;
@@ -124,9 +170,19 @@ export interface BnrSummary {
   par181To365Amount?: number;
   parOver365Amount?: number;
 
+
+  // ----------------------------------------------------------
+  // NPL
+  // ----------------------------------------------------------
+
   nplAmount?: number;
   nplRatio?: number;
   nplLoanCount?: number;
+
+
+  // ----------------------------------------------------------
+  // DPD
+  // ----------------------------------------------------------
 
   loansOver30Days?: number;
   loansOver60Days?: number;
@@ -134,34 +190,72 @@ export interface BnrSummary {
   loansOver180Days?: number;
   loansOver365Days?: number;
 
+
+  // ----------------------------------------------------------
+  // DEFAULT / WRITE-OFF
+  // ----------------------------------------------------------
+
   defaultedAmount?: number;
   writtenOffAmount?: number;
   recoveriesAfterWriteOff?: number;
+
+
+  // ----------------------------------------------------------
+  // PROVISIONS
+  // ----------------------------------------------------------
 
   requiredProvision?: number;
   existingProvision?: number;
   provisionShortfall?: number;
 
+
+  // ----------------------------------------------------------
+  // BORROWERS
+  // ----------------------------------------------------------
+
   totalBorrowers?: number;
   activeBorrowers?: number;
+
   maleBorrowers?: number;
   femaleBorrowers?: number;
   otherGenderBorrowers?: number;
+
   borrowersWithMultipleLoans?: number;
+
+
+  // ----------------------------------------------------------
+  // AGE
+  // ----------------------------------------------------------
 
   youthBorrowers?: number;
   adultBorrowers?: number;
   seniorBorrowers?: number;
 
+
+  // ----------------------------------------------------------
+  // CREDIT INFORMATION
+  // ----------------------------------------------------------
+
   borrowersCreditChecked?: number;
   borrowersWithDefaultHistory?: number;
   borrowersWithActiveListing?: number;
   borrowersWithMultipleFacilities?: number;
+
   totalExternalDebt?: number;
+
+
+  // ----------------------------------------------------------
+  // BREAKDOWNS
+  // ----------------------------------------------------------
 
   loanTypeBreakdown?: BreakdownRow[];
   branchBreakdown?: BreakdownRow[];
   genderBreakdown?: BreakdownRow[];
+
+
+  // ----------------------------------------------------------
+  // DATA QUALITY
+  // ----------------------------------------------------------
 
   loansMissingBorrower?: number;
   borrowersMissingNationalId?: number;
@@ -170,6 +264,11 @@ export interface BnrSummary {
   loansMissingRepaymentSchedule?: number;
 
   dataQualityWarnings?: string[];
+
+
+  // ----------------------------------------------------------
+  // REPORT STATUS
+  // ----------------------------------------------------------
 
   reportStatus?: string;
   submissionReference?: string | null;
@@ -184,9 +283,12 @@ export interface FinancialStatementRow {
 
   code?: string;
   name?: string;
+
   balance?: number;
+
   debit?: number;
   credit?: number;
+
   amount?: number;
 
   [key: string]: unknown;
@@ -197,15 +299,29 @@ export interface BnrFinancialStatementReport {
 
   organizationId?: number;
   organizationName?: string;
+
   bnrInstitutionCode?: string;
+
   branchId?: number;
   branchName?: string;
+
   currency?: string;
+
+
+  // ----------------------------------------------------------
+  // PERIOD
+  // ----------------------------------------------------------
 
   reportPeriod?: string;
   periodStart?: string;
   periodEnd?: string;
+
   generatedAt?: string;
+
+
+  // ----------------------------------------------------------
+  // BALANCE SHEET
+  // ----------------------------------------------------------
 
   assets?: FinancialStatementRow[];
   liabilities?: FinancialStatementRow[];
@@ -214,24 +330,44 @@ export interface BnrFinancialStatementReport {
   totalAssets?: number;
   totalLiabilities?: number;
   totalEquity?: number;
+
   currentPeriodNetIncome?: number;
+
   balanceSheetBalanced?: boolean;
+
+
+  // ----------------------------------------------------------
+  // INCOME STATEMENT
+  // ----------------------------------------------------------
 
   income?: FinancialStatementRow[];
   expenses?: FinancialStatementRow[];
 
   totalIncome?: number;
   totalExpenses?: number;
+
   netIncome?: number;
+
+
+  // ----------------------------------------------------------
+  // CASH FLOW
+  // ----------------------------------------------------------
 
   cashUsedForLending?: number;
   cashFromCollections?: number;
   cashFromFees?: number;
   otherCashMovement?: number;
+
   netChangeInCash?: number;
+
+
+  // ----------------------------------------------------------
+  // TRIAL BALANCE
+  // ----------------------------------------------------------
 
   trialBalanceDebit?: number;
   trialBalanceCredit?: number;
+
   trialBalanceBalanced?: boolean;
 }
 
@@ -241,37 +377,136 @@ export type BnrFinancialStatement =
 
 
 // ============================================================
-// CREDIT BUREAU
+// CREDIT BUREAU RECORD
 // ============================================================
 
 export interface CreditRecord {
 
   borrowerId?: number;
+
   fullName?: string;
+
   nationalId?: string;
+
   dateOfBirth?: string;
+
   gender?: string;
+
   phone?: string;
 
+
+  // ----------------------------------------------------------
+  // LOAN
+  // ----------------------------------------------------------
+
   loanNumber?: string;
+
   loanType?: string;
+
   loanStatus?: string;
 
   loanAmount?: number;
+
   outstandingBalance?: number;
+
   daysPastDue?: number;
+
   creditScore?: number;
 
+
+  // ----------------------------------------------------------
+  // DATES
+  // ----------------------------------------------------------
+
   dateOpened?: string;
+
   lastPaymentDate?: string;
+
   maturityDate?: string;
+
   dateClosed?: string;
 
+
+  // ----------------------------------------------------------
+  // ORGANIZATION
+  // ----------------------------------------------------------
+
   branchName?: string;
+
   currency?: string;
+
+
+  // ----------------------------------------------------------
+  // ALLOW ADDITIONAL BACKEND FIELDS
+  // ----------------------------------------------------------
+
+  [key: string]: unknown;
 }
 
-export type CreditBureauRecord = CreditRecord;
+
+export type CreditBureauRecord =
+  CreditRecord;
+
+
+// ============================================================
+// API CLIENT / API KEY
+// ============================================================
+
+export type RegulatoryApiClientType =
+  | 'BNR'
+  | 'CREDIT_BUREAU';
+
+
+export interface RegulatoryApiClient {
+
+  id?: number;
+
+  name?: string;
+
+  clientType?: RegulatoryApiClientType;
+
+  contactEmail?: string;
+
+  description?: string;
+
+  expiresAt?: string | null;
+
+  createdAt?: string;
+
+  updatedAt?: string;
+
+  revokedAt?: string | null;
+
+  revoked?: boolean;
+
+  active?: boolean;
+
+  status?: string;
+
+  apiKey?: string;
+
+  key?: string;
+
+  secret?: string;
+
+  [key: string]: unknown;
+}
+
+
+export interface CreateApiClientRequest {
+
+  name: string;
+
+  clientType:
+    | 'BNR'
+    | 'CREDIT_BUREAU';
+
+  contactEmail?: string;
+
+  description?: string;
+
+  expiresAt?: string | null;
+}
 
 
 // ============================================================
@@ -279,43 +514,35 @@ export type CreditBureauRecord = CreditRecord;
 // ============================================================
 
 interface ApiEnvelope<T = unknown> {
+
   success?: boolean;
+
   message?: string;
+
   data?: T;
+
   content?: T;
 }
 
 
 // ============================================================
 // AXIOS RESPONSE-LIKE TYPE
-//
-// We intentionally don't import AxiosResponse here so this
-// service remains compatible with the existing api wrapper.
 // ============================================================
 
 interface ApiResponseLike<T = unknown> {
+
   data?: T;
+
   status?: number;
+
   statusText?: string;
+
   headers?: unknown;
 }
 
 
 // ============================================================
-// EXTRACT ACTUAL PAYLOAD
-//
-// Backend:
-// ResponseEntity<ApiResponse<T>>
-//
-// Axios:
-// AxiosResponse<ApiResponse<T>>
-//
-// Therefore:
-//
-// response
-//   -> response.data
-//       -> envelope.data
-//           -> actual payload
+// EXTRACT PAYLOAD
 // ============================================================
 
 function extractPayload<T>(
@@ -327,7 +554,7 @@ function extractPayload<T>(
 
 
   // ----------------------------------------------------------
-  // First unwrap Axios response
+  // UNWRAP AXIOS RESPONSE
   // ----------------------------------------------------------
 
   if (
@@ -349,7 +576,7 @@ function extractPayload<T>(
 
 
   // ----------------------------------------------------------
-  // Unwrap ApiResponse
+  // UNWRAP API ENVELOPE
   // ----------------------------------------------------------
 
   if (
@@ -379,7 +606,7 @@ function extractPayload<T>(
 
 
   // ----------------------------------------------------------
-  // Already the actual payload
+  // ALREADY PAYLOAD
   // ----------------------------------------------------------
 
   return current as T;
@@ -387,7 +614,7 @@ function extractPayload<T>(
 
 
 // ============================================================
-// NORMALIZE SINGLE OBJECT
+// UNWRAP SINGLE OBJECT
 // ============================================================
 
 function unwrap<T>(
@@ -401,46 +628,7 @@ function unwrap<T>(
 
 
 // ============================================================
-// NORMALIZE ARRAY
-//
-// Supports:
-//
-// AxiosResponse<array>
-//
-// AxiosResponse<ApiResponse<array>>
-//
-// AxiosResponse<ApiResponse<Page<array>>>
-//
-// {
-//   data: []
-// }
-//
-// {
-//   data: {
-//     data: []
-//   }
-// }
-//
-// {
-//   data: {
-//     content: []
-//   }
-// }
-//
-// {
-//   content: []
-// }
-//
-// {
-//   items: []
-// }
-//
-// {
-//   results: []
-// }
-//
-// The important part is that this function ALWAYS returns
-// an array.
+// UNWRAP ARRAY
 // ============================================================
 
 function unwrapArray<T>(
@@ -452,7 +640,7 @@ function unwrapArray<T>(
 
 
   // ----------------------------------------------------------
-  // Axios response
+  // AXIOS RESPONSE
   // ----------------------------------------------------------
 
   if (
@@ -474,17 +662,17 @@ function unwrapArray<T>(
 
 
   // ----------------------------------------------------------
-  // Repeatedly unwrap common envelope structures
+  // REPEATED UNWRAPPING
   // ----------------------------------------------------------
 
   for (
     let depth = 0;
-    depth < 6;
+    depth < 8;
     depth++
   ) {
 
     // --------------------------------------------------------
-    // Already array
+    // ARRAY
     // --------------------------------------------------------
 
     if (
@@ -496,7 +684,7 @@ function unwrapArray<T>(
 
 
     // --------------------------------------------------------
-    // Must be object to continue
+    // OBJECT REQUIRED
     // --------------------------------------------------------
 
     if (
@@ -514,11 +702,12 @@ function unwrapArray<T>(
         content?: unknown;
         items?: unknown;
         results?: unknown;
+        records?: unknown;
       };
 
 
     // --------------------------------------------------------
-    // Direct array properties
+    // DIRECT ARRAYS
     // --------------------------------------------------------
 
     if (
@@ -553,8 +742,16 @@ function unwrapArray<T>(
     }
 
 
+    if (
+      Array.isArray(value.records)
+    ) {
+
+      return value.records as T[];
+    }
+
+
     // --------------------------------------------------------
-    // Nested objects
+    // NESTED OBJECTS
     // --------------------------------------------------------
 
     if (
@@ -605,6 +802,18 @@ function unwrapArray<T>(
     }
 
 
+    if (
+      value.records &&
+      typeof value.records === 'object'
+    ) {
+
+      current =
+        value.records;
+
+      continue;
+    }
+
+
     return [];
   }
 
@@ -622,11 +831,13 @@ function toQueryParams(
 ): QueryParams {
 
   if (!params) {
+
     return {};
   }
 
 
-  const query: QueryParams = {};
+  const query: QueryParams =
+    {};
 
 
   if (
@@ -640,12 +851,62 @@ function toQueryParams(
 
 
   if (
-    params.period !== undefined &&
-    params.period !== null
+  params.period !== undefined &&
+  params.period !== null
+) {
+  query.period = params.period;
+}
+
+
+  if (
+    params.from !== undefined &&
+    params.from !== ''
   ) {
 
-    query.period =
-      params.period;
+    query.from =
+      params.from;
+  }
+
+
+  if (
+    params.to !== undefined &&
+    params.to !== ''
+  ) {
+
+    query.to =
+      params.to;
+  }
+
+
+  return query;
+}
+
+
+// ============================================================
+// CREDIT BUREAU QUERY PARAMETERS
+// ============================================================
+
+function toCreditBureauQueryParams(
+  params?: CreditBureauReportParams
+): QueryParams {
+
+  if (!params) {
+
+    return {};
+  }
+
+
+  const query: QueryParams =
+    {};
+
+
+  if (
+    params.branchId !== undefined &&
+    params.branchId !== null
+  ) {
+
+    query.branchId =
+      params.branchId;
   }
 
 
@@ -674,7 +935,47 @@ function toQueryParams(
 
 
 // ============================================================
-// DOWNLOAD
+// BUILD QUERY STRING
+// ============================================================
+
+function buildQueryString(
+  params?: QueryParams
+): string {
+
+  if (!params) {
+
+    return '';
+  }
+
+
+  const searchParams =
+    new URLSearchParams();
+
+
+  Object.entries(params).forEach(
+    ([key, value]) => {
+
+      if (
+        value !== undefined &&
+        value !== null &&
+        value !== ''
+      ) {
+
+        searchParams.set(
+          key,
+          String(value)
+        );
+      }
+    }
+  );
+
+
+  return searchParams.toString();
+}
+
+
+// ============================================================
+// TRIGGER DOWNLOAD
 // ============================================================
 
 function triggerDownload(
@@ -708,6 +1009,7 @@ function triggerDownload(
 
   anchor.click();
 
+
   anchor.remove();
 
 
@@ -718,7 +1020,41 @@ function triggerDownload(
 
 
 // ============================================================
-// ERROR
+// EXPORT MIME TYPE
+// ============================================================
+
+function getExportMimeType(
+  format: ExportFormat
+): string {
+
+  switch (
+    format
+  ) {
+
+    case 'pdf':
+
+      return 'application/pdf';
+
+
+    case 'csv':
+
+      return 'text/csv';
+
+
+    case 'xlsx':
+
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+
+    default:
+
+      return 'application/octet-stream';
+  }
+}
+
+
+// ============================================================
+// ERROR MESSAGE
 // ============================================================
 
 function extractErrorMessage(
@@ -733,16 +1069,26 @@ function extractErrorMessage(
 
     const value =
       error as {
+
         response?: {
+
           data?: {
+
             message?: string;
+
             error?: string;
+
+            detail?: string;
           };
         };
 
         message?: string;
       };
 
+
+    // --------------------------------------------------------
+    // API MESSAGE
+    // --------------------------------------------------------
 
     const apiMessage =
       value.response
@@ -759,6 +1105,10 @@ function extractErrorMessage(
     }
 
 
+    // --------------------------------------------------------
+    // API ERROR
+    // --------------------------------------------------------
+
     const apiError =
       value.response
         ?.data
@@ -774,6 +1124,29 @@ function extractErrorMessage(
     }
 
 
+    // --------------------------------------------------------
+    // DETAIL
+    // --------------------------------------------------------
+
+    const detail =
+      value.response
+        ?.data
+        ?.detail;
+
+
+    if (
+      detail &&
+      typeof detail === 'string'
+    ) {
+
+      return detail;
+    }
+
+
+    // --------------------------------------------------------
+    // STANDARD ERROR
+    // --------------------------------------------------------
+
     if (
       value.message &&
       typeof value.message === 'string'
@@ -783,6 +1156,10 @@ function extractErrorMessage(
     }
   }
 
+
+  // ----------------------------------------------------------
+  // STRING ERROR
+  // ----------------------------------------------------------
 
   if (
     typeof error === 'string'
@@ -827,7 +1204,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // FINANCIAL STATEMENT
+  // BNR FINANCIAL STATEMENT
   // ==========================================================
 
   async bnrFinancialStatement(
@@ -850,38 +1227,34 @@ export const regulatoryApi = {
       );
 
 
-    // --------------------------------------------------------
-    // Keep financial statement sections as arrays.
-    //
-    // This prevents the page from ever doing:
-    //
-    // report.assets.map(...)
-    //
-    // when assets is null/object.
-    // --------------------------------------------------------
-
     return {
+
       ...report,
+
 
       assets:
         Array.isArray(report?.assets)
           ? report.assets
           : [],
 
+
       liabilities:
         Array.isArray(report?.liabilities)
           ? report.liabilities
           : [],
+
 
       equity:
         Array.isArray(report?.equity)
           ? report.equity
           : [],
 
+
       income:
         Array.isArray(report?.income)
           ? report.income
           : [],
+
 
       expenses:
         Array.isArray(report?.expenses)
@@ -892,7 +1265,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // LOAN TYPE
+  // BNR BY LOAN TYPE
   // ==========================================================
 
   async bnrByLoanType(
@@ -916,7 +1289,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // BRANCH
+  // BNR BY BRANCH
   // ==========================================================
 
   async bnrByBranch(
@@ -940,7 +1313,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // GENDER
+  // BNR BY GENDER
   // ==========================================================
 
   async bnrByGender(
@@ -964,21 +1337,194 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // CREDIT BUREAU
+  // BNR EXPORT
   //
-  // NOTE:
-  // Your BNR controller does NOT expose:
+  // GET:
   //
-  // /regulatory/credit-bureau
+  // /regulatory/bnr/export
   //
-  // Your actual CreditBureauController exposes:
+  // Example:
   //
-  // /credit-bureau/borrowers/{id}/check
+  // /regulatory/bnr/export?format=xlsx&period=MONTHLY
+  // ==========================================================
+
+  async bnrExport(
+    format: ExportFormat,
+    params?: BnrReportParams
+  ): Promise<void> {
+
+    const normalizedFormat =
+      format.toLowerCase() as ExportFormat;
+
+
+    const query =
+      toQueryParams(params);
+
+
+    const queryString =
+      buildQueryString({
+        ...query,
+
+        format:
+          normalizedFormat,
+      });
+
+
+    const response =
+      await api.get(
+        `/regulatory/bnr/export?${queryString}`,
+        {
+          responseType:
+            'blob',
+        }
+      );
+
+
+    const blob =
+      response.data instanceof Blob
+
+        ? response.data
+
+        : new Blob(
+            [response.data],
+            {
+              type:
+                getExportMimeType(
+                  normalizedFormat
+                ),
+            }
+          );
+
+
+    triggerDownload(
+      blob,
+      `bnr-summary.${normalizedFormat}`
+    );
+  },
+
+
+  // ==========================================================
+  // CREDIT BUREAU PREVIEW
+  //
+  // STAFF PREVIEW
+  //
+  // GET:
+  //
+  // /regulatory/credit-bureau/preview
+  // ==========================================================
+
+  async creditBureauPreview(
+    params?: CreditBureauReportParams
+  ): Promise<CreditRecord[]> {
+
+    const query =
+      toCreditBureauQueryParams(
+        params
+      );
+
+
+    const queryString =
+      buildQueryString(
+        query
+      );
+
+
+    const endpoint =
+      queryString.length > 0
+
+        ? `/regulatory/credit-bureau/preview?${queryString}`
+
+        : '/regulatory/credit-bureau/preview';
+
+
+    const response =
+      await api.get(
+        endpoint
+      );
+
+
+    return unwrapArray<CreditRecord>(
+      response
+    );
+  },
+
+
+  // ==========================================================
+  // CREDIT BUREAU EXPORT
+  //
+  // GET:
+  //
+  // /regulatory/credit-bureau/export
+  //
+  // Example:
+  //
+  // /regulatory/credit-bureau/export?format=xlsx
+  // ==========================================================
+
+  async creditBureauExport(
+    format: ExportFormat,
+    params?: CreditBureauReportParams
+  ): Promise<void> {
+
+    const normalizedFormat =
+      format.toLowerCase() as ExportFormat;
+
+
+    const query =
+      toCreditBureauQueryParams(
+        params
+      );
+
+
+    const queryString =
+      buildQueryString({
+
+        ...query,
+
+        format:
+          normalizedFormat,
+      });
+
+
+    const response =
+      await api.get(
+        `/regulatory/credit-bureau/export?${queryString}`,
+        {
+          responseType:
+            'blob',
+        }
+      );
+
+
+    const blob =
+      response.data instanceof Blob
+
+        ? response.data
+
+        : new Blob(
+            [response.data],
+            {
+              type:
+                getExportMimeType(
+                  normalizedFormat
+                ),
+            }
+          );
+
+
+    triggerDownload(
+      blob,
+      `credit-bureau-export.${normalizedFormat}`
+    );
+  },
+
+
+  // ==========================================================
+  // CREDIT BUREAU — BORROWER HISTORY
+  //
+  // GET:
+  //
   // /credit-bureau/borrowers/{id}/history
-  // /credit-bureau/borrowers/{id}/latest
-  //
-  // Therefore the old generic creditBureau() method should
-  // not pretend that /regulatory/credit-bureau exists.
   // ==========================================================
 
   async creditBureauHistory(
@@ -998,7 +1544,11 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // CREDIT BUREAU LATEST
+  // CREDIT BUREAU — LATEST
+  //
+  // GET:
+  //
+  // /credit-bureau/borrowers/{id}/latest
   // ==========================================================
 
   async creditBureauLatest(
@@ -1029,7 +1579,11 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // RUN CREDIT BUREAU CHECK
+  // CREDIT BUREAU — RUN CHECK
+  //
+  // POST:
+  //
+  // /credit-bureau/borrowers/{id}/check
   // ==========================================================
 
   async runCreditBureauCheck(
@@ -1049,101 +1603,137 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // LEGACY CREDIT BUREAU METHOD
+  // CREDIT BUREAU — LEGACY METHOD
   //
-  // Kept so existing imports do not immediately break.
+  // Kept for backwards compatibility.
   //
-  // The endpoint itself is NOT called because the backend
-  // controller you supplied does not define a generic
-  // /regulatory/credit-bureau endpoint.
+  // Instead of returning [] forever, this now calls the
+  // restored staff preview endpoint.
   // ==========================================================
 
   async creditBureau(
-    _params?: BnrReportParams
+    params?: BnrReportParams
   ): Promise<CreditRecord[]> {
 
-    return [];
+    return this.creditBureauPreview({
+
+      branchId:
+        params?.branchId,
+
+      from:
+        params?.from,
+
+      to:
+        params?.to,
+    });
   },
 
 
   // ==========================================================
-  // CREDIT BUREAU ALIAS
+  // CREDIT BUREAU REPORT ALIAS
   // ==========================================================
 
   async creditBureauReport(
     params?: BnrReportParams
   ): Promise<CreditRecord[]> {
 
-    return this.creditBureau(
-      params
+    return this.creditBureauPreview({
+
+      branchId:
+        params?.branchId,
+
+      from:
+        params?.from,
+
+      to:
+        params?.to,
+    });
+  },
+
+
+  // ==========================================================
+  // API CLIENTS
+  //
+  // GET:
+  //
+  // /regulatory/api-clients
+  // ==========================================================
+
+  async listApiClients():
+    Promise<RegulatoryApiClient[]> {
+
+    const response =
+      await api.get(
+        '/regulatory/api-clients'
+      );
+
+
+    return unwrapArray<RegulatoryApiClient>(
+      response
     );
   },
 
 
   // ==========================================================
-  // BNR EXPORT
+  // CREATE API CLIENT
+  //
+  // POST:
+  //
+  // /regulatory/api-clients
   // ==========================================================
 
-  async bnrExport(
-    format: ExportFormat,
-    params?: BnrReportParams
-  ): Promise<void> {
-
-    const normalizedFormat =
-      format.toLowerCase() as ExportFormat;
-
+  async createApiClient(
+    data: CreateApiClientRequest
+  ): Promise<RegulatoryApiClient> {
 
     const response =
-      await api.get(
-        '/regulatory/bnr/financial-statement/export',
-        {
-          params: {
-            ...toQueryParams(params),
-            format:
-              normalizedFormat,
-          },
+      await api.post(
+        '/regulatory/api-clients',
+        data
+      );
 
-          responseType:
-            'blob',
+
+    return unwrap<RegulatoryApiClient>(
+      response
+    );
+  },
+
+
+  // ==========================================================
+  // REVOKE API CLIENT
+  //
+  // POST:
+  //
+  // /regulatory/api-clients/{id}/revoke
+  // ==========================================================
+
+  async revokeApiClient(
+    id: number,
+    reason?: string
+  ): Promise<unknown> {
+
+    const response =
+      await api.post(
+        `/regulatory/api-clients/${id}/revoke`,
+        {
+          reason,
         }
       );
 
 
-    const blob =
-      response.data instanceof Blob
-        ? response.data
-        : new Blob(
-            [response.data],
-            {
-              type:
-                normalizedFormat === 'pdf'
-                  ? 'application/pdf'
-                  : normalizedFormat === 'csv'
-                    ? 'text/csv'
-                    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            }
-          );
-
-
-    const filename =
-      `BNR-Financial-Statement-${new Date()
-        .toISOString()
-        .slice(0, 10)}.${normalizedFormat}`;
-
-
-    triggerDownload(
-      blob,
-      filename
+    return unwrap<unknown>(
+      response
     );
   },
 
 
   // ==========================================================
-  // ERROR
+  // ERROR MESSAGE
   // ==========================================================
 
   getErrorMessage(
     error: unknown,
+
     fallback =
       'An error occurred while loading the regulatory report.'
   ): string {
@@ -1155,5 +1745,9 @@ export const regulatoryApi = {
   },
 };
 
+
+// ============================================================
+// DEFAULT EXPORT
+// ============================================================
 
 export default regulatoryApi;
