@@ -1,21 +1,6 @@
 // ============================================================
 // REGULATORY REPORTING SERVICE
 // ============================================================
-//
-// Frontend service for:
-//
-// - BNR portfolio summary
-// - BNR financial statement
-// - BNR loan-type breakdown
-// - BNR branch breakdown
-// - BNR gender breakdown
-// - BNR exports
-// - Credit-bureau reporting
-//
-// IMPORTANT:
-// This file intentionally does NOT use generic type arguments
-// on ApiClient because the project's ApiClient is non-generic.
-// ============================================================
 
 import api from '@/services/api';
 
@@ -31,7 +16,6 @@ export type RegulatoryPeriod =
   | 'QUARTERLY'
   | 'YEARLY'
   | 'CUSTOM';
-
 
 export type ExportFormat =
   | 'pdf'
@@ -50,13 +34,7 @@ export interface BnrReportParams {
   to?: string;
 }
 
-
-// ============================================================
-// API QUERY PARAMETERS
-// ============================================================
-
-type QueryParams =
-  Record<string, unknown>;
+type QueryParams = Record<string, unknown>;
 
 
 // ============================================================
@@ -69,10 +47,7 @@ export interface BreakdownRow {
   amount: number;
 }
 
-
-// Backwards-compatible alias.
-export type BnrBreakdownRow =
-  BreakdownRow;
+export type BnrBreakdownRow = BreakdownRow;
 
 
 // ============================================================
@@ -82,279 +57,121 @@ export type BnrBreakdownRow =
 export interface BnrSummary {
 
   organizationId?: number;
-
   organizationName?: string;
-
   bnrInstitutionCode?: string;
-
   registrationNumber?: string;
-
   institutionType?: string;
-
   country?: string;
-
   currency?: string;
 
-
-  // ----------------------------------------------------------
-  // PERIOD
-  // ----------------------------------------------------------
-
   reportPeriod?: string;
-
   periodStart?: string;
-
   periodEnd?: string;
-
   reportDate?: string;
-
   generatedAt?: string;
-
   generatedBy?: string;
-
   reportReference?: string;
 
-
-  // ----------------------------------------------------------
-  // BRANCH
-  // ----------------------------------------------------------
-
   branchId?: number;
-
   branchName?: string;
 
-
-  // ----------------------------------------------------------
-  // LOANS
-  // ----------------------------------------------------------
-
   totalLoans?: number;
-
   loansDisbursedDuringPeriod?: number;
-
   activeLoans?: number;
-
   closedLoans?: number;
-
   paidLoans?: number;
-
   pendingLoans?: number;
-
   approvedLoans?: number;
-
   rejectedLoans?: number;
-
   cancelledLoans?: number;
-
   overdueLoans?: number;
-
   defaultedLoans?: number;
-
   writtenOffLoans?: number;
-
   restructuredLoans?: number;
 
-
-  // ----------------------------------------------------------
-  // DISBURSEMENTS
-  // ----------------------------------------------------------
-
   totalPrincipalDisbursed?: number;
-
   totalApprovedAmount?: number;
-
   averageLoanSize?: number;
-
   largestLoanAmount?: number;
-
   smallestLoanAmount?: number;
 
-
-  // ----------------------------------------------------------
-  // OUTSTANDING
-  // ----------------------------------------------------------
-
   outstandingPrincipal?: number;
-
   outstandingInterest?: number;
-
   outstandingFees?: number;
-
   totalOutstanding?: number;
 
-
-  // ----------------------------------------------------------
-  // REPAYMENTS
-  // ----------------------------------------------------------
-
   totalPrincipalCollected?: number;
-
   totalInterestCollected?: number;
-
   totalFeesCollected?: number;
-
   totalAmountCollected?: number;
-
   interestAccruedUnpaid?: number;
-
   feesAccruedUnpaid?: number;
-
   totalPayments?: number;
-
   missedPayments?: number;
-
   overduePayments?: number;
 
-
-  // ----------------------------------------------------------
-  // PAR
-  // ----------------------------------------------------------
-
   parAmount?: number;
-
   parRatio?: number;
-
   par1Ratio?: number;
-
   par30Ratio?: number;
-
   par60Ratio?: number;
-
   par90Ratio?: number;
 
   par1To30Amount?: number;
-
   par31To60Amount?: number;
-
   par61To90Amount?: number;
-
   par91To180Amount?: number;
-
   par181To365Amount?: number;
-
   parOver365Amount?: number;
 
-
-  // ----------------------------------------------------------
-  // NPL
-  // ----------------------------------------------------------
-
   nplAmount?: number;
-
   nplRatio?: number;
-
   nplLoanCount?: number;
 
   loansOver30Days?: number;
-
   loansOver60Days?: number;
-
   loansOver90Days?: number;
-
   loansOver180Days?: number;
-
   loansOver365Days?: number;
 
-
-  // ----------------------------------------------------------
-  // DEFAULT / WRITE OFF
-  // ----------------------------------------------------------
-
   defaultedAmount?: number;
-
   writtenOffAmount?: number;
-
   recoveriesAfterWriteOff?: number;
 
-
-  // ----------------------------------------------------------
-  // PROVISION
-  // ----------------------------------------------------------
-
   requiredProvision?: number;
-
   existingProvision?: number;
-
   provisionShortfall?: number;
 
-
-  // ----------------------------------------------------------
-  // BORROWERS
-  // ----------------------------------------------------------
-
   totalBorrowers?: number;
-
   activeBorrowers?: number;
-
   maleBorrowers?: number;
-
   femaleBorrowers?: number;
-
   otherGenderBorrowers?: number;
-
   borrowersWithMultipleLoans?: number;
 
-
-  // ----------------------------------------------------------
-  // FINANCIAL INCLUSION
-  // ----------------------------------------------------------
-
   youthBorrowers?: number;
-
   adultBorrowers?: number;
-
   seniorBorrowers?: number;
 
-
-  // ----------------------------------------------------------
-  // CREDIT
-  // ----------------------------------------------------------
-
   borrowersCreditChecked?: number;
-
   borrowersWithDefaultHistory?: number;
-
   borrowersWithActiveListing?: number;
-
   borrowersWithMultipleFacilities?: number;
-
   totalExternalDebt?: number;
 
-
-  // ----------------------------------------------------------
-  // BREAKDOWNS
-  // ----------------------------------------------------------
-
   loanTypeBreakdown?: BreakdownRow[];
-
   branchBreakdown?: BreakdownRow[];
-
   genderBreakdown?: BreakdownRow[];
 
-
-  // ----------------------------------------------------------
-  // DATA QUALITY
-  // ----------------------------------------------------------
-
   loansMissingBorrower?: number;
-
   borrowersMissingNationalId?: number;
-
   loansMissingBranch?: number;
-
   loansMissingCurrency?: number;
-
   loansMissingRepaymentSchedule?: number;
 
   dataQualityWarnings?: string[];
 
-
-  // ----------------------------------------------------------
-  // STATUS
-  // ----------------------------------------------------------
-
   reportStatus?: string;
-
   submissionReference?: string | null;
 }
 
@@ -366,15 +183,10 @@ export interface BnrSummary {
 export interface FinancialStatementRow {
 
   code?: string;
-
   name?: string;
-
   balance?: number;
-
   debit?: number;
-
   credit?: number;
-
   amount?: number;
 
   [key: string]: unknown;
@@ -384,166 +196,98 @@ export interface FinancialStatementRow {
 export interface BnrFinancialStatementReport {
 
   organizationId?: number;
-
   organizationName?: string;
-
   bnrInstitutionCode?: string;
-
   branchId?: number;
-
   branchName?: string;
-
   currency?: string;
 
-
   reportPeriod?: string;
-
   periodStart?: string;
-
   periodEnd?: string;
-
   generatedAt?: string;
 
-
-  // ----------------------------------------------------------
-  // BALANCE SHEET
-  // ----------------------------------------------------------
-
   assets?: FinancialStatementRow[];
-
   liabilities?: FinancialStatementRow[];
-
   equity?: FinancialStatementRow[];
 
   totalAssets?: number;
-
   totalLiabilities?: number;
-
   totalEquity?: number;
-
   currentPeriodNetIncome?: number;
-
   balanceSheetBalanced?: boolean;
 
-
-  // ----------------------------------------------------------
-  // PROFIT AND LOSS
-  // ----------------------------------------------------------
-
   income?: FinancialStatementRow[];
-
   expenses?: FinancialStatementRow[];
 
   totalIncome?: number;
-
   totalExpenses?: number;
-
   netIncome?: number;
 
-
-  // ----------------------------------------------------------
-  // CASH FLOW
-  // ----------------------------------------------------------
-
   cashUsedForLending?: number;
-
   cashFromCollections?: number;
-
   cashFromFees?: number;
-
   otherCashMovement?: number;
-
   netChangeInCash?: number;
 
-
-  // ----------------------------------------------------------
-  // TRIAL BALANCE
-  // ----------------------------------------------------------
-
   trialBalanceDebit?: number;
-
   trialBalanceCredit?: number;
-
   trialBalanceBalanced?: boolean;
 }
 
 
-// Backwards-compatible name.
 export type BnrFinancialStatement =
   BnrFinancialStatementReport;
 
 
 // ============================================================
-// CREDIT BUREAU RECORD
+// CREDIT BUREAU
 // ============================================================
 
 export interface CreditRecord {
 
   borrowerId?: number;
-
   fullName?: string;
-
   nationalId?: string;
-
   dateOfBirth?: string;
-
   gender?: string;
-
   phone?: string;
 
-
   loanNumber?: string;
-
   loanType?: string;
-
   loanStatus?: string;
 
-
   loanAmount?: number;
-
   outstandingBalance?: number;
-
   daysPastDue?: number;
-
   creditScore?: number;
 
-
   dateOpened?: string;
-
   lastPaymentDate?: string;
-
   maturityDate?: string;
-
   dateClosed?: string;
 
-
   branchName?: string;
-
   currency?: string;
 }
 
-
-// Backwards-compatible name.
-export type CreditBureauRecord =
-  CreditRecord;
+export type CreditBureauRecord = CreditRecord;
 
 
 // ============================================================
-// API RESPONSE HELPERS
+// RESPONSE HELPERS
 // ============================================================
 
 interface ApiEnvelope<T> {
-
   data?: T;
-
   message?: string;
-
   success?: boolean;
+  content?: T;
 }
 
 
 // ============================================================
-// API CLIENT RESPONSE NORMALIZATION
+// NORMALIZE SINGLE OBJECT
 // ============================================================
 
 function unwrap<T>(
@@ -561,8 +305,13 @@ function unwrap<T>(
     if (
       value.data !== undefined
     ) {
-
       return value.data as T;
+    }
+
+    if (
+      value.content !== undefined
+    ) {
+      return value.content as T;
     }
   }
 
@@ -571,7 +320,98 @@ function unwrap<T>(
 
 
 // ============================================================
-// QUERY PARAMETER BUILDER
+// NORMALIZE ARRAY
+//
+// IMPORTANT:
+// This prevents:
+// TypeError: a.map is not a function
+//
+// It accepts:
+// []
+// { data: [] }
+// { content: [] }
+// { data: { content: [] } }
+// { items: [] }
+// { results: [] }
+// ============================================================
+
+function unwrapArray<T>(
+  response: unknown
+): T[] {
+
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (
+    response &&
+    typeof response === 'object'
+  ) {
+
+    const value =
+      response as {
+        data?: unknown;
+        content?: unknown;
+        items?: unknown;
+        results?: unknown;
+      };
+
+
+    if (Array.isArray(value.data)) {
+      return value.data as T[];
+    }
+
+
+    if (Array.isArray(value.content)) {
+      return value.content as T[];
+    }
+
+
+    if (Array.isArray(value.items)) {
+      return value.items as T[];
+    }
+
+
+    if (Array.isArray(value.results)) {
+      return value.results as T[];
+    }
+
+
+    if (
+      value.data &&
+      typeof value.data === 'object'
+    ) {
+
+      const nested =
+        value.data as {
+          content?: unknown;
+          items?: unknown;
+          results?: unknown;
+        };
+
+
+      if (Array.isArray(nested.content)) {
+        return nested.content as T[];
+      }
+
+
+      if (Array.isArray(nested.items)) {
+        return nested.items as T[];
+      }
+
+
+      if (Array.isArray(nested.results)) {
+        return nested.results as T[];
+      }
+    }
+  }
+
+  return [];
+}
+
+
+// ============================================================
+// QUERY PARAMETERS
 // ============================================================
 
 function toQueryParams(
@@ -588,7 +428,6 @@ function toQueryParams(
     params.branchId !== undefined &&
     params.branchId !== null
   ) {
-
     query.branchId =
       params.branchId;
   }
@@ -597,7 +436,6 @@ function toQueryParams(
     params.period !== undefined &&
     params.period !== null
   ) {
-
     query.period =
       params.period;
   }
@@ -606,7 +444,6 @@ function toQueryParams(
     params.from !== undefined &&
     params.from !== ''
   ) {
-
     query.from =
       params.from;
   }
@@ -615,7 +452,6 @@ function toQueryParams(
     params.to !== undefined &&
     params.to !== ''
   ) {
-
     query.to =
       params.to;
   }
@@ -625,7 +461,7 @@ function toQueryParams(
 
 
 // ============================================================
-// DOWNLOAD HELPER
+// DOWNLOAD
 // ============================================================
 
 function triggerDownload(
@@ -660,7 +496,7 @@ function triggerDownload(
 
 
 // ============================================================
-// ERROR MESSAGE
+// ERROR
 // ============================================================
 
 function extractErrorMessage(
@@ -695,7 +531,6 @@ function extractErrorMessage(
       apiMessage &&
       typeof apiMessage === 'string'
     ) {
-
       return apiMessage;
     }
 
@@ -704,7 +539,6 @@ function extractErrorMessage(
       value.message &&
       typeof value.message === 'string'
     ) {
-
       return value.message;
     }
   }
@@ -713,7 +547,6 @@ function extractErrorMessage(
   if (
     typeof error === 'string'
   ) {
-
     return error;
   }
 
@@ -752,7 +585,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // BNR FINANCIAL STATEMENT
+  // FINANCIAL STATEMENT
   // ==========================================================
 
   async bnrFinancialStatement(
@@ -775,7 +608,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // BNR LOAN TYPE
+  // LOAN TYPE
   // ==========================================================
 
   async bnrByLoanType(
@@ -791,14 +624,14 @@ export const regulatoryApi = {
         }
       );
 
-    return unwrap<BreakdownRow[]>(
+    return unwrapArray<BreakdownRow>(
       response
     );
   },
 
 
   // ==========================================================
-  // BNR BRANCH
+  // BRANCH
   // ==========================================================
 
   async bnrByBranch(
@@ -814,14 +647,14 @@ export const regulatoryApi = {
         }
       );
 
-    return unwrap<BreakdownRow[]>(
+    return unwrapArray<BreakdownRow>(
       response
     );
   },
 
 
   // ==========================================================
-  // BNR GENDER
+  // GENDER
   // ==========================================================
 
   async bnrByGender(
@@ -837,7 +670,7 @@ export const regulatoryApi = {
         }
       );
 
-    return unwrap<BreakdownRow[]>(
+    return unwrapArray<BreakdownRow>(
       response
     );
   },
@@ -860,7 +693,7 @@ export const regulatoryApi = {
         }
       );
 
-    return unwrap<CreditRecord[]>(
+    return unwrapArray<CreditRecord>(
       response
     );
   },
@@ -905,14 +738,12 @@ export const regulatoryApi = {
         }
       );
 
-    const responseData =
-      response?.data;
 
     const blob =
-      responseData instanceof Blob
-        ? responseData
+      response.data instanceof Blob
+        ? response.data
         : new Blob(
-            [responseData],
+            [response.data],
             {
               type:
                 normalizedFormat === 'pdf'
@@ -938,7 +769,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // ERROR MESSAGE
+  // ERROR
   // ==========================================================
 
   getErrorMessage(
