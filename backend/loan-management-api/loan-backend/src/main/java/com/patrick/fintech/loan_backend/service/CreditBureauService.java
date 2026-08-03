@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -7,8 +6,10 @@ import com.patrick.fintech.loan_backend.model.CreditBureauCheck;
 import com.patrick.fintech.loan_backend.model.Loan;
 import com.patrick.fintech.loan_backend.repository.BorrowerRepository;
 import com.patrick.fintech.loan_backend.repository.CreditBureauCheckRepository;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -21,7 +22,8 @@ import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.HashMap;
+
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,10 +36,19 @@ import java.util.Random;
 public class CreditBureauService {
 
     private final CreditBureauCheckRepository checkRepo;
+
     private final BorrowerRepository borrowerRepo;
+
     private final AuditService auditService;
+
     private final RestTemplate restTemplate;
+
     private final ObjectMapper objectMapper;
+
+
+    // ============================================================
+    // CONFIGURATION
+    // ============================================================
 
     @Value("${app.credit-bureau.enabled:false}")
     private boolean bureauEnabled;
@@ -53,7 +64,7 @@ public class CreditBureauService {
 
 
     // ============================================================
-    // CREDIT BUREAU CHECK
+    // RUN CREDIT BUREAU CHECK
     // ============================================================
 
     @Transactional
@@ -80,7 +91,8 @@ public class CreditBureauService {
                 borrowerRepo.findById(borrowerId)
                         .orElseThrow(() ->
                                 new IllegalArgumentException(
-                                        "Borrower not found: " + borrowerId
+                                        "Borrower not found: "
+                                                + borrowerId
                                 )
                         );
 
@@ -89,16 +101,10 @@ public class CreditBureauService {
         // TENANT SECURITY
         // ========================================================
 
-        if (borrower.getOrganization() == null ||
-                borrower.getOrganization().getId() == null ||
-                !borrower.getOrganization()
-                        .getId()
-                        .equals(orgId)) {
-
-            throw new SecurityException(
-                    "Access denied: borrower does not belong to your organization"
-            );
-        }
+        assertBorrowerBelongsToOrganization(
+                borrower,
+                orgId
+        );
 
 
         CreditBureauCheck check;
@@ -108,13 +114,22 @@ public class CreditBureauService {
         // LIVE PROVIDER
         // ========================================================
 
-        if (bureauEnabled &&
-                apiKey != null &&
-                !apiKey.isBlank() &&
-                baseUrl != null &&
-                !baseUrl.isBlank()) {
+        if (
+                bureauEnabled
+                        &&
+                apiKey != null
+                        &&
+                !apiKey.isBlank()
+                        &&
+                baseUrl != null
+                        &&
+                !baseUrl.isBlank()
+        ) {
 
-            check = tryLiveProvider(borrower);
+            check =
+                    tryLiveProvider(
+                            borrower
+                    );
 
         } else {
 
@@ -122,7 +137,10 @@ public class CreditBureauService {
             // INTERNAL SIMULATION
             // ====================================================
 
-            check = simulate(borrower);
+            check =
+                    simulate(
+                            borrower
+                    );
         }
 
 
@@ -130,7 +148,9 @@ public class CreditBureauService {
         // COMMON INFORMATION
         // ========================================================
 
-        check.setBorrower(borrower);
+        check.setBorrower(
+                borrower
+        );
 
         check.setOrganization(
                 borrower.getOrganization()
@@ -141,12 +161,16 @@ public class CreditBureauService {
         );
 
         check.setNationalIdChecked(
-                clean(borrower.getNationalId())
+                clean(
+                        borrower.getNationalId()
+                )
         );
 
         check.setReference(
                 generateReference(
-                        borrower.getOrganization().getId()
+                        borrower
+                                .getOrganization()
+                                .getId()
                 )
         );
 
@@ -156,16 +180,22 @@ public class CreditBureauService {
         // ========================================================
 
         check =
-                checkRepo.save(check);
+                checkRepo.save(
+                        check
+                );
 
 
         // ========================================================
         // UPDATE BORROWER CREDIT INFORMATION
         // ========================================================
 
-        if (check.getStatus() ==
-                    CreditBureauCheck.CheckStatus.COMPLETED &&
-                check.getCreditScore() != null) {
+        if (
+                check.getStatus()
+                        ==
+                CreditBureauCheck.CheckStatus.COMPLETED
+                        &&
+                check.getCreditScore() != null
+        ) {
 
             borrower.setCreditScore(
                     check.getCreditScore()
@@ -179,7 +209,9 @@ public class CreditBureauService {
                     LocalDate.now()
             );
 
-            borrowerRepo.save(borrower);
+            borrowerRepo.save(
+                    borrower
+            );
         }
 
 
@@ -206,7 +238,10 @@ public class CreditBureauService {
                 check.getStatus()
         );
 
-        if (check.getCreditScore() != null) {
+
+        if (
+                check.getCreditScore() != null
+        ) {
 
             description.append(
                     " (score "
@@ -227,7 +262,9 @@ public class CreditBureauService {
                 null,
                 "CREDIT_BUREAU_CHECK",
                 "BORROWER",
-                String.valueOf(borrowerId),
+                String.valueOf(
+                        borrowerId
+                ),
                 description.toString(),
                 null,
                 null,
@@ -255,14 +292,17 @@ public class CreditBureauService {
             );
         }
 
+
         Borrower borrower =
                 loan.getBorrower();
+
 
         if (borrower == null) {
             throw new IllegalArgumentException(
                     "Borrower not found for loan"
             );
         }
+
 
         if (loan.getOrganization() == null) {
             throw new IllegalArgumentException(
@@ -275,11 +315,17 @@ public class CreditBureauService {
         // LIVE CREDIT BUREAU
         // ========================================================
 
-        if (bureauEnabled &&
-                apiKey != null &&
-                !apiKey.isBlank() &&
-                baseUrl != null &&
-                !baseUrl.isBlank()) {
+        if (
+                bureauEnabled
+                        &&
+                apiKey != null
+                        &&
+                !apiKey.isBlank()
+                        &&
+                baseUrl != null
+                        &&
+                !baseUrl.isBlank()
+        ) {
 
             try {
 
@@ -311,7 +357,9 @@ public class CreditBureauService {
 
                 payload.put(
                         "borrowerName",
-                        buildBorrowerName(borrower)
+                        buildBorrowerName(
+                                borrower
+                        )
                 );
 
                 payload.put(
@@ -319,27 +367,15 @@ public class CreditBureauService {
                         loan.getAmount()
                 );
 
-
-                /*
-                 * IMPORTANT:
-                 *
-                 * Do NOT assume the outstanding balance
-                 * is equal to the original loan amount.
-                 *
-                 * If the Loan entity has an outstanding balance,
-                 * use that value.
-                 */
                 payload.put(
                         "outstandingBalance",
                         loan.getOutstandingBalance()
                 );
 
-
                 payload.put(
                         "currency",
                         loan.getCurrency()
                 );
-
 
                 payload.put(
                         "status",
@@ -348,18 +384,15 @@ public class CreditBureauService {
                                 : null
                 );
 
-
                 payload.put(
                         "disbursedDate",
                         loan.getDisbursedAt()
                 );
 
-
                 payload.put(
                         "nextPaymentDate",
                         loan.getNextPaymentDate()
                 );
-
 
                 payload.put(
                         "reportedBy",
@@ -376,19 +409,25 @@ public class CreditBureauService {
 
                 ResponseEntity<String> response =
                         restTemplate.postForEntity(
-                                normalizeBaseUrl(baseUrl)
+                                normalizeBaseUrl(
+                                        baseUrl
+                                )
                                         + "/v1/loan-report",
                                 entity,
                                 String.class
                         );
 
 
-                if (!response.getStatusCode()
-                        .is2xxSuccessful()) {
+                if (
+                        !response.getStatusCode()
+                                .is2xxSuccessful()
+                ) {
 
                     throw new IllegalStateException(
                             "Credit Bureau returned HTTP "
-                                    + response.getStatusCode().value()
+                                    + response
+                                    .getStatusCode()
+                                    .value()
                     );
                 }
 
@@ -404,7 +443,9 @@ public class CreditBureauService {
                         null,
                         "CREDIT_BUREAU_LOAN_REPORTED",
                         "LOAN",
-                        String.valueOf(loan.getId()),
+                        String.valueOf(
+                                loan.getId()
+                        ),
                         "Disbursed loan "
                                 + loan.getReferenceNumber()
                                 + " reported to "
@@ -429,7 +470,9 @@ public class CreditBureauService {
                         null,
                         "CREDIT_BUREAU_REPORT_FAILED",
                         "LOAN",
-                        String.valueOf(loan.getId()),
+                        String.valueOf(
+                                loan.getId()
+                        ),
                         "Failed to report loan "
                                 + loan.getReferenceNumber()
                                 + " to "
@@ -468,7 +511,9 @@ public class CreditBureauService {
                     null,
                     "CREDIT_BUREAU_REPORT_SKIPPED",
                     "LOAN",
-                    String.valueOf(loan.getId()),
+                    String.valueOf(
+                            loan.getId()
+                    ),
                     "Credit Bureau integration disabled; loan "
                             + loan.getReferenceNumber()
                             + " was not externally reported.",
@@ -535,7 +580,9 @@ public class CreditBureauService {
 
             ResponseEntity<Map> response =
                     restTemplate.exchange(
-                            normalizeBaseUrl(baseUrl)
+                            normalizeBaseUrl(
+                                    baseUrl
+                            )
                                     + "/v1/credit-report",
                             HttpMethod.POST,
                             entity,
@@ -543,12 +590,16 @@ public class CreditBureauService {
                     );
 
 
-            if (!response.getStatusCode()
-                    .is2xxSuccessful()) {
+            if (
+                    !response.getStatusCode()
+                            .is2xxSuccessful()
+            ) {
 
                 throw new IllegalStateException(
                         "Credit Bureau returned HTTP "
-                                + response.getStatusCode().value()
+                                + response
+                                .getStatusCode()
+                                .value()
                 );
             }
 
@@ -576,24 +627,34 @@ public class CreditBureauService {
                     )
 
                     .creditScore(
-                            toInt(body.get("creditScore"))
+                            toInt(
+                                    body.get(
+                                            "creditScore"
+                                    )
+                            )
                     )
 
                     .riskGrade(
                             toStringValue(
-                                    body.get("riskGrade")
+                                    body.get(
+                                            "riskGrade"
+                                    )
                             )
                     )
 
                     .activeFacilities(
                             toInt(
-                                    body.get("activeFacilities")
+                                    body.get(
+                                            "activeFacilities"
+                                    )
                             )
                     )
 
                     .delinquentAccounts(
                             toInt(
-                                    body.get("delinquentAccounts")
+                                    body.get(
+                                            "delinquentAccounts"
+                                    )
                             )
                     )
 
@@ -638,21 +699,15 @@ public class CreditBureauService {
                     )
 
                     .rawResponse(
-                            toJson(body)
+                            toJson(
+                                    body
+                            )
                     )
 
                     .build();
 
 
         } catch (Exception e) {
-
-            /*
-             * We keep the simulator as a fallback for development.
-             *
-             * IMPORTANT:
-             * The failure is preserved in failureReason so the user
-             * can see that this was NOT an actual live bureau result.
-             */
 
             log.warn(
                     "Live Credit Bureau provider failed ({}). "
@@ -663,7 +718,9 @@ public class CreditBureauService {
 
 
             CreditBureauCheck fallback =
-                    simulate(borrower);
+                    simulate(
+                            borrower
+                    );
 
 
             fallback.setFailureReason(
@@ -689,14 +746,21 @@ public class CreditBureauService {
 
         long seed;
 
-        if (borrower.getNationalId() != null &&
-                !borrower.getNationalId().isBlank()) {
+
+        if (
+                borrower.getNationalId() != null
+                        &&
+                !borrower.getNationalId().isBlank()
+        ) {
 
             seed =
-                    borrower.getNationalId()
+                    borrower
+                            .getNationalId()
                             .hashCode();
 
-        } else if (borrower.getId() != null) {
+        } else if (
+                borrower.getId() != null
+        ) {
 
             seed =
                     borrower.getId();
@@ -713,7 +777,10 @@ public class CreditBureauService {
 
         int baseScore;
 
-        if (borrower.getCreditScore() != null) {
+
+        if (
+                borrower.getCreditScore() != null
+        ) {
 
             baseScore =
                     borrower.getCreditScore();
@@ -721,12 +788,17 @@ public class CreditBureauService {
         } else {
 
             baseScore =
-                    550 + random.nextInt(200);
+                    550 +
+                    random.nextInt(
+                            200
+                    );
         }
 
 
         int jitter =
-                random.nextInt(41) - 20;
+                random.nextInt(
+                        41
+                ) - 20;
 
 
         int score =
@@ -740,6 +812,7 @@ public class CreditBureauService {
 
 
         String grade;
+
 
         if (score >= 750) {
 
@@ -765,15 +838,20 @@ public class CreditBureauService {
 
         int delinquent;
 
+
         if (score < 550) {
 
             delinquent =
-                    random.nextInt(3) + 1;
+                    random.nextInt(
+                            3
+                    ) + 1;
 
         } else if (score < 650) {
 
             delinquent =
-                    random.nextInt(2);
+                    random.nextInt(
+                            2
+                    );
 
         } else {
 
@@ -782,54 +860,57 @@ public class CreditBureauService {
 
 
         boolean defaulted =
-                score < 480 &&
-                        random.nextInt(3) == 0;
+                score < 480
+                        &&
+                random.nextInt(
+                        3
+                ) == 0;
 
 
         int facilities =
-                random.nextInt(4);
+                random.nextInt(
+                        4
+                );
 
 
-        /*
-         * Keep Double.
-         *
-         * If monthlyIncome is Double,
-         * this works directly.
-         *
-         * If your Borrower entity uses another numeric type,
-         * change only this local conversion rather than changing
-         * the whole application.
-         */
         double income =
-                borrower.getMonthlyIncome() != null
-                        ? borrower.getMonthlyIncome()
-                        : 0.0;
+                toDouble(
+                        borrower.getMonthlyIncome()
+                );
 
 
         double outstanding;
+
 
         if (facilities > 0) {
 
             if (income > 0) {
 
                 outstanding =
-                        facilities *
+                        facilities
+                                *
+                        (
+                                income
+                                        *
                                 (
-                                    income *
-                                    (
-                                        0.5 +
+                                        0.5
+                                                +
                                         random.nextDouble()
-                                    )
-                                );
+                                )
+                        );
 
             } else {
 
                 outstanding =
-                        facilities *
-                                (
-                                    50_000 +
-                                    random.nextInt(500_000)
-                                );
+                        facilities
+                                *
+                        (
+                                50_000
+                                        +
+                                random.nextInt(
+                                        500_000
+                                )
+                        );
             }
 
         } else {
@@ -840,9 +921,17 @@ public class CreditBureauService {
 
         double monthlyObligations =
                 facilities > 0
-                        ? outstanding /
-                            (12 + random.nextInt(24))
-                        : 0.0;
+                        ?
+                outstanding /
+                        (
+                                12
+                                        +
+                                random.nextInt(
+                                        24
+                                )
+                        )
+                        :
+                0.0;
 
 
         Map<String, Object> snapshot =
@@ -889,12 +978,16 @@ public class CreditBureauService {
 
         snapshot.put(
                 "totalOutstandingDebt",
-                roundMoney(outstanding)
+                roundMoney(
+                        outstanding
+                )
         );
 
         snapshot.put(
                 "totalMonthlyObligations",
-                roundMoney(monthlyObligations)
+                roundMoney(
+                        monthlyObligations
+                )
         );
 
         snapshot.put(
@@ -904,8 +997,9 @@ public class CreditBureauService {
 
 
         boolean activeListing =
-                defaulted &&
-                        random.nextBoolean();
+                defaulted
+                        &&
+                random.nextBoolean();
 
 
         snapshot.put(
@@ -951,11 +1045,15 @@ public class CreditBureauService {
                 )
 
                 .totalOutstandingDebt(
-                        roundMoney(outstanding)
+                        roundMoney(
+                                outstanding
+                        )
                 )
 
                 .totalMonthlyObligations(
-                        roundMoney(monthlyObligations)
+                        roundMoney(
+                                monthlyObligations
+                        )
                 )
 
                 .hasDefaultHistory(
@@ -968,13 +1066,17 @@ public class CreditBureauService {
 
                 .listingReason(
                         activeListing
-                                ? "Historical default recorded "
-                                    + "on internal ledger"
-                                : null
+                                ?
+                        "Historical default recorded "
+                                + "on internal ledger"
+                                :
+                        null
                 )
 
                 .rawResponse(
-                        toJson(snapshot)
+                        toJson(
+                                snapshot
+                        )
                 )
 
                 .build();
@@ -1028,6 +1130,206 @@ public class CreditBureauService {
 
 
     // ============================================================
+    // REGULATORY HISTORY
+    // ============================================================
+    //
+    // Used by Credit Bureau regulatory reporting/export.
+    //
+    // This returns all bureau checks for a borrower between
+    // the supplied dates.
+    //
+    // If from/to are null, the range is treated as open-ended.
+    //
+    // ============================================================
+
+    @Transactional(readOnly = true)
+    public List<CreditBureauCheck> getRegulatoryHistory(
+            Long borrowerId,
+            Long orgId,
+            LocalDate from,
+            LocalDate to
+    ) {
+
+        assertBorrowerBelongsToOrganization(
+                borrowerId,
+                orgId
+        );
+
+
+        LocalDateTime fromDateTime =
+                from != null
+                        ?
+                from.atStartOfDay()
+                        :
+                null;
+
+
+        LocalDateTime toDateTime =
+                to != null
+                        ?
+                to.plusDays(1)
+                        .atStartOfDay()
+                        :
+                null;
+
+
+        // --------------------------------------------------------
+        // No date filters
+        // --------------------------------------------------------
+
+        if (
+                fromDateTime == null
+                        &&
+                toDateTime == null
+        ) {
+
+            return checkRepo
+                    .findByBorrower_IdOrderByCreatedAtDesc(
+                            borrowerId
+                    );
+        }
+
+
+        // --------------------------------------------------------
+        // From only
+        // --------------------------------------------------------
+
+        if (
+                fromDateTime != null
+                        &&
+                toDateTime == null
+        ) {
+
+            return checkRepo
+                    .findByBorrower_IdAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
+                            borrowerId,
+                            fromDateTime
+                    );
+        }
+
+
+        // --------------------------------------------------------
+        // To only
+        // --------------------------------------------------------
+
+        if (
+                fromDateTime == null
+                        &&
+                toDateTime != null
+        ) {
+
+            return checkRepo
+                    .findByBorrower_IdAndCreatedAtLessThanOrderByCreatedAtDesc(
+                            borrowerId,
+                            toDateTime
+                    );
+        }
+
+
+        // --------------------------------------------------------
+        // From + To
+        // --------------------------------------------------------
+
+        return checkRepo
+                .findByBorrower_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                        borrowerId,
+                        fromDateTime,
+                        toDateTime
+                );
+    }
+
+
+    // ============================================================
+    // REGULATORY HISTORY FOR ENTIRE ORGANIZATION
+    // ============================================================
+    //
+    // Useful for the regulatory dashboard/export where there is
+    // no individual borrower ID.
+    //
+    // ============================================================
+
+    @Transactional(readOnly = true)
+    public List<CreditBureauCheck> getOrganizationRegulatoryHistory(
+            Long orgId,
+            LocalDate from,
+            LocalDate to
+    ) {
+
+        if (orgId == null) {
+            throw new IllegalArgumentException(
+                    "Organization ID is required"
+            );
+        }
+
+
+        LocalDateTime fromDateTime =
+                from != null
+                        ?
+                from.atStartOfDay()
+                        :
+                null;
+
+
+        LocalDateTime toDateTime =
+                to != null
+                        ?
+                to.plusDays(1)
+                        .atStartOfDay()
+                        :
+                null;
+
+
+        if (
+                fromDateTime == null
+                        &&
+                toDateTime == null
+        ) {
+
+            return checkRepo
+                    .findByOrganization_IdOrderByCreatedAtDesc(
+                            orgId
+                    );
+        }
+
+
+        if (
+                fromDateTime != null
+                        &&
+                toDateTime == null
+        ) {
+
+            return checkRepo
+                    .findByOrganization_IdAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
+                            orgId,
+                            fromDateTime
+                    );
+        }
+
+
+        if (
+                fromDateTime == null
+                        &&
+                toDateTime != null
+        ) {
+
+            return checkRepo
+                    .findByOrganization_IdAndCreatedAtLessThanOrderByCreatedAtDesc(
+                            orgId,
+                            toDateTime
+                    );
+        }
+
+
+        return checkRepo
+                .findByOrganization_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                        orgId,
+                        fromDateTime,
+                        toDateTime
+                );
+    }
+
+
+    // ============================================================
     // TENANT VALIDATION
     // ============================================================
 
@@ -1043,6 +1345,7 @@ public class CreditBureauService {
             );
         }
 
+
         if (orgId == null) {
 
             throw new IllegalArgumentException(
@@ -1052,7 +1355,9 @@ public class CreditBureauService {
 
 
         Borrower borrower =
-                borrowerRepo.findById(borrowerId)
+                borrowerRepo.findById(
+                        borrowerId
+                )
                         .orElseThrow(() ->
                                 new IllegalArgumentException(
                                         "Borrower not found: "
@@ -1061,20 +1366,49 @@ public class CreditBureauService {
                         );
 
 
-        if (borrower.getOrganization() == null ||
-                borrower.getOrganization().getId() == null ||
-                !borrower.getOrganization()
+        assertBorrowerBelongsToOrganization(
+                borrower,
+                orgId
+        );
+
+
+        return borrower;
+    }
+
+
+    private void assertBorrowerBelongsToOrganization(
+            Borrower borrower,
+            Long orgId
+    ) {
+
+        if (
+                borrower == null
+                        ||
+                borrower.getOrganization() == null
+                        ||
+                borrower
+                        .getOrganization()
+                        .getId() == null
+        ) {
+
+            throw new SecurityException(
+                    "Access denied: borrower has no organization"
+            );
+        }
+
+
+        if (
+                !borrower
+                        .getOrganization()
                         .getId()
-                        .equals(orgId)) {
+                        .equals(orgId)
+        ) {
 
             throw new SecurityException(
                     "Access denied: borrower does not belong "
                             + "to your organization"
             );
         }
-
-
-        return borrower;
     }
 
 
@@ -1124,17 +1458,24 @@ public class CreditBureauService {
 
         String first =
                 borrower.getFirstName() != null
-                        ? borrower.getFirstName().trim()
-                        : "";
+                        ?
+                borrower.getFirstName().trim()
+                        :
+                "";
+
 
         String last =
                 borrower.getLastName() != null
-                        ? borrower.getLastName().trim()
-                        : "";
+                        ?
+                borrower.getLastName().trim()
+                        :
+                "";
 
 
         return (
-                first + " " + last
+                first
+                        + " "
+                        + last
         ).trim();
     }
 
@@ -1151,10 +1492,12 @@ public class CreditBureauService {
             return null;
         }
 
+
         if (value instanceof Number number) {
 
             return number.intValue();
         }
+
 
         try {
 
@@ -1177,10 +1520,12 @@ public class CreditBureauService {
             return null;
         }
 
+
         if (value instanceof Number number) {
 
             return number.doubleValue();
         }
+
 
         try {
 
@@ -1203,10 +1548,12 @@ public class CreditBureauService {
             return null;
         }
 
+
         if (value instanceof Boolean bool) {
 
             return bool;
         }
+
 
         return Boolean.parseBoolean(
                 value.toString()
@@ -1219,8 +1566,10 @@ public class CreditBureauService {
     ) {
 
         return value == null
-                ? null
-                : value.toString();
+                ?
+                null
+                :
+                value.toString();
     }
 
 
@@ -1250,12 +1599,16 @@ public class CreditBureauService {
             return null;
         }
 
+
         String cleaned =
                 value.trim();
 
+
         return cleaned.isEmpty()
-                ? null
-                : cleaned;
+                ?
+                null
+                :
+                cleaned;
     }
 
 
@@ -1271,10 +1624,14 @@ public class CreditBureauService {
             return "";
         }
 
+
         String value =
                 url.trim();
 
-        while (value.endsWith("/")) {
+
+        while (
+                value.endsWith("/")
+        ) {
 
             value =
                     value.substring(
@@ -1282,6 +1639,7 @@ public class CreditBureauService {
                             value.length() - 1
                     );
         }
+
 
         return value;
     }
