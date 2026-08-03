@@ -15,7 +15,7 @@ import {
   type BreakdownRow,
   type ExportFormat,
   type RegulatoryPeriod,
-} from '@/services/regulatoryService';
+} from '@/services/regulatoryService'
 
 
 // ============================================================
@@ -25,51 +25,6 @@ import {
 type DownloadingFormat =
   | ExportFormat
   | null;
-
-
-
-function normalizeBreakdownRows(
-  value: unknown
-): BreakdownRow[] {
-
-  // Normal expected response
-  if (Array.isArray(value)) {
-    return value as BreakdownRow[];
-  }
-
-  // Wrapped API response
-  if (
-    value &&
-    typeof value === 'object'
-  ) {
-
-    const response =
-      value as Record<string, unknown>;
-
-    const possibleArrays: unknown[] = [
-      response.data,
-      response.content,
-      response.items,
-      response.results,
-      response.rows,
-    ];
-
-    for (
-      const item of possibleArrays
-    ) {
-
-      if (Array.isArray(item)) {
-
-        return item as BreakdownRow[];
-
-      }
-    }
-  }
-
-  // Never allow the UI to receive
-  // an object where .map() is expected.
-  return [];
-}
 
 
 // ============================================================
@@ -243,47 +198,20 @@ export default function BnrReportPage() {
         ]);
 
 
-        // ======================================================
-        // SUMMARY
-        // ======================================================
-
         setSummary(
           summaryResult
         );
 
-
-        // ======================================================
-        // IMPORTANT FIX
-        // ======================================================
-        //
-        // Never put the raw API response directly into the
-        // breakdown state.
-        //
-        // The backend may return an array OR a wrapped object.
-        // normalizeBreakdownRows() always produces an array.
-        //
-        // This prevents:
-        //
-        // TypeError: a.map is not a function
-        //
-        // ======================================================
-
         setLoanTypeBreakdown(
-          normalizeBreakdownRows(
-            loanTypeResult
-          )
+          loanTypeResult
         );
 
         setBranchBreakdown(
-          normalizeBreakdownRows(
-            branchResult
-          )
+          branchResult
         );
 
         setGenderBreakdown(
-          normalizeBreakdownRows(
-            genderResult
-          )
+          genderResult
         );
 
       } catch (err) {
@@ -310,11 +238,6 @@ export default function BnrReportPage() {
       validateFilters,
     ]);
 
-
-  // ============================================================
-  // INITIAL LOAD
-  // ============================================================
-
   useEffect(() => {
 
     void loadReport();
@@ -322,11 +245,6 @@ export default function BnrReportPage() {
   }, [
     loadReport,
   ]);
-
-
-  // ============================================================
-  // DOWNLOAD
-  // ============================================================
 
   const downloadReport =
     useCallback(
@@ -353,28 +271,6 @@ export default function BnrReportPage() {
           setDownloadingFormat(
             format
           );
-
-          /*
-           * Format is explicitly supplied.
-           *
-           * PDF:
-           * regulatoryApi.bnrExport(
-           *   'pdf',
-           *   reportParams
-           * )
-           *
-           * XLSX:
-           * regulatoryApi.bnrExport(
-           *   'xlsx',
-           *   reportParams
-           * )
-           *
-           * CSV:
-           * regulatoryApi.bnrExport(
-           *   'csv',
-           *   reportParams
-           * )
-           */
 
           await regulatoryApi.bnrExport(
             format,
@@ -409,10 +305,6 @@ export default function BnrReportPage() {
       ]
     );
 
-
-  // ============================================================
-  // DEDICATED DOWNLOAD HANDLERS
-  // ============================================================
 
   const handleDownloadPdf =
     useCallback(
@@ -459,9 +351,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
+  // ==========================================================
   // FORMAT MONEY
-  // ============================================================
+  // ==========================================================
 
   const formatMoney =
     useCallback(
@@ -492,9 +384,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
+  // ==========================================================
   // FORMAT NUMBER
-  // ============================================================
+  // ==========================================================
 
   const formatNumber =
     useCallback(
@@ -513,9 +405,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
+  // ==========================================================
   // FORMAT PERCENT
-  // ============================================================
+  // ==========================================================
 
   const formatPercent =
     useCallback(
@@ -530,9 +422,9 @@ export default function BnrReportPage() {
     );
 
 
-  // ============================================================
+  // ==========================================================
   // LOADING
-  // ============================================================
+  // ==========================================================
 
   if (loading) {
 
@@ -571,9 +463,9 @@ export default function BnrReportPage() {
   }
 
 
-  // ============================================================
+  // ==========================================================
   // RENDER
-  // ============================================================
+  // ==========================================================
 
   return (
 
@@ -1197,22 +1089,6 @@ function BreakdownTable({
   ) => string;
 }) {
 
-  // ==========================================================
-  // SECOND SAFETY CHECK
-  // ==========================================================
-  //
-  // Even if something unexpected gets passed into this
-  // component in the future, .map() will never be called on
-  // an object.
-  //
-  // ==========================================================
-
-  const safeRows: BreakdownRow[] =
-    Array.isArray(rows)
-      ? rows
-      : [];
-
-
   return (
 
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1226,7 +1102,7 @@ function BreakdownTable({
       </div>
 
 
-      {safeRows.length === 0 ? (
+      {rows.length === 0 ? (
 
         <div className="p-6 text-center text-sm text-gray-500">
           No data available for this period.
@@ -1270,7 +1146,7 @@ function BreakdownTable({
 
             <tbody className="divide-y divide-gray-200 bg-white">
 
-              {safeRows.map(
+              {rows.map(
                 (row, index) => (
 
                   <tr
@@ -1310,5 +1186,3 @@ function BreakdownTable({
     </div>
   );
 }
-
-
