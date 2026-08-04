@@ -20,9 +20,7 @@ import {
   EmptyRow,
 } from '@/components/ui/Table';
 
-import {
-  Modal,
-} from '@/components/ui/Modal';
+import { Modal } from '@/components/ui/Modal';
 
 import {
   FormGroup,
@@ -92,23 +90,22 @@ export default function BorrowersPage() {
     setLoading(true);
 
     try {
-      const response: any =
-        await borrowerApi.list(
-          page,
-          20,
-          q,
-        );
+      const response: any = await borrowerApi.list(
+        page,
+        20,
+        q,
+      );
 
-      const content =
-        Array.isArray(response)
-          ? response
-          : response?.content ?? [];
+      const content = Array.isArray(response)
+        ? response
+        : response?.content ?? [];
 
       setBorrowers(content);
 
       setTotal(
         response?.totalElements ??
-        content.length,
+          response?.total ??
+          content.length,
       );
     } catch (error) {
       console.error(
@@ -145,20 +142,17 @@ export default function BorrowersPage() {
       await borrowerApi.create({
         ...form,
 
-        monthlyIncome:
-          form.monthlyIncome
-            ? Number(form.monthlyIncome)
-            : undefined,
+        monthlyIncome: form.monthlyIncome
+          ? Number(form.monthlyIncome)
+          : undefined,
 
-        monthlyExpenses:
-          form.monthlyExpenses
-            ? Number(form.monthlyExpenses)
-            : undefined,
+        monthlyExpenses: form.monthlyExpenses
+          ? Number(form.monthlyExpenses)
+          : undefined,
 
-        creditScore:
-          form.creditScore
-            ? Number(form.creditScore)
-            : undefined,
+        creditScore: form.creditScore
+          ? Number(form.creditScore)
+          : undefined,
       });
 
       setAddOpen(false);
@@ -176,7 +170,7 @@ export default function BorrowersPage() {
 
       setMsg(
         error?.message ||
-        'Failed to create borrower',
+          'Failed to create borrower',
       );
     } finally {
       setSaving(false);
@@ -193,8 +187,7 @@ export default function BorrowersPage() {
     (key: string) =>
     (
       e: React.ChangeEvent<
-        HTMLInputElement |
-        HTMLSelectElement
+        HTMLInputElement | HTMLSelectElement
       >,
     ) => {
       setForm((current) => ({
@@ -202,6 +195,30 @@ export default function BorrowersPage() {
         [key]: e.target.value,
       }));
     };
+
+  /**
+   * ============================================================
+   * BORROWER DETAILS URL
+   * ============================================================
+   *
+   * IMPORTANT:
+   *
+   * The borrower details page is:
+   *
+   * /dashboard/borrowers/[id]
+   *
+   * Therefore every borrower link MUST use:
+   *
+   * /dashboard/borrowers/{id}
+   *
+   * Never:
+   *
+   * /dashboard/{id}
+   */
+
+  const borrowerDetailsUrl = (
+    borrowerId: number,
+  ) => `/dashboard/borrowers/${borrowerId}`;
 
   return (
     <div>
@@ -286,28 +303,39 @@ export default function BorrowersPage() {
                 />
               ) : (
                 borrowers.map(
-                  (borrower: Borrower) => (
-                    <Tr
-                      key={borrower.id}
-                      className="hover:bg-gray-50"
-                    >
-                      {/* ==================================================
-                          NAME
-                      ================================================== */}
+                  (borrower: Borrower) => {
+                    const borrowerId = Number(
+                      borrower.id,
+                    );
 
-                      <Td>
-                        <Link
-                          href={`/dashboard/borrowers/${borrower.id}`}
-                          className="block"
-                        >
-                          <div className="flex items-center gap-2">
+                    const detailsUrl =
+                      borrowerDetailsUrl(
+                        borrowerId,
+                      );
+
+                    return (
+                      <Tr
+                        key={borrower.id}
+                        className="hover:bg-gray-50"
+                      >
+                        {/* ==================================================
+                            NAME
+                        ================================================== */}
+
+                        <Td>
+                          <Link
+                            href={detailsUrl}
+                            className="flex items-center gap-2 group"
+                          >
                             <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-sm font-bold text-teal-700 flex-shrink-0">
-                              {borrower.firstName?.[0] ?? ''}
-                              {borrower.lastName?.[0] ?? ''}
+                              {borrower.firstName?.[0] ??
+                                ''}
+                              {borrower.lastName?.[0] ??
+                                ''}
                             </div>
 
                             <div>
-                              <div className="font-semibold text-sm text-gray-900 hover:text-teal-600">
+                              <div className="font-semibold text-sm text-gray-900 group-hover:text-teal-600 transition-colors">
                                 {borrower.firstName}{' '}
                                 {borrower.lastName}
                               </div>
@@ -317,97 +345,97 @@ export default function BorrowersPage() {
                                   '—'}
                               </div>
                             </div>
-                          </div>
-                        </Link>
-                      </Td>
+                          </Link>
+                        </Td>
 
-                      {/* ==================================================
-                          EMAIL
-                      ================================================== */}
+                        {/* ==================================================
+                            EMAIL
+                        ================================================== */}
 
-                      <Td className="text-sm text-gray-600">
-                        {borrower.email ?? '—'}
-                      </Td>
+                        <Td className="text-sm text-gray-600">
+                          {borrower.email ?? '—'}
+                        </Td>
 
-                      {/* ==================================================
-                          PHONE
-                      ================================================== */}
+                        {/* ==================================================
+                            PHONE
+                        ================================================== */}
 
-                      <Td className="text-sm text-gray-600">
-                        {borrower.phone ?? '—'}
-                      </Td>
+                        <Td className="text-sm text-gray-600">
+                          {borrower.phone ?? '—'}
+                        </Td>
 
-                      {/* ==================================================
-                          NATIONAL ID
-                      ================================================== */}
+                        {/* ==================================================
+                            NATIONAL ID
+                        ================================================== */}
 
-                      <Td>
-                        <code className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                          {borrower.nationalId ?? '—'}
-                        </code>
-                      </Td>
+                        <Td>
+                          <code className="text-xs bg-gray-100 px-2 py-0.5 rounded">
+                            {borrower.nationalId ?? '—'}
+                          </code>
+                        </Td>
 
-                      {/* ==================================================
-                          EMPLOYER
-                      ================================================== */}
+                        {/* ==================================================
+                            EMPLOYER
+                        ================================================== */}
 
-                      <Td className="text-sm text-gray-600">
-                        {borrower.employerName ?? '—'}
-                      </Td>
+                        <Td className="text-sm text-gray-600">
+                          {borrower.employerName ?? '—'}
+                        </Td>
 
-                      {/* ==================================================
-                          INCOME
-                      ================================================== */}
+                        {/* ==================================================
+                            INCOME
+                        ================================================== */}
 
-                      <Td className="font-semibold text-sm">
-                        {formatCurrency(
-                          borrower.monthlyIncome,
-                          currency,
-                          locale,
-                        )}
-                      </Td>
+                        <Td className="font-semibold text-sm">
+                          {formatCurrency(
+                            borrower.monthlyIncome,
+                            currency,
+                            locale,
+                          )}
+                        </Td>
 
-                      {/* ==================================================
-                          CREDIT SCORE
-                      ================================================== */}
+                        {/* ==================================================
+                            CREDIT SCORE
+                        ================================================== */}
 
-                      <Td>
-                        <span
-                          className={`font-bold text-sm ${
-                            (borrower.creditScore ?? 0) >=
-                            700
-                              ? 'text-teal-600'
-                              : (borrower.creditScore ?? 0) >=
-                                600
-                              ? 'text-yellow-600'
-                              : 'text-red-500'
-                          }`}
-                        >
-                          {borrower.creditScore ??
-                            '—'}
-                        </span>
-                      </Td>
+                        <Td>
+                          <span
+                            className={`font-bold text-sm ${
+                              (borrower.creditScore ?? 0) >=
+                              700
+                                ? 'text-teal-600'
+                                : (borrower.creditScore ?? 0) >=
+                                  600
+                                ? 'text-yellow-600'
+                                : 'text-red-500'
+                            }`}
+                          >
+                            {borrower.creditScore ??
+                              '—'}
+                          </span>
+                        </Td>
 
-                      {/* ==================================================
-                          COUNTRY
-                      ================================================== */}
+                        {/* ==================================================
+                            COUNTRY
+                        ================================================== */}
 
-                      <Td className="text-xs text-gray-500">
-                        {borrower.country ?? '—'}
-                      </Td>
+                        <Td className="text-xs text-gray-500">
+                          {borrower.country ?? '—'}
+                        </Td>
 
-                      {/* ==================================================
-                          CREATED DATE
-                      ================================================== */}
+                        {/* ==================================================
+                            CREATED DATE
+                        ================================================== */}
 
-                      <Td className="text-xs text-gray-400">
-                        {formatDate(
-                          borrower.createdAt,
-                          locale,
-                        )}
-                      </Td>
-                    </Tr>
-                  ),
+                        <Td className="text-xs text-gray-400">
+                          {formatDate(
+                            borrower.createdAt,
+                            locale,
+                          )}
+                        </Td>
+                      </Tr>
+                    );
+                  },
                 )
               )}
             </Tbody>
@@ -475,18 +503,14 @@ export default function BorrowersPage() {
 
             <Button
               loading={saving}
-              onClick={
-                handleAdd as any
-              }
+              onClick={handleAdd as any}
             >
               Save Borrower
             </Button>
           </>
         }
       >
-        <form
-          onSubmit={handleAdd}
-        >
+        <form onSubmit={handleAdd}>
           {msg && (
             <Alert type="error">
               {msg}
@@ -508,9 +532,7 @@ export default function BorrowersPage() {
             >
               <Input
                 required
-                value={
-                  form.firstName
-                }
+                value={form.firstName}
                 onChange={set(
                   'firstName',
                 )}
@@ -523,9 +545,7 @@ export default function BorrowersPage() {
             >
               <Input
                 required
-                value={
-                  form.lastName
-                }
+                value={form.lastName}
                 onChange={set(
                   'lastName',
                 )}
@@ -538,18 +558,14 @@ export default function BorrowersPage() {
               <Input
                 type="email"
                 value={form.email}
-                onChange={set(
-                  'email',
-                )}
+                onChange={set('email')}
               />
             </FormGroup>
 
             <FormGroup label="Phone">
               <Input
                 value={form.phone}
-                onChange={set(
-                  'phone',
-                )}
+                onChange={set('phone')}
               />
             </FormGroup>
           </FormRow>
@@ -557,9 +573,7 @@ export default function BorrowersPage() {
           <FormRow>
             <FormGroup label="National ID">
               <Input
-                value={
-                  form.nationalId
-                }
+                value={form.nationalId}
                 onChange={set(
                   'nationalId',
                 )}
@@ -569,9 +583,7 @@ export default function BorrowersPage() {
             <FormGroup label="Date of Birth">
               <Input
                 type="date"
-                value={
-                  form.dateOfBirth
-                }
+                value={form.dateOfBirth}
                 onChange={set(
                   'dateOfBirth',
                 )}
@@ -583,9 +595,7 @@ export default function BorrowersPage() {
             <FormGroup label="Gender">
               <Select
                 value={form.gender}
-                onChange={set(
-                  'gender',
-                )}
+                onChange={set('gender')}
               >
                 <option value="">
                   Select…
@@ -609,9 +619,7 @@ export default function BorrowersPage() {
 
             <FormGroup label="Nationality">
               <Select
-                value={
-                  form.nationality
-                }
+                value={form.nationality}
                 onChange={set(
                   'nationality',
                 )}
@@ -619,9 +627,7 @@ export default function BorrowersPage() {
                 {COUNTRIES.map(
                   (country) => (
                     <option
-                      key={
-                        country.code
-                      }
+                      key={country.code}
                       value={
                         country.code
                       }
@@ -645,9 +651,7 @@ export default function BorrowersPage() {
           <FormRow>
             <FormGroup label="Employer Name">
               <Input
-                value={
-                  form.employerName
-                }
+                value={form.employerName}
                 onChange={set(
                   'employerName',
                 )}
@@ -733,9 +737,7 @@ export default function BorrowersPage() {
                 {COUNTRIES.map(
                   (country) => (
                     <option
-                      key={
-                        country.code
-                      }
+                      key={country.code}
                       value={
                         country.code
                       }
@@ -759,9 +761,7 @@ export default function BorrowersPage() {
           <FormRow>
             <FormGroup label="Bank Name">
               <Input
-                value={
-                  form.bankName
-                }
+                value={form.bankName}
                 onChange={set(
                   'bankName',
                 )}
