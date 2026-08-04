@@ -108,7 +108,7 @@ public class CreditBureauExportController {
     // ============================================================
     // EXPORT
     // ============================================================
-    @GetMapping(value = "/export", produces = {
+   @GetMapping(value = "/download", produces = {
             MediaType.APPLICATION_OCTET_STREAM_VALUE,
             MediaType.APPLICATION_PDF_VALUE,
             "text/csv"

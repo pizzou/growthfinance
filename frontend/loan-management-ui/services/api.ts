@@ -25,28 +25,6 @@ const API: AxiosInstance = axios.create({
   },
 });
 
-/**
- * ============================================================
- * REQUEST INTERCEPTOR
- * ============================================================
- *
- * Every authenticated request receives:
- *
- * Authorization: Bearer <JWT>
- *
- * This includes:
- *
- * - BNR
- * - Credit Bureau
- * - Loans
- * - Borrowers
- * - Accounting
- * - Compliance
- * - etc.
- *
- * ============================================================
- */
-
 API.interceptors.request.use(
   (config) => {
     if (
@@ -79,24 +57,6 @@ API.interceptors.request.use(
   }
 );
 
-/**
- * ============================================================
- * RESPONSE INTERCEPTOR
- * ============================================================
- *
- * IMPORTANT:
- *
- * Do NOT replace AxiosError with a plain Error.
- *
- * The original Axios response must remain available because
- * regulatory exports may return error information as a Blob.
- *
- * This is especially important for:
- *
- *     403 Forbidden
- *
- * ============================================================
- */
 
 API.interceptors.response.use(
   (response) => {
@@ -110,17 +70,6 @@ API.interceptors.response.use(
     const responseData =
       error.response?.data;
 
-    /**
-     * --------------------------------------------------------
-     * 401 = AUTHENTICATION FAILURE
-     * --------------------------------------------------------
-     *
-     * Only 401 removes the JWT.
-     *
-     * 403 means the server received the request but denied
-     * permission. We must NOT log the user out for 403.
-     * --------------------------------------------------------
-     */
 
     if (
       status === 401 &&
@@ -138,27 +87,6 @@ API.interceptors.response.use(
         '/login';
     }
 
-    /**
-     * --------------------------------------------------------
-     * PRESERVE AXIOS ERROR
-     * --------------------------------------------------------
-     *
-     * This is critical.
-     *
-     * Previously the code created:
-     *
-     *     const err = new Error(...)
-     *
-     * which removed:
-     *
-     *     error.response
-     *     error.response.status
-     *     error.response.data
-     *
-     * Regulatory export error handling therefore could not
-     * inspect the actual 403 response.
-     * --------------------------------------------------------
-     */
 
     const message =
       getAxiosErrorMessage(
@@ -167,17 +95,10 @@ API.interceptors.response.use(
       error.message ||
       `Request failed with status ${status ?? 'unknown'}`;
 
-    /**
-     * Preserve AxiosError while adding a useful message.
-     */
-
+ 
     error.message =
       message;
 
-    /**
-     * Add convenient properties without
-     * destroying the original AxiosError.
-     */
 
     const enhancedError =
       error as AxiosError<unknown> & {
@@ -197,11 +118,6 @@ API.interceptors.response.use(
   }
 );
 
-/**
- * ============================================================
- * AXIOS ERROR MESSAGE
- * ============================================================
- */
 
 function getAxiosErrorMessage(
   data: unknown
@@ -339,11 +255,7 @@ export const del = (
       unwrap(response.data)
   );
 
-/**
- * ============================================================
- * AUTH API
- * ============================================================
- */
+
 
 export const authApi = {
   login: (
@@ -1839,7 +1751,7 @@ export const regulatoryApi = {
     }
 
     return API.get(
-      `/regulatory/credit-bureau/export?${query.toString()}`,
+      `/regulatory/credit-bureau/download?${query.toString()}`,
       {
         responseType:
           'blob',

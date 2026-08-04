@@ -290,11 +290,6 @@ export interface BnrFinancialStatementReport {
 export type BnrFinancialStatement =
   BnrFinancialStatementReport;
 
-/**
- * ============================================================
- * CREDIT BUREAU RECORD
- * ============================================================
- */
 
 export interface CreditRecord {
 
