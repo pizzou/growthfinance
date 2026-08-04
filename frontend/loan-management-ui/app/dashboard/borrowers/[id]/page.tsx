@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -34,23 +33,11 @@ export default function BorrowerDetailsPage() {
   const [details, setDetails] =
     useState<BorrowerDetails | null>(null);
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState('');
-
-  /**
-   * ============================================================
-   * LOAD BORROWER
-   * ============================================================
-   */
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (
-      !borrowerId ||
-      Number.isNaN(borrowerId)
-    ) {
+    if (!borrowerId || Number.isNaN(borrowerId)) {
       setError('Invalid borrower ID.');
       setLoading(false);
       return;
@@ -59,19 +46,15 @@ export default function BorrowerDetailsPage() {
     let cancelled = false;
 
     const load = async () => {
-      setLoading(true);
-      setError('');
-
       try {
+        setLoading(true);
+        setError('');
+
         const response =
-          await borrowerApi.getDetails(
-            borrowerId,
-          );
+          await borrowerApi.getDetails(borrowerId);
 
         if (!cancelled) {
-          setDetails(
-            response as BorrowerDetails,
-          );
+          setDetails(response as BorrowerDetails);
         }
       } catch (err: any) {
         console.error(
@@ -99,67 +82,52 @@ export default function BorrowerDetailsPage() {
     };
   }, [borrowerId]);
 
-  /**
-   * ============================================================
-   * LOADING
-   * ============================================================
-   */
-
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center">
+      <div className="min-h-[500px] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-full border-[3px] border-slate-200 border-t-teal-600 animate-spin" />
 
-          <div className="mx-auto w-11 h-11 border-[3px] border-teal-500 border-t-transparent rounded-full animate-spin" />
-
-          <p className="mt-4 text-sm text-gray-500">
+          <span className="text-sm font-medium text-slate-500">
             Loading borrower profile...
-          </p>
-
+          </span>
         </div>
       </div>
     );
   }
 
-  /**
-   * ============================================================
-   * ERROR
-   * ============================================================
-   */
-
   if (error || !details) {
     return (
-      <div className="max-w-3xl mx-auto py-10">
-
-        <button
-          type="button"
-          onClick={() =>
-            router.push(
-              '/dashboard/borrowers',
-            )
-          }
-          className="text-sm font-semibold text-gray-500 hover:text-gray-900 mb-5"
-        >
-          ← Back to borrowers
-        </button>
-
+      <div className="max-w-2xl mx-auto py-12">
         <Card>
-          <div className="py-16 text-center">
-
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center text-2xl font-bold">
-              !
+          <div className="p-10 text-center">
+            <div className="mx-auto mb-5 w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center">
+              <span className="text-red-600 text-2xl font-bold">
+                !
+              </span>
             </div>
 
-            <h2 className="mt-5 text-xl font-bold text-gray-900">
+            <h2 className="text-xl font-bold text-slate-900">
               Unable to load borrower
             </h2>
 
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="mt-2 text-sm leading-6 text-slate-500">
               {error ||
                 'Borrower details could not be loaded.'}
             </p>
 
-            <div className="mt-6">
+            <div className="mt-7 flex justify-center gap-3">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  router.push(
+                    '/dashboard/borrowers',
+                  )
+                }
+              >
+                Back to Borrowers
+              </Button>
+
               <Button
                 onClick={() =>
                   window.location.reload()
@@ -168,926 +136,873 @@ export default function BorrowerDetailsPage() {
                 Try Again
               </Button>
             </div>
-
           </div>
         </Card>
-
       </div>
     );
   }
 
-  const loans =
-    details.loans ?? [];
-
-  const payments =
-    details.payments ?? [];
+  const loans = details.loans ?? [];
+  const payments = details.payments ?? [];
 
   const initials =
     `${details.firstName?.[0] ?? ''}${details.lastName?.[0] ?? ''}`
       .toUpperCase();
 
-  const fullName =
+  const displayName =
     details.fullName ||
-    `${details.firstName ?? ''} ${details.lastName ?? ''}`.trim();
+    `${details.firstName ?? ''} ${details.lastName ?? ''}`.trim() ||
+    'Unnamed Borrower';
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="min-h-screen bg-slate-50/70 -m-6 p-6">
+      <div className="max-w-[1600px] mx-auto space-y-6">
 
-      {/* ======================================================
-          TOP NAVIGATION
-      ====================================================== */}
+        {/* =====================================================
+            TOP NAVIGATION
+        ===================================================== */}
 
-      <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  '/dashboard/borrowers',
+                )
+              }
+              className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-teal-700 transition-colors"
+            >
+              <span className="text-lg">←</span>
+              Borrowers
+            </button>
 
-        <button
-          type="button"
-          onClick={() =>
-            router.push(
-              '/dashboard/borrowers',
-            )
-          }
-          className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900 transition"
-        >
-          <span className="text-lg">
-            ←
-          </span>
-
-          Borrowers
-        </button>
-
-        <div className="text-xs text-gray-400">
-          Borrower #{details.borrowerId}
-        </div>
-
-      </div>
-
-      {/* ======================================================
-          HERO
-      ====================================================== */}
-
-      <section className="rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden">
-
-        <div className="h-2 bg-teal-500" />
-
-        <div className="p-6 md:p-8">
-
-          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-7">
-
-            {/* PROFILE */}
-
-            <div className="flex items-start gap-5">
-
-              <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center text-2xl md:text-3xl font-extrabold text-teal-700 flex-shrink-0">
-                {initials ||
-                  fullName?.[0] ||
-                  '?'}
+            <div className="mt-3">
+              <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
+                Borrower Profile
               </div>
 
-              <div className="min-w-0">
+              <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-950">
+                {displayName}
+              </h1>
+            </div>
+          </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="secondary"
+              onClick={() =>
+                router.push(
+                  '/dashboard/borrowers',
+                )
+              }
+            >
+              Back
+            </Button>
+          </div>
+        </div>
 
-                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900">
-                    {fullName ||
-                      'Unnamed Borrower'}
-                  </h1>
+        {/* =====================================================
+            PROFILE HERO
+        ===================================================== */}
 
-                  {details.goodPayer && (
-                    <span className="px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-bold">
-                      Good Payer
-                    </span>
-                  )}
+        <Card>
+          <div className="relative overflow-hidden">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-600" />
 
-                  {details.currentlyOverdue && (
-                    <span className="px-2.5 py-1 rounded-full bg-red-50 text-red-600 text-xs font-bold">
-                      Overdue
-                    </span>
-                  )}
+            <div className="p-6 sm:p-8">
+              <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-7">
 
+                <div className="flex items-start gap-5">
+                  <div className="relative flex-shrink-0">
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white flex items-center justify-center text-2xl sm:text-3xl font-bold shadow-lg shadow-teal-500/20">
+                      {initials ||
+                        displayName[0] ||
+                        '?'}
+                    </div>
+
+                    <div className="absolute -right-1 -bottom-1 w-6 h-6 rounded-full bg-white flex items-center justify-center">
+                      <div className="w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+                    </div>
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-xl sm:text-2xl font-bold text-slate-950">
+                        {displayName}
+                      </h2>
+
+                      {details.status && (
+                        <StatusBadge
+                          value={details.status}
+                        />
+                      )}
+                    </div>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                      Borrower #{details.borrowerId}
+                    </p>
+
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      {details.goodPayer && (
+                        <Badge
+                          text="Good Payer"
+                          type="success"
+                        />
+                      )}
+
+                      {details.currentlyOverdue && (
+                        <Badge
+                          text="Currently Overdue"
+                          type="danger"
+                        />
+                      )}
+
+                      {details.hasDefaultHistory && (
+                        <Badge
+                          text="Default History"
+                          type="warning"
+                        />
+                      )}
+
+                      {details.hasMultipleActiveLoans && (
+                        <Badge
+                          text="Multiple Active Loans"
+                          type="warning"
+                        />
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="mt-2 text-sm text-gray-500">
-                  Customer since{' '}
-                  {details.createdAt
+                <div className="flex items-center gap-8 xl:pr-4">
+                  <HeroMetric
+                    label="Credit Score"
+                    value={
+                      details.creditScore != null
+                        ? String(
+                            details.creditScore,
+                          )
+                        : '—'
+                    }
+                    tone={
+                      (details.creditScore ?? 0) >=
+                      700
+                        ? 'good'
+                        : (details.creditScore ?? 0) >=
+                          600
+                        ? 'warning'
+                        : 'danger'
+                    }
+                  />
+
+                  <div className="hidden sm:block w-px h-14 bg-slate-200" />
+
+                  <HeroMetric
+                    label="Risk Level"
+                    value={
+                      details.riskLevel || '—'
+                    }
+                    tone="neutral"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* =====================================================
+            PORTFOLIO SUMMARY
+        ===================================================== */}
+
+        <section>
+          <SectionHeading
+            title="Portfolio Overview"
+            subtitle="Current lending relationship and repayment position"
+          />
+
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+            <MetricCard
+              label="Total Loans"
+              value={formatNumber(
+                details.totalLoans,
+              )}
+              icon="▣"
+            />
+
+            <MetricCard
+              label="Active Loans"
+              value={formatNumber(
+                details.activeLoans,
+              )}
+              icon="↗"
+              tone="teal"
+            />
+
+            <MetricCard
+              label="Outstanding"
+              value={formatCurrency(
+                details.totalOutstanding,
+                currency,
+                locale,
+              )}
+              icon="◉"
+              tone="amber"
+            />
+
+            <MetricCard
+              label="Total Paid"
+              value={formatCurrency(
+                details.totalPaid,
+                currency,
+                locale,
+              )}
+              icon="✓"
+              tone="green"
+            />
+
+            <MetricCard
+              label="Overdue Loans"
+              value={formatNumber(
+                details.overdueLoans,
+              )}
+              icon="!"
+              tone={
+                details.overdueLoans > 0
+                  ? 'red'
+                  : 'green'
+              }
+            />
+          </div>
+        </section>
+
+        {/* =====================================================
+            PERSONAL + FINANCE
+        ===================================================== */}
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+          <ProfileCard
+            title="Personal Information"
+            subtitle="Identity and contact details"
+          >
+            <InfoGrid>
+              <Info
+                label="First Name"
+                value={details.firstName}
+              />
+
+              <Info
+                label="Last Name"
+                value={details.lastName}
+              />
+
+              <Info
+                label="Email"
+                value={details.email}
+              />
+
+              <Info
+                label="Phone"
+                value={details.phone}
+              />
+
+              <Info
+                label="Alternate Phone"
+                value={details.alternatePhone}
+              />
+
+              <Info
+                label="National ID"
+                value={details.nationalId}
+                mono
+              />
+
+              <Info
+                label="Passport"
+                value={
+                  details.passportNumber
+                }
+              />
+
+              <Info
+                label="Date of Birth"
+                value={
+                  details.dateOfBirth
                     ? formatDate(
-                        details.createdAt,
+                        details.dateOfBirth,
                         locale,
                       )
-                    : '—'}
-                </div>
+                    : undefined
+                }
+              />
 
-                <div className="flex flex-wrap gap-2 mt-4">
+              <Info
+                label="Gender"
+                value={details.gender}
+              />
 
-                  {details.status && (
-                    <Badge
-                      label={details.status}
-                      type="neutral"
-                    />
-                  )}
+              <Info
+                label="Marital Status"
+                value={
+                  details.maritalStatus
+                }
+              />
 
-                  {details.riskLevel && (
-                    <Badge
-                      label={`Risk: ${details.riskLevel}`}
-                      type={
-                        details.riskLevel
-                          ?.toString()
-                          .toUpperCase()
-                          .includes('HIGH')
-                          ? 'danger'
-                          : 'neutral'
-                      }
-                    />
-                  )}
+              <Info
+                label="Nationality"
+                value={details.nationality}
+              />
 
-                  {details.employmentType && (
-                    <Badge
-                      label={
-                        details.employmentType
-                      }
-                      type="neutral"
-                    />
-                  )}
+              <Info
+                label="Country"
+                value={details.country}
+              />
+            </InfoGrid>
+          </ProfileCard>
 
-                </div>
+          <ProfileCard
+            title="Employment & Finance"
+            subtitle="Income, employment and financial profile"
+          >
+            <InfoGrid>
+              <Info
+                label="Employer"
+                value={
+                  details.employerName
+                }
+              />
 
-              </div>
+              <Info
+                label="Employment Type"
+                value={
+                  details.employmentType
+                }
+              />
 
-            </div>
+              <Info
+                label="Job Title"
+                value={details.jobTitle}
+              />
 
-            {/* CREDIT */}
-
-            <div className="xl:min-w-[220px] xl:border-l xl:border-gray-100 xl:pl-8">
-
-              <div className="text-xs uppercase tracking-[0.12em] text-gray-400 font-bold">
-                Credit Score
-              </div>
-
-              <div className="flex items-end gap-3 mt-1">
-
-                <div
-                  className={`text-4xl font-extrabold ${
-                    getCreditColor(
-                      details.creditScore,
-                    )
-                  }`}
-                >
-                  {details.creditScore ??
-                    '—'}
-                </div>
-
-                {details.creditScore !=
-                  null && (
-                  <div className="text-xs text-gray-500 pb-1">
-                    {getCreditLabel(
-                      details.creditScore,
-                    )}
-                  </div>
+              <Info
+                label="Monthly Income"
+                value={formatCurrency(
+                  details.monthlyIncome,
+                  currency,
+                  locale,
                 )}
+              />
 
+              <Info
+                label="Monthly Expenses"
+                value={formatCurrency(
+                  details.monthlyExpenses,
+                  currency,
+                  locale,
+                )}
+              />
+
+              <Info
+                label="Net Worth"
+                value={formatCurrency(
+                  details.netWorth,
+                  currency,
+                  locale,
+                )}
+              />
+
+              <Info
+                label="Credit Bureau"
+                value={
+                  details.creditBureau
+                }
+              />
+
+              <Info
+                label="Credit Report Date"
+                value={
+                  details.creditReportDate
+                    ? formatDate(
+                        details.creditReportDate,
+                        locale,
+                      )
+                    : undefined
+                }
+              />
+            </InfoGrid>
+          </ProfileCard>
+        </div>
+
+        {/* =====================================================
+            ADDRESS
+        ===================================================== */}
+
+        <ProfileCard
+          title="Address"
+          subtitle="Registered residential information"
+        >
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 p-5">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-500">
+                ⌖
               </div>
 
-              <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Residential Address
+                </div>
 
-                <div
-                  className={`h-full rounded-full ${getCreditBarColor(
-                    details.creditScore,
-                  )}`}
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      Math.max(
-                        0,
-                        ((details.creditScore ??
-                          0) -
-                          300) /
-                          5.5,
-                      ),
-                    )}%`,
-                  }}
-                />
-
+                <div className="mt-1 text-sm font-semibold text-slate-800">
+                  {details.address ||
+                    'No address recorded.'}
+                </div>
               </div>
-
-              <div className="flex justify-between mt-1 text-[10px] text-gray-400">
-                <span>300</span>
-                <span>850</span>
-              </div>
-
             </div>
-
           </div>
+        </ProfileCard>
 
-        </div>
+        {/* =====================================================
+            LOAN STATISTICS
+        ===================================================== */}
 
-      </section>
-
-      {/* ======================================================
-          FINANCIAL KPI GRID
-      ====================================================== */}
-
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-
-        <KpiCard
-          label="Total Loans"
-          value={formatNumber(
-            details.totalLoans,
-          )}
-          icon="↗"
-        />
-
-        <KpiCard
-          label="Active Loans"
-          value={formatNumber(
-            details.activeLoans,
-          )}
-          icon="◷"
-        />
-
-        <KpiCard
-          label="Outstanding"
-          value={formatCurrency(
-            details.totalOutstanding,
-            currency,
-            locale,
-          )}
-          icon="◆"
-        />
-
-        <KpiCard
-          label="Total Paid"
-          value={formatCurrency(
-            details.totalPaid,
-            currency,
-            locale,
-          )}
-          icon="✓"
-        />
-
-        <KpiCard
-          label="Repayment Rate"
-          value={`${Number(
-            details.repaymentRate ?? 0,
-          ).toFixed(1)}%`}
-          icon="%"
-        />
-
-      </div>
-
-      {/* ======================================================
-          PROFILE + FINANCE
-      ====================================================== */}
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-        {/* PERSONAL */}
-
-        <SectionCard
-          title="Personal Information"
-          subtitle="Identity and contact details"
-        >
-
-          <InfoGrid>
-
-            <InfoItem
-              label="First Name"
-              value={
-                details.firstName
-              }
-            />
-
-            <InfoItem
-              label="Last Name"
-              value={
-                details.lastName
-              }
-            />
-
-            <InfoItem
-              label="Email"
-              value={
-                details.email
-              }
-            />
-
-            <InfoItem
-              label="Phone"
-              value={
-                details.phone
-              }
-            />
-
-            <InfoItem
-              label="Alternate Phone"
-              value={
-                details.alternatePhone
-              }
-            />
-
-            <InfoItem
-              label="National ID"
-              value={
-                details.nationalId
-              }
-            />
-
-            <InfoItem
-              label="Passport"
-              value={
-                details.passportNumber
-              }
-            />
-
-            <InfoItem
-              label="Date of Birth"
-              value={
-                details.dateOfBirth
-                  ? formatDate(
-                      details.dateOfBirth,
-                      locale,
-                    )
-                  : undefined
-              }
-            />
-
-            <InfoItem
-              label="Gender"
-              value={
-                details.gender
-              }
-            />
-
-            <InfoItem
-              label="Marital Status"
-              value={
-                details.maritalStatus
-              }
-            />
-
-            <InfoItem
-              label="Nationality"
-              value={
-                details.nationality
-              }
-            />
-
-            <InfoItem
-              label="Country"
-              value={
-                details.country
-              }
-            />
-
-          </InfoGrid>
-
-        </SectionCard>
-
-        {/* EMPLOYMENT */}
-
-        <SectionCard
-          title="Employment & Finance"
-          subtitle="Income and financial profile"
-        >
-
-          <InfoGrid>
-
-            <InfoItem
-              label="Employer"
-              value={
-                details.employerName
-              }
-            />
-
-            <InfoItem
-              label="Employment Type"
-              value={
-                details.employmentType
-              }
-            />
-
-            <InfoItem
-              label="Job Title"
-              value={
-                details.jobTitle
-              }
-            />
-
-            <InfoItem
-              label="Monthly Income"
-              value={formatCurrency(
-                details.monthlyIncome,
-                currency,
-                locale,
-              )}
-            />
-
-            <InfoItem
-              label="Monthly Expenses"
-              value={formatCurrency(
-                details.monthlyExpenses,
-                currency,
-                locale,
-              )}
-            />
-
-            <InfoItem
-              label="Net Worth"
-              value={formatCurrency(
-                details.netWorth,
-                currency,
-                locale,
-              )}
-            />
-
-            <InfoItem
-              label="Credit Bureau"
-              value={
-                details.creditBureau
-              }
-            />
-
-            <InfoItem
-              label="Credit Report Date"
-              value={
-                details.creditReportDate
-                  ? formatDate(
-                      details.creditReportDate,
-                      locale,
-                    )
-                  : undefined
-              }
-            />
-
-          </InfoGrid>
-
-        </SectionCard>
-
-      </div>
-
-      {/* ======================================================
-          ADDRESS
-      ====================================================== */}
-
-      <SectionCard
-        title="Address"
-        subtitle="Registered residential information"
-      >
-
-        <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 text-sm text-gray-700">
-          {details.address ||
-            'No address recorded.'}
-        </div>
-
-      </SectionCard>
-
-      {/* ======================================================
-          PORTFOLIO
-      ====================================================== */}
-
-      <SectionCard
-        title="Loan Portfolio"
-        subtitle="Current and historical lending exposure"
-        right={
-          <span className="text-xs font-semibold text-gray-400">
-            {loans.length}{' '}
-            {loans.length === 1
-              ? 'loan'
-              : 'loans'}
-          </span>
-        }
-      >
-
-        {loans.length === 0 ? (
-          <EmptyState
-            icon="◆"
-            title="No loans"
-            message="This borrower has no loan records."
+        <section>
+          <SectionHeading
+            title="Loan Statistics"
+            subtitle="Historical and current portfolio performance"
           />
-        ) : (
-          <div className="overflow-x-auto">
 
-            <table className="w-full min-w-[850px]">
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4">
+            <SmallStat
+              label="Completed"
+              value={details.completedLoans}
+            />
 
-              <thead>
-                <tr className="border-b border-gray-100">
+            <SmallStat
+              label="Defaulted"
+              value={details.defaultedLoans}
+              danger={
+                details.defaultedLoans > 0
+              }
+            />
 
-                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Loan
-                  </th>
+            <SmallStat
+              label="Written Off"
+              value={details.writtenOffLoans}
+              danger={
+                details.writtenOffLoans > 0
+              }
+            />
 
-                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Type
-                  </th>
+            <SmallStat
+              label="Total Borrowed"
+              value={formatCurrency(
+                details.totalBorrowed,
+                currency,
+                locale,
+              )}
+            />
 
-                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Status
-                  </th>
+            <SmallStat
+              label="Total Disbursed"
+              value={formatCurrency(
+                details.totalDisbursed,
+                currency,
+                locale,
+              )}
+            />
 
-                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Amount
-                  </th>
+            <SmallStat
+              label="Total Payments"
+              value={details.totalPayments}
+            />
+          </div>
+        </section>
 
-                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Outstanding
-                  </th>
+        {/* =====================================================
+            REPAYMENT PERFORMANCE
+        ===================================================== */}
 
-                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Rate
-                  </th>
+        <ProfileCard
+          title="Repayment Performance"
+          subtitle="Payment behaviour and collection quality"
+        >
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-y-7 gap-x-6">
 
-                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Maturity
-                  </th>
+            <PerformanceMetric
+              label="Repayment Rate"
+              value={`${Number(
+                details.repaymentRate ?? 0,
+              ).toFixed(1)}%`}
+              progress={Number(
+                details.repaymentRate ?? 0,
+              )}
+            />
 
-                </tr>
-              </thead>
+            <PerformanceMetric
+              label="On-Time Rate"
+              value={`${Number(
+                details.onTimePaymentRate ?? 0,
+              ).toFixed(1)}%`}
+              progress={Number(
+                details.onTimePaymentRate ?? 0,
+              )}
+            />
 
-              <tbody>
+            <PerformanceMetric
+              label="Successful Payments"
+              value={formatNumber(
+                details.successfulPayments,
+              )}
+            />
 
-                {loans.map(
-                  (
-                    loan: BorrowerLoanSummary,
-                  ) => (
-                    <tr
-                      key={
-                        loan.loanId
-                      }
-                      className="border-b border-gray-50 hover:bg-gray-50 transition"
-                    >
+            <PerformanceMetric
+              label="Missed Payments"
+              value={formatNumber(
+                details.missedPayments,
+              )}
+              danger={
+                details.missedPayments > 0
+              }
+            />
 
-                      <td className="py-4 px-3">
+            <PerformanceMetric
+              label="Overdue Payments"
+              value={formatNumber(
+                details.overduePayments,
+              )}
+              danger={
+                details.overduePayments > 0
+              }
+            />
 
-                        <div className="font-bold text-sm text-gray-900">
+            <PerformanceMetric
+              label="Current Days Past Due"
+              value={formatNumber(
+                details.currentDaysPastDue,
+              )}
+              danger={
+                details.currentDaysPastDue > 0
+              }
+            />
+
+            <PerformanceMetric
+              label="Maximum Days Past Due"
+              value={formatNumber(
+                details.maximumDaysPastDue,
+              )}
+              danger={
+                details.maximumDaysPastDue > 0
+              }
+            />
+
+            <PerformanceMetric
+              label="Behaviour"
+              value={
+                details.repaymentBehaviour ||
+                '—'
+              }
+            />
+          </div>
+        </ProfileCard>
+
+        {/* =====================================================
+            RISK & BEHAVIOUR
+        ===================================================== */}
+
+        <ProfileCard
+          title="Risk & Behaviour"
+          subtitle="Credit risk indicators used by the lending team"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+            <RiskBox
+              label="Risk Level"
+              value={
+                details.riskLevel || '—'
+              }
+              tone="neutral"
+            />
+
+            <RiskBox
+              label="Repayment Behaviour"
+              value={
+                details.repaymentBehaviour ||
+                '—'
+              }
+              tone="neutral"
+            />
+
+            <RiskBox
+              label="Good Payer"
+              value={
+                details.goodPayer
+                  ? 'Yes'
+                  : 'No'
+              }
+              tone={
+                details.goodPayer
+                  ? 'good'
+                  : 'bad'
+              }
+            />
+
+            <RiskBox
+              label="Currently Overdue"
+              value={
+                details.currentlyOverdue
+                  ? 'Yes'
+                  : 'No'
+              }
+              tone={
+                details.currentlyOverdue
+                  ? 'bad'
+                  : 'good'
+              }
+            />
+
+            <RiskBox
+              label="Default History"
+              value={
+                details.hasDefaultHistory
+                  ? 'Yes'
+                  : 'No'
+              }
+              tone={
+                details.hasDefaultHistory
+                  ? 'bad'
+                  : 'good'
+              }
+            />
+
+            <RiskBox
+              label="Multiple Active Loans"
+              value={
+                details.hasMultipleActiveLoans
+                  ? 'Yes'
+                  : 'No'
+              }
+              tone={
+                details.hasMultipleActiveLoans
+                  ? 'warning'
+                  : 'good'
+              }
+            />
+          </div>
+        </ProfileCard>
+
+        {/* =====================================================
+            LOANS
+        ===================================================== */}
+
+        <ProfileCard
+          title="Loan Portfolio"
+          subtitle="All loans associated with this borrower"
+          right={
+            <span className="px-3 py-1.5 rounded-full bg-slate-100 text-xs font-bold text-slate-600">
+              {loans.length}{' '}
+              {loans.length === 1
+                ? 'Loan'
+                : 'Loans'}
+            </span>
+          }
+        >
+          {loans.length === 0 ? (
+            <EmptyState message="No loans found for this borrower." />
+          ) : (
+            <div className="overflow-x-auto -mx-2">
+              <table className="w-full min-w-[900px]">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <TableHeader>
+                      Reference
+                    </TableHeader>
+
+                    <TableHeader>
+                      Type
+                    </TableHeader>
+
+                    <TableHeader>
+                      Status
+                    </TableHeader>
+
+                    <TableHeader>
+                      Amount
+                    </TableHeader>
+
+                    <TableHeader>
+                      Outstanding
+                    </TableHeader>
+
+                    <TableHeader>
+                      Rate
+                    </TableHeader>
+
+                    <TableHeader>
+                      Maturity
+                    </TableHeader>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {loans.map(
+                    (
+                      loan: BorrowerLoanSummary,
+                    ) => (
+                      <tr
+                        key={loan.loanId}
+                        className="border-b border-slate-50 hover:bg-slate-50/70 transition-colors"
+                      >
+                        <TableCell strong>
                           {loan.referenceNumber ??
                             `#${loan.loanId}`}
-                        </div>
+                        </TableCell>
 
-                        <div className="text-xs text-gray-400 mt-1">
-                          Loan ID #
-                          {
-                            loan.loanId
-                          }
-                        </div>
+                        <TableCell>
+                          {loan.loanType ?? '—'}
+                        </TableCell>
 
-                      </td>
+                        <TableCell>
+                          <StatusBadge
+                            value={
+                              loan.status ?? '—'
+                            }
+                          />
+                        </TableCell>
 
-                      <td className="py-4 px-3 text-sm text-gray-600">
-                        {loan.loanType ??
-                          '—'}
-                      </td>
+                        <TableCell>
+                          {formatCurrency(
+                            loan.loanAmount,
+                            loan.currency ??
+                              currency,
+                            locale,
+                          )}
+                        </TableCell>
 
-                      <td className="py-4 px-3">
+                        <TableCell strong>
+                          {formatCurrency(
+                            loan.outstandingBalance,
+                            loan.currency ??
+                              currency,
+                            locale,
+                          )}
+                        </TableCell>
 
-                        <StatusBadge
-                          status={
-                            loan.status
-                          }
-                        />
+                        <TableCell>
+                          {loan.interestRate !=
+                          null
+                            ? `${loan.interestRate}%`
+                            : '—'}
+                        </TableCell>
 
-                      </td>
+                        <TableCell>
+                          {loan.maturityDate
+                            ? formatDate(
+                                loan.maturityDate,
+                                locale,
+                              )
+                            : '—'}
+                        </TableCell>
+                      </tr>
+                    ),
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </ProfileCard>
 
-                      <td className="py-4 px-3 text-right text-sm font-semibold text-gray-800">
-                        {formatCurrency(
-                          loan.loanAmount,
-                          loan.currency ??
-                            currency,
-                          locale,
-                        )}
-                      </td>
+        {/* =====================================================
+            PAYMENT HISTORY
+        ===================================================== */}
 
-                      <td className="py-4 px-3 text-right text-sm font-bold text-gray-900">
-                        {formatCurrency(
-                          loan.outstandingBalance,
-                          loan.currency ??
-                            currency,
-                          locale,
-                        )}
-                      </td>
+        <ProfileCard
+          title="Payment History"
+          subtitle="Complete repayment transaction history"
+          right={
+            <span className="px-3 py-1.5 rounded-full bg-slate-100 text-xs font-bold text-slate-600">
+              {payments.length}{' '}
+              {payments.length === 1
+                ? 'Payment'
+                : 'Payments'}
+            </span>
+          }
+        >
+          {payments.length === 0 ? (
+            <EmptyState message="No payments found for this borrower." />
+          ) : (
+            <div className="overflow-x-auto -mx-2">
+              <table className="w-full min-w-[1000px]">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <TableHeader>
+                      Date
+                    </TableHeader>
 
-                      <td className="py-4 px-3 text-right text-sm text-gray-600">
-                        {loan.interestRate !=
-                        null
-                          ? `${loan.interestRate}%`
-                          : '—'}
-                      </td>
+                    <TableHeader>
+                      Loan
+                    </TableHeader>
 
-                      <td className="py-4 px-3 text-right text-sm text-gray-500">
-                        {loan.maturityDate
-                          ? formatDate(
-                              loan.maturityDate,
-                              locale,
-                            )
-                          : '—'}
-                      </td>
+                    <TableHeader>
+                      Amount
+                    </TableHeader>
 
-                    </tr>
-                  ),
-                )}
+                    <TableHeader>
+                      Principal
+                    </TableHeader>
 
-              </tbody>
+                    <TableHeader>
+                      Interest
+                    </TableHeader>
 
-            </table>
+                    <TableHeader>
+                      Method
+                    </TableHeader>
 
-          </div>
-        )}
+                    <TableHeader>
+                      Status
+                    </TableHeader>
 
-      </SectionCard>
+                    <TableHeader>
+                      Late
+                    </TableHeader>
+                  </tr>
+                </thead>
 
-      {/* ======================================================
-          REPAYMENT PERFORMANCE
-      ====================================================== */}
-
-      <SectionCard
-        title="Repayment Performance"
-        subtitle="Borrower repayment behaviour"
-      >
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-
-          <Metric
-            label="Total Payments"
-            value={formatNumber(
-              details.totalPayments,
-            )}
-          />
-
-          <Metric
-            label="Successful"
-            value={formatNumber(
-              details.successfulPayments,
-            )}
-            positive
-          />
-
-          <Metric
-            label="Missed"
-            value={formatNumber(
-              details.missedPayments,
-            )}
-            danger={
-              Number(
-                details.missedPayments ??
-                  0,
-              ) > 0
-            }
-          />
-
-          <Metric
-            label="Overdue"
-            value={formatNumber(
-              details.overduePayments,
-            )}
-            danger={
-              Number(
-                details.overduePayments ??
-                  0,
-              ) > 0
-            }
-          />
-
-          <Metric
-            label="Repayment Rate"
-            value={`${Number(
-              details.repaymentRate ??
-                0,
-            ).toFixed(1)}%`}
-          />
-
-          <Metric
-            label="On-Time Rate"
-            value={`${Number(
-              details.onTimePaymentRate ??
-                0,
-            ).toFixed(1)}%`}
-            positive
-          />
-
-          <Metric
-            label="Current DPD"
-            value={formatNumber(
-              details.currentDaysPastDue,
-            )}
-            danger={
-              Number(
-                details.currentDaysPastDue ??
-                  0,
-              ) > 0
-            }
-          />
-
-          <Metric
-            label="Maximum DPD"
-            value={formatNumber(
-              details.maximumDaysPastDue,
-            )}
-            danger={
-              Number(
-                details.maximumDaysPastDue ??
-                  0,
-              ) > 0
-            }
-          />
-
-        </div>
-
-      </SectionCard>
-
-      {/* ======================================================
-          RISK
-      ====================================================== */}
-
-      <SectionCard
-        title="Risk & Behaviour"
-        subtitle="Credit and repayment risk indicators"
-      >
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-
-          <RiskCard
-            label="Risk Level"
-            value={
-              details.riskLevel
-            }
-          />
-
-          <RiskCard
-            label="Repayment Behaviour"
-            value={
-              details.repaymentBehaviour
-            }
-          />
-
-          <RiskCard
-            label="Good Payer"
-            value={
-              details.goodPayer
-                ? 'Yes'
-                : 'No'
-            }
-            positive={
-              details.goodPayer
-            }
-          />
-
-          <RiskCard
-            label="Currently Overdue"
-            value={
-              details.currentlyOverdue
-                ? 'Yes'
-                : 'No'
-            }
-            positive={
-              !details.currentlyOverdue
-            }
-            danger={
-              details.currentlyOverdue
-            }
-          />
-
-          <RiskCard
-            label="Default History"
-            value={
-              details.hasDefaultHistory
-                ? 'Yes'
-                : 'No'
-            }
-            positive={
-              !details.hasDefaultHistory
-            }
-            danger={
-              details.hasDefaultHistory
-            }
-          />
-
-          <RiskCard
-            label="Multiple Active Loans"
-            value={
-              details.hasMultipleActiveLoans
-                ? 'Yes'
-                : 'No'
-            }
-            danger={
-              details.hasMultipleActiveLoans
-            }
-            positive={
-              !details.hasMultipleActiveLoans
-            }
-          />
-
-        </div>
-
-      </SectionCard>
-
-      {/* ======================================================
-          PAYMENT HISTORY
-      ====================================================== */}
-
-      <SectionCard
-        title="Payment History"
-        subtitle="Recent borrower payment activity"
-        right={
-          <span className="text-xs font-semibold text-gray-400">
-            {payments.length}{' '}
-            {payments.length === 1
-              ? 'payment'
-              : 'payments'}
-          </span>
-        }
-      >
-
-        {payments.length === 0 ? (
-          <EmptyState
-            icon="✓"
-            title="No payments"
-            message="No payment records have been recorded for this borrower."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-
-            <table className="w-full min-w-[900px]">
-
-              <thead>
-                <tr className="border-b border-gray-100">
-
-                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Date
-                  </th>
-
-                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Loan
-                  </th>
-
-                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Amount
-                  </th>
-
-                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Principal
-                  </th>
-
-                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Interest
-                  </th>
-
-                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Method
-                  </th>
-
-                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Status
-                  </th>
-
-                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
-                    Timing
-                  </th>
-
-                </tr>
-              </thead>
-
-              <tbody>
-
-                {payments.map(
-                  (
-                    payment: BorrowerPayment,
-                  ) => {
-
-                    const paymentDate =
-                      payment.paidDate ??
-                      payment.paymentDate ??
-                      payment.dueDate;
-
-                    const late =
-                      payment.isLate ||
-                      payment.onTime ===
-                        false;
-
-                    return (
+                <tbody>
+                  {payments.map(
+                    (
+                      payment: BorrowerPayment,
+                    ) => (
                       <tr
                         key={
                           payment.paymentId
                         }
-                        className="border-b border-gray-50 hover:bg-gray-50 transition"
+                        className="border-b border-slate-50 hover:bg-slate-50/70 transition-colors"
                       >
-
-                        <td className="py-4 px-3 text-sm text-gray-600">
-                          {paymentDate
+                        <TableCell>
+                          {(
+                            payment.paidDate ??
+                            payment.paymentDate ??
+                            payment.dueDate
+                          )
                             ? formatDate(
-                                paymentDate,
+                                payment.paidDate ??
+                                  payment.paymentDate ??
+                                  payment.dueDate ??
+                                  undefined,
                                 locale,
                               )
                             : '—'}
-                        </td>
+                        </TableCell>
 
-                        <td className="py-4 px-3">
+                        <TableCell strong>
+                          {payment.loanReference ??
+                            payment.loanNumber ??
+                            `#${payment.loanId}`}
+                        </TableCell>
 
-                          <div className="font-bold text-sm text-gray-800">
-                            {payment.loanReference ??
-                              payment.loanNumber ??
-                              `#${payment.loanId}`}
-                          </div>
-
-                        </td>
-
-                        <td className="py-4 px-3 text-right text-sm font-bold text-gray-900">
+                        <TableCell strong>
                           {formatCurrency(
                             payment.amountPaid ??
                               payment.amount ??
@@ -1096,9 +1011,9 @@ export default function BorrowerDetailsPage() {
                               currency,
                             locale,
                           )}
-                        </td>
+                        </TableCell>
 
-                        <td className="py-4 px-3 text-right text-sm text-gray-600">
+                        <TableCell>
                           {formatCurrency(
                             payment.principalComponent ??
                               payment.principal,
@@ -1106,9 +1021,9 @@ export default function BorrowerDetailsPage() {
                               currency,
                             locale,
                           )}
-                        </td>
+                        </TableCell>
 
-                        <td className="py-4 px-3 text-right text-sm text-gray-600">
+                        <TableCell>
                           {formatCurrency(
                             payment.interestComponent ??
                               payment.interest,
@@ -1116,127 +1031,138 @@ export default function BorrowerDetailsPage() {
                               currency,
                             locale,
                           )}
-                        </td>
+                        </TableCell>
 
-                        <td className="py-4 px-3 text-sm text-gray-600">
+                        <TableCell>
                           {payment.paymentMethod ??
                             payment.method ??
                             '—'}
-                        </td>
+                        </TableCell>
 
-                        <td className="py-4 px-3">
-
+                        <TableCell>
                           <StatusBadge
-                            status={
-                              payment.status
+                            value={
+                              payment.status ??
+                              '—'
                             }
                           />
+                        </TableCell>
 
-                        </td>
-
-                        <td className="py-4 px-3">
-
-                          {late ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-50 text-red-600 text-xs font-bold">
+                        <TableCell>
+                          {payment.isLate ||
+                          payment.onTime ===
+                            false ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-red-700 text-xs font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                               Late
                             </span>
                           ) : (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-bold">
-                              On time
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              On Time
                             </span>
                           )}
-
-                        </td>
-
+                        </TableCell>
                       </tr>
-                    );
-                  },
-                )}
+                    ),
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </ProfileCard>
 
-              </tbody>
+        {/* =====================================================
+            FOOTER
+        ===================================================== */}
 
-            </table>
+        {details.createdAt && (
+          <div className="flex items-center justify-between border-t border-slate-200 pt-5 pb-6">
+            <span className="text-xs font-medium text-slate-400">
+              Borrower registered{' '}
+              {formatDate(
+                details.createdAt,
+                locale,
+              )}
+            </span>
 
+            <span className="text-xs font-semibold text-slate-400">
+              ID #{details.borrowerId}
+            </span>
           </div>
         )}
-
-      </SectionCard>
-
-      {/* ======================================================
-          FOOTER
-      ====================================================== */}
-
-      {details.createdAt && (
-        <div className="flex items-center justify-between text-xs text-gray-400 pt-2">
-
-          <span>
-            Borrower registered{' '}
-            {formatDate(
-              details.createdAt,
-              locale,
-            )}
-          </span>
-
-          <span>
-            ID #{details.borrowerId}
-          </span>
-
-        </div>
-      )}
-
+      </div>
     </div>
   );
 }
 
-/**
- * ============================================================
- * SECTION CARD
- * ============================================================
- */
+/* =============================================================
+   SECTION HEADING
+============================================================= */
 
-function SectionCard({
+function SectionHeading({
   title,
   subtitle,
-  right,
+}: {
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="mb-4">
+      <h2 className="text-lg font-bold text-slate-950">
+        {title}
+      </h2>
+
+      <p className="text-sm text-slate-500 mt-0.5">
+        {subtitle}
+      </p>
+    </div>
+  );
+}
+
+/* =============================================================
+   PROFILE CARD
+============================================================= */
+
+function ProfileCard({
+  title,
+  subtitle,
   children,
+  right,
 }: {
   title: string;
   subtitle?: string;
-  right?: React.ReactNode;
   children: React.ReactNode;
+  right?: React.ReactNode;
 }) {
   return (
     <Card>
+      <div className="p-6 sm:p-7">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-base font-bold text-slate-950">
+              {title}
+            </h2>
 
-      <div className="flex items-start justify-between gap-4 mb-5">
+            {subtitle && (
+              <p className="text-xs text-slate-400 mt-1">
+                {subtitle}
+              </p>
+            )}
+          </div>
 
-        <div>
-          <h2 className="font-bold text-gray-900">
-            {title}
-          </h2>
-
-          {subtitle && (
-            <p className="text-xs text-gray-500 mt-1">
-              {subtitle}
-            </p>
-          )}
+          {right}
         </div>
 
-        {right}
-
+        {children}
       </div>
-
-      {children}
-
     </Card>
   );
 }
 
-/**
- * ============================================================
- * INFO GRID
- * ============================================================
- */
+/* =============================================================
+   INFO GRID
+============================================================= */
 
 function InfoGrid({
   children,
@@ -1244,350 +1170,406 @@ function InfoGrid({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6">
       {children}
     </div>
   );
 }
 
-/**
- * ============================================================
- * INFO ITEM
- * ============================================================
- */
+/* =============================================================
+   INFO
+============================================================= */
 
-function InfoItem({
+function Info({
   label,
   value,
+  mono = false,
 }: {
   label: string;
   value?: string | number | null;
+  mono?: boolean;
 }) {
-  const hasValue =
-    value !== undefined &&
-    value !== null &&
-    String(value).trim() !== '';
+  const empty =
+    value === undefined ||
+    value === null ||
+    String(value).trim() === '';
 
   return (
-    <div>
-
-      <div className="text-[10px] uppercase tracking-[0.12em] text-gray-400 font-bold">
-        {label}
-      </div>
-
-      <div className="mt-1 text-sm font-semibold text-gray-800 break-words">
-        {hasValue
-          ? String(value)
-          : '—'}
-      </div>
-
-    </div>
-  );
-}
-
-/**
- * ============================================================
- * KPI CARD
- * ============================================================
- */
-
-function KpiCard({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon: string;
-}) {
-  return (
-    <Card>
-
-      <div className="flex items-start justify-between gap-3">
-
-        <div className="min-w-0">
-
-          <div className="text-[10px] uppercase tracking-[0.1em] text-gray-400 font-bold">
-            {label}
-          </div>
-
-          <div className="mt-2 text-lg font-extrabold text-gray-900 truncate">
-            {value}
-          </div>
-
-        </div>
-
-        <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center text-sm font-bold flex-shrink-0">
-          {icon}
-        </div>
-
-      </div>
-
-    </Card>
-  );
-}
-
-/**
- * ============================================================
- * METRIC
- * ============================================================
- */
-
-function Metric({
-  label,
-  value,
-  positive,
-  danger,
-}: {
-  label: string;
-  value: string;
-  positive?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <div>
-
-      <div className="text-[10px] uppercase tracking-[0.1em] text-gray-400 font-bold">
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-[0.14em] font-bold text-slate-400">
         {label}
       </div>
 
       <div
-        className={`mt-1 text-lg font-extrabold ${
+        className={`mt-1.5 text-sm font-semibold break-words ${
+          mono
+            ? 'font-mono text-slate-700'
+            : 'text-slate-800'
+        }`}
+      >
+        {empty ? '—' : String(value)}
+      </div>
+    </div>
+  );
+}
+
+/* =============================================================
+   HERO METRIC
+============================================================= */
+
+function HeroMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone:
+    | 'good'
+    | 'warning'
+    | 'danger'
+    | 'neutral';
+}) {
+  const color =
+    tone === 'good'
+      ? 'text-emerald-600'
+      : tone === 'warning'
+      ? 'text-amber-600'
+      : tone === 'danger'
+      ? 'text-red-600'
+      : 'text-slate-900';
+
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-[0.16em] font-bold text-slate-400">
+        {label}
+      </div>
+
+      <div
+        className={`mt-1 text-2xl sm:text-3xl font-extrabold tracking-tight ${color}`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* =============================================================
+   METRIC CARD
+============================================================= */
+
+function MetricCard({
+  label,
+  value,
+  icon,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: string;
+  icon: string;
+  tone?:
+    | 'neutral'
+    | 'teal'
+    | 'amber'
+    | 'green'
+    | 'red';
+}) {
+  const iconClass =
+    tone === 'teal'
+      ? 'bg-teal-50 text-teal-600'
+      : tone === 'amber'
+      ? 'bg-amber-50 text-amber-600'
+      : tone === 'green'
+      ? 'bg-emerald-50 text-emerald-600'
+      : tone === 'red'
+      ? 'bg-red-50 text-red-600'
+      : 'bg-slate-100 text-slate-600';
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition-all">
+      <div className="flex items-center justify-between gap-3">
+        <div
+          className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold ${iconClass}`}
+        >
+          {icon}
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <div className="text-[10px] uppercase tracking-[0.13em] font-bold text-slate-400">
+          {label}
+        </div>
+
+        <div className="mt-1.5 text-xl font-extrabold tracking-tight text-slate-950 truncate">
+          {value}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =============================================================
+   SMALL STAT
+============================================================= */
+
+function SmallStat({
+  label,
+  value,
+  danger = false,
+}: {
+  label: string;
+  value: string | number;
+  danger?: boolean;
+}) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4 shadow-sm">
+      <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400">
+        {label}
+      </div>
+
+      <div
+        className={`mt-2 text-lg font-extrabold ${
           danger
             ? 'text-red-600'
-            : positive
-            ? 'text-teal-600'
-            : 'text-gray-900'
+            : 'text-slate-950'
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* =============================================================
+   PERFORMANCE
+============================================================= */
+
+function PerformanceMetric({
+  label,
+  value,
+  progress,
+  danger = false,
+}: {
+  label: string;
+  value: string;
+  progress?: number;
+  danger?: boolean;
+}) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400">
+        {label}
+      </div>
+
+      <div
+        className={`mt-1.5 text-lg font-extrabold ${
+          danger
+            ? 'text-red-600'
+            : 'text-slate-900'
         }`}
       >
         {value}
       </div>
 
+      {progress !== undefined && (
+        <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-teal-500 rounded-full transition-all"
+            style={{
+              width: `${Math.min(
+                100,
+                Math.max(0, progress),
+              )}%`,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-/**
- * ============================================================
- * RISK CARD
- * ============================================================
- */
+/* =============================================================
+   RISK BOX
+============================================================= */
 
-function RiskCard({
+function RiskBox({
   label,
   value,
-  positive,
-  danger,
+  tone,
 }: {
   label: string;
-  value?: string | null;
-  positive?: boolean;
-  danger?: boolean;
+  value: string;
+  tone:
+    | 'neutral'
+    | 'good'
+    | 'bad'
+    | 'warning';
 }) {
-  return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+  const styles =
+    tone === 'good'
+      ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
+      : tone === 'bad'
+      ? 'bg-red-50 border-red-100 text-red-700'
+      : tone === 'warning'
+      ? 'bg-amber-50 border-amber-100 text-amber-700'
+      : 'bg-slate-50 border-slate-100 text-slate-700';
 
-      <div className="text-[10px] uppercase tracking-[0.1em] text-gray-400 font-bold">
+  return (
+    <div
+      className={`rounded-2xl border p-4 ${styles}`}
+    >
+      <div className="text-[10px] uppercase tracking-[0.12em] font-bold opacity-60">
         {label}
       </div>
 
-      <div
-        className={`mt-2 text-sm font-bold ${
-          danger
-            ? 'text-red-600'
-            : positive
-            ? 'text-teal-600'
-            : 'text-gray-800'
-        }`}
-      >
-        {value || '—'}
+      <div className="mt-1.5 text-sm font-bold">
+        {value}
       </div>
-
     </div>
   );
 }
 
-/**
- * ============================================================
- * STATUS BADGE
- * ============================================================
- */
+/* =============================================================
+   BADGE
+============================================================= */
+
+function Badge({
+  text,
+  type,
+}: {
+  text: string;
+  type:
+    | 'success'
+    | 'danger'
+    | 'warning';
+}) {
+  const styles =
+    type === 'success'
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+      : type === 'danger'
+      ? 'bg-red-50 text-red-700 border-red-100'
+      : 'bg-amber-50 text-amber-700 border-amber-100';
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold ${styles}`}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-current" />
+      {text}
+    </span>
+  );
+}
+
+/* =============================================================
+   STATUS BADGE
+============================================================= */
 
 function StatusBadge({
-  status,
+  value,
 }: {
-  status?: string | null;
+  value: string;
 }) {
-  const value =
-    status || 'Unknown';
-
   const normalized =
     value.toUpperCase();
 
-  let classes =
-    'bg-gray-100 text-gray-600';
+  let styles =
+    'bg-slate-100 text-slate-600 border-slate-200';
 
   if (
-    normalized.includes('PAID') ||
-    normalized.includes('COMPLETED') ||
-    normalized.includes('SUCCESS')
-  ) {
-    classes =
-      'bg-teal-50 text-teal-700';
-  } else if (
     normalized.includes('ACTIVE') ||
-    normalized.includes('APPROVED')
+    normalized.includes('APPROVED') ||
+    normalized.includes('COMPLETED') ||
+    normalized.includes('PAID')
   ) {
-    classes =
-      'bg-blue-50 text-blue-700';
-  } else if (
+    styles =
+      'bg-emerald-50 text-emerald-700 border-emerald-100';
+  }
+
+  if (
+    normalized.includes('PENDING') ||
+    normalized.includes('PROCESS')
+  ) {
+    styles =
+      'bg-amber-50 text-amber-700 border-amber-100';
+  }
+
+  if (
     normalized.includes('OVERDUE') ||
     normalized.includes('DEFAULT') ||
-    normalized.includes('FAILED') ||
-    normalized.includes('REJECTED')
+    normalized.includes('REJECT') ||
+    normalized.includes('FAILED')
   ) {
-    classes =
-      'bg-red-50 text-red-600';
-  } else if (
-    normalized.includes('PENDING')
-  ) {
-    classes =
-      'bg-yellow-50 text-yellow-700';
+    styles =
+      'bg-red-50 text-red-700 border-red-100';
   }
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold ${classes}`}
+      className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[10px] uppercase tracking-wide font-bold ${styles}`}
     >
       {value}
     </span>
   );
 }
 
-/**
- * ============================================================
- * GENERAL BADGE
- * ============================================================
- */
+/* =============================================================
+   TABLE
+============================================================= */
 
-function Badge({
-  label,
-  type = 'neutral',
+function TableHeader({
+  children,
 }: {
-  label: string;
-  type?: 'neutral' | 'danger';
+  children: React.ReactNode;
 }) {
   return (
-    <span
-      className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-        type === 'danger'
-          ? 'bg-red-50 text-red-600'
-          : 'bg-gray-100 text-gray-600'
-      }`}
-    >
-      {label}
-    </span>
+    <th className="px-3 py-3 text-left text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400 whitespace-nowrap">
+      {children}
+    </th>
   );
 }
 
-/**
- * ============================================================
- * EMPTY STATE
- * ============================================================
- */
+function TableCell({
+  children,
+  strong = false,
+}: {
+  children: React.ReactNode;
+  strong?: boolean;
+}) {
+  return (
+    <td
+      className={`px-3 py-4 text-sm whitespace-nowrap ${
+        strong
+          ? 'font-bold text-slate-800'
+          : 'font-medium text-slate-600'
+      }`}
+    >
+      {children}
+    </td>
+  );
+}
+
+/* =============================================================
+   EMPTY STATE
+============================================================= */
 
 function EmptyState({
-  icon,
-  title,
   message,
 }: {
-  icon: string;
-  title: string;
   message: string;
 }) {
   return (
-    <div className="py-12 text-center">
-
-      <div className="mx-auto w-12 h-12 rounded-xl bg-gray-100 text-gray-400 flex items-center justify-center font-bold">
-        {icon}
+    <div className="py-14 text-center">
+      <div className="mx-auto w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 text-xl">
+        —
       </div>
 
-      <h3 className="mt-4 text-sm font-bold text-gray-800">
-        {title}
-      </h3>
-
-      <p className="mt-1 text-xs text-gray-500">
+      <div className="mt-4 text-sm font-semibold text-slate-700">
         {message}
-      </p>
+      </div>
 
+      <div className="mt-1 text-xs text-slate-400">
+        There is currently no information to display.
+      </div>
     </div>
   );
-}
-
-/**
- * ============================================================
- * CREDIT HELPERS
- * ============================================================
- */
-
-function getCreditColor(
-  score?: number | null,
-) {
-  if (
-    score == null
-  ) {
-    return 'text-gray-400';
-  }
-
-  if (score >= 700) {
-    return 'text-teal-600';
-  }
-
-  if (score >= 600) {
-    return 'text-yellow-600';
-  }
-
-  return 'text-red-500';
-}
-
-function getCreditBarColor(
-  score?: number | null,
-) {
-  if (
-    score == null
-  ) {
-    return 'bg-gray-300';
-  }
-
-  if (score >= 700) {
-    return 'bg-teal-500';
-  }
-
-  if (score >= 600) {
-    return 'bg-yellow-500';
-  }
-
-  return 'bg-red-500';
-}
-
-function getCreditLabel(
-  score: number,
-) {
-  if (score >= 750) {
-    return 'Excellent';
-  }
-
-  if (score >= 700) {
-    return 'Very Good';
-  }
-
-  if (score >= 650) {
-    return 'Good';
-  }
-
-  if (score >= 600) {
-    return 'Fair';
-  }
-
-  return 'High Risk';
 }
