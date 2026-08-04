@@ -26,43 +26,18 @@ import java.util.List;
 @PreAuthorize("hasAnyRole('ADMIN','MANAGER','AUDITOR')")
 public class CreditBureauExportController {
 
-    // ============================================================
-    // SERVICES
-    // ============================================================
     private final RegulatoryReportingService reportingService;
     private final ReportExportService exportService;
     private final AuditService auditService;
     private final CurrentUserUtil currentUserUtil;
 
-    // ============================================================
-    // REPORT COLUMNS
-    // ============================================================
     private static final List<String> COLUMNS = List.of(
-            "Borrower ID",
-            "National ID",
-            "Full Name",
-            "Date of Birth",
-            "Gender",
-            "Phone",
-            "Loan Number",
-            "Loan Type",
-            "Loan Status",
-            "Repayment Classification",
-            "Loan Amount",
-            "Outstanding Balance",
-            "Days Past Due",
-            "Credit Score",
-            "Date Opened",
-            "Last Payment",
-            "Maturity Date",
-            "Date Closed",
-            "Branch",
-            "Currency"
+            "Borrower ID", "National ID", "Full Name", "Date of Birth", "Gender", "Phone",
+            "Loan Number", "Loan Type", "Loan Status", "Repayment Classification", "Loan Amount",
+            "Outstanding Balance", "Days Past Due", "Credit Score", "Date Opened", "Last Payment",
+            "Maturity Date", "Date Closed", "Branch", "Currency"
     );
 
-    // ============================================================
-    // PREVIEW
-    // ============================================================
     @GetMapping("/preview")
     public ResponseEntity<ApiResponse<List<CreditBureauRecord>>> preview(
             @RequestParam(required = false) Long branchId,
@@ -70,7 +45,6 @@ public class CreditBureauExportController {
             @RequestParam(required = false) String to
     ) {
         Long organizationId = currentUserUtil.getCurrentOrganizationId();
-
         if (organizationId == null) {
             throw new IllegalStateException("Current user is not associated with an organization.");
         }
@@ -80,35 +54,21 @@ public class CreditBureauExportController {
         validateDateRange(fromDate, toDate);
 
         List<CreditBureauRecord> records = reportingService.buildCreditBureauExport(
-                organizationId,
-                branchId,
-                fromDate,
-                toDate
+                organizationId, branchId, fromDate, toDate
         );
 
         auditService.log(
                 currentUserUtil.getCurrentUser().getOrganization(),
                 currentUserUtil.getCurrentUser(),
-                "VIEW",
-                "CreditBureauExport",
-                "preview",
-                "Previewed Credit Bureau report"
-                        + " | Records: " + records.size()
-                        + " | Branch: " + (branchId == null ? "ALL" : branchId)
-                        + " | From: " + (fromDate == null ? "ALL" : fromDate)
-                        + " | To: " + (toDate == null ? "ALL" : toDate),
-                null,
-                null,
-                "Regulatory Reporting"
+                "VIEW", "CreditBureauExport", "preview",
+                "Previewed Credit Bureau report | Records: " + records.size(),
+                null, null, "Regulatory Reporting"
         );
 
         return ResponseEntity.ok(ApiResponse.ok(records));
     }
 
-    // ============================================================
-    // EXPORT
-    // ============================================================
-   @GetMapping(value = "/download", produces = {
+    @GetMapping(value = "/download", produces = {
             MediaType.APPLICATION_OCTET_STREAM_VALUE,
             MediaType.APPLICATION_PDF_VALUE,
             "text/csv"
@@ -120,7 +80,6 @@ public class CreditBureauExportController {
             @RequestParam(required = false) String to
     ) {
         Long organizationId = currentUserUtil.getCurrentOrganizationId();
-
         if (organizationId == null) {
             throw new IllegalStateException("Current user is not associated with an organization.");
         }
@@ -130,10 +89,7 @@ public class CreditBureauExportController {
         validateDateRange(fromDate, toDate);
 
         List<CreditBureauRecord> records = reportingService.buildCreditBureauExport(
-                organizationId,
-                branchId,
-                fromDate,
-                toDate
+                organizationId, branchId, fromDate, toDate
         );
 
         byte[] fileBytes;
@@ -142,14 +98,16 @@ public class CreditBureauExportController {
 
         try {
             if ("csv".equalsIgnoreCase(format)) {
-                // Native CSV Stream Engine
-                StringBuilder csvContent = new StringBuilder();
-                csvContent.append(String.join(",", COLUMNS)).append("\n");
+                // ========================================================
+                // NATIVE CSV ENGINE
+                // ========================================================
+                StringBuilder csv = new StringBuilder();
+                csv.append(String.join(",", COLUMNS)).append("\n");
 
                 if (records != null) {
                     for (CreditBureauRecord r : records) {
-                        csvContent.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d,%d,%s,%s,%s,%s,%s,%s\n",
-                                r.getBorrowerId() != null ? r.getBorrowerId() : "",
+                        csv.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d,%d,%s,%s,%s,%s,%s,%s\n",
+                                String.valueOf(r.getBorrowerId()),
                                 r.getNationalId() != null ? r.getNationalId() : "",
                                 r.getFullName() != null ? r.getFullName().replace(",", " ") : "",
                                 r.getDateOfBirth() != null ? r.getDateOfBirth() : "",
@@ -159,10 +117,7 @@ public class CreditBureauExportController {
                                 r.getLoanType() != null ? r.getLoanType() : "",
                                 r.getLoanStatus() != null ? r.getLoanStatus() : "",
                                 r.getRepaymentClassification() != null ? r.getRepaymentClassification() : "",
-                                r.getLoanAmount(),          // Primitive double
-                                r.getOutstandingBalance(),  // Primitive double
-                                r.getDaysPastDue(),         // Primitive int
-                                r.getCreditScore(),         // Primitive int
+                                r.getLoanAmount(), r.getOutstandingBalance(), r.getDaysPastDue(), r.getCreditScore(),
                                 r.getDateOpened() != null ? r.getDateOpened() : "",
                                 r.getLastPaymentDate() != null ? r.getLastPaymentDate() : "",
                                 r.getMaturityDate() != null ? r.getMaturityDate() : "",
@@ -172,55 +127,68 @@ public class CreditBureauExportController {
                         ));
                     }
                 }
-                fileBytes = csvContent.toString().getBytes(StandardCharsets.UTF_8);
+                fileBytes = csv.toString().getBytes(StandardCharsets.UTF_8);
                 headers.setContentType(MediaType.parseMediaType("text/csv"));
                 headers.setContentDispositionFormData("attachment", fileName + ".csv");
 
             } else if ("pdf".equalsIgnoreCase(format)) {
-                // Native Clean Structured Streaming Document for PDFs
-                StringBuilder pdfText = new StringBuilder();
-                pdfText.append("CREDIT BUREAU REPORT\nGenerated: ").append(LocalDate.now()).append("\n\n");
-                if (records != null) {
-                    for (CreditBureauRecord r : records) {
-                        pdfText.append(String.format("Borrower: %s | Loan No: %s | Amount: %.2f | Balance: %.2f | DPD: %d\n",
-                                r.getFullName() != null ? r.getFullName() : "N/A",
-                                r.getLoanNumber() != null ? r.getLoanNumber() : "N/A",
-                                r.getLoanAmount(),
-                                r.getOutstandingBalance(),
-                                r.getDaysPastDue()
-                        ));
+                // ========================================================
+                // NATIVE TRUE PDF ENGINE (OpenPDF)
+                // ========================================================
+                try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                    com.lowagie.text.Document document = new com.lowagie.text.Document(com.lowagie.text.PageSize.A4.rotate());
+                    com.lowagie.text.pdf.PdfWriter.getInstance(document, out);
+                    document.open();
+
+                    com.lowagie.text.Paragraph title = new com.lowagie.text.Paragraph("CREDIT BUREAU REGULATORY REPORT\nGenerated: " + LocalDate.now() + "\n\n");
+                    title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+                    document.add(title);
+
+                    // Creating table layout matching targeted parameters
+                    com.lowagie.text.Table table = new com.lowagie.text.Table(5);
+                    table.addCell("Full Name");
+                    table.addCell("Loan Number");
+                    table.addCell("Loan Amount");
+                    table.addCell("Outstanding Balance");
+                    table.addCell("Days Past Due");
+
+                    if (records != null) {
+                        for (CreditBureauRecord r : records) {
+                            table.addCell(r.getFullName() != null ? r.getFullName() : "");
+                            table.addCell(r.getLoanNumber() != null ? r.getLoanNumber() : "");
+                            table.addCell(String.format("%.2f", r.getLoanAmount()));
+                            table.addCell(String.format("%.2f", r.getOutstandingBalance()));
+                            table.addCell(String.valueOf(r.getDaysPastDue()));
+                        }
                     }
+
+                    document.add(table);
+                    document.close();
+                    fileBytes = out.toByteArray();
                 }
-                fileBytes = pdfText.toString().getBytes(StandardCharsets.UTF_8);
                 headers.setContentType(MediaType.APPLICATION_PDF);
                 headers.setContentDispositionFormData("attachment", fileName + ".pdf");
 
             } else {
-                // Native Apache POI streaming processor (.xlsx)
-                try (org.apache.poi.ss.usermodel.Workbook workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+                // ========================================================
+                // NATIVE EXCEL (.XLSX) ENGINE
+                // ========================================================
+                try (org.apache.poi.ss.usermodel.Workbook wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
                      java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
-
-                    org.apache.poi.ss.usermodel.Sheet sheet = workbook.createSheet("Credit Bureau Report");
-
-                    // Set up Header Rows
+                    
+                    org.apache.poi.ss.usermodel.Sheet sheet = wb.createSheet("Credit Bureau Report");
                     org.apache.poi.ss.usermodel.Row headerRow = sheet.createRow(0);
                     for (int i = 0; i < COLUMNS.size(); i++) {
                         headerRow.createCell(i).setCellValue(COLUMNS.get(i));
                     }
 
-                    // Feed Data Rows
                     int rowIdx = 1;
                     if (records != null) {
                         for (CreditBureauRecord r : records) {
-                            // Create row instance for the current record item
-                                                        // Create row instance for the current record item
                             org.apache.poi.ss.usermodel.Row row = sheet.createRow(rowIdx++);
-                            
-                            // Cell 0 is a primitive double: write directly without null checks
                             row.createCell(0).setCellValue(r.getBorrowerId());
-                            
-                            // Map individual data values cell-by-cell explicitly
                             row.createCell(1).setCellValue(r.getNationalId() != null ? r.getNationalId() : "");
+                            // Map individual text-based fields safely
                             row.createCell(2).setCellValue(r.getFullName() != null ? r.getFullName() : "");
                             row.createCell(3).setCellValue(r.getDateOfBirth() != null ? r.getDateOfBirth().toString() : "");
                             row.createCell(4).setCellValue(r.getGender() != null ? r.getGender() : "");
@@ -230,7 +198,7 @@ public class CreditBureauExportController {
                             row.createCell(8).setCellValue(r.getLoanStatus() != null ? r.getLoanStatus() : "");
                             row.createCell(9).setCellValue(r.getRepaymentClassification() != null ? r.getRepaymentClassification() : "");
                             
-                            // Primitive properties write directly without null checks
+                            // Map primitive numerical fields directly without null checks
                             row.createCell(10).setCellValue(r.getLoanAmount());
                             row.createCell(11).setCellValue(r.getOutstandingBalance());
                             row.createCell(12).setCellValue(r.getDaysPastDue());
@@ -243,27 +211,27 @@ public class CreditBureauExportController {
                             row.createCell(17).setCellValue(r.getDateClosed() != null ? r.getDateClosed().toString() : "");
                             row.createCell(18).setCellValue(r.getBranchName() != null ? r.getBranchName() : "");
                             row.createCell(19).setCellValue(r.getCurrency() != null ? r.getCurrency() : "");
-
                         }
                     }
 
                     // Flush internal workbook buffers to output binary stream
-                    workbook.write(out);
+                    wb.write(out);
                     fileBytes = out.toByteArray();
                 }
-                
-                // Configure specific presentation headers for standard Excel layout
+
+                // Configure presentation headers for Excel format
                 headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
                 headers.setContentDispositionFormData("attachment", fileName + ".xlsx");
             }
+
         } catch (Exception e) {
             throw new IllegalStateException("Failed to securely generate raw binary export payload", e);
         }
 
-        // Apply global corporate caching safety rules
+        // Apply global security anti-caching headers
         headers.setCacheControl("no-cache, no-store, must-revalidate");
 
-        // Write actions to persistence auditing registers
+        // Log actions to persistence auditing registry
         auditService.log(
                 currentUserUtil.getCurrentUser().getOrganization(),
                 currentUserUtil.getCurrentUser(),
@@ -276,14 +244,16 @@ public class CreditBureauExportController {
                 "Regulatory Reporting"
         );
 
-        // Serve raw file transmission packet down to client connection
-        return ResponseEntity.ok().headers(headers).body(fileBytes);
+        // Return the binary file stream directly to the client connection
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(fileBytes);
     }
 
     // ============================================================
     // PRIVATE UTILS
     // ============================================================
-    
+
     private LocalDate parseDate(String d) {
         return d != null && !d.trim().isEmpty() ? LocalDate.parse(d) : null;
     }
