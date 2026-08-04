@@ -1339,7 +1339,7 @@ export const regulatoryApi = {
 
       const response =
         await api.get(
-          '/regulatory/credit-bureau/export',
+          '/regulatory/credit-bureau/download',
           {
             params: {
               ...queryParams,

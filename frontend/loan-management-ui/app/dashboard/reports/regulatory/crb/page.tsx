@@ -138,10 +138,6 @@ export default function CreditBureauPage() {
     };
 
 
-  // ==========================================================
-  // INITIAL
-  // ==========================================================
-
   useEffect(() => {
 
     void loadPreview();
@@ -157,9 +153,7 @@ export default function CreditBureauPage() {
 
       <div className="mx-auto max-w-[1600px] space-y-6 p-4 md:p-6 lg:p-8">
 
-        {/* ================================================== */}
-        {/* HEADER */}
-        {/* ================================================== */}
+       
 
         <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-950 p-6 text-white shadow-xl md:p-8">
 
@@ -214,9 +208,7 @@ export default function CreditBureauPage() {
         </section>
 
 
-        {/* ================================================== */}
-        {/* ERROR */}
-        {/* ================================================== */}
+      
 
         {error && (
 
@@ -227,9 +219,6 @@ export default function CreditBureauPage() {
         )}
 
 
-        {/* ================================================== */}
-        {/* SEARCH */}
-        {/* ================================================== */}
 
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
 
@@ -291,10 +280,6 @@ export default function CreditBureauPage() {
         </section>
 
 
-        {/* ================================================== */}
-        {/* SUMMARY */}
-        {/* ================================================== */}
-
         <div className="grid gap-4 sm:grid-cols-3">
 
           <SummaryCard
@@ -326,9 +311,6 @@ export default function CreditBureauPage() {
         </div>
 
 
-        {/* ================================================== */}
-        {/* TABLE */}
-        {/* ================================================== */}
 
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
 
@@ -508,9 +490,6 @@ export default function CreditBureauPage() {
 }
 
 
-// ============================================================
-// COMPONENTS
-// ============================================================
 
 function Field({
   label,
