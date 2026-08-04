@@ -107,7 +107,7 @@ public class CreditBureauExportController {
                 if (records != null) {
                     for (CreditBureauRecord r : records) {
                         csv.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d,%d,%s,%s,%s,%s,%s,%s\n",
-                                String.valueOf(r.getBorrowerId()),
+                                r.getBorrowerId() != null ? String.valueOf(r.getBorrowerId()) : "",
                                 r.getNationalId() != null ? r.getNationalId() : "",
                                 r.getFullName() != null ? r.getFullName().replace(",", " ") : "",
                                 r.getDateOfBirth() != null ? r.getDateOfBirth() : "",
@@ -117,7 +117,8 @@ public class CreditBureauExportController {
                                 r.getLoanType() != null ? r.getLoanType() : "",
                                 r.getLoanStatus() != null ? r.getLoanStatus() : "",
                                 r.getRepaymentClassification() != null ? r.getRepaymentClassification() : "",
-                                r.getLoanAmount(), r.getOutstandingBalance(), r.getDaysPastDue(), r.getCreditScore(),
+                                r.getLoanAmount(), r.getOutstandingBalance(), r.getDaysPastDue(), 
+                                r.getCreditScore() != null ? r.getCreditScore() : 0,
                                 r.getDateOpened() != null ? r.getDateOpened() : "",
                                 r.getLastPaymentDate() != null ? r.getLastPaymentDate() : "",
                                 r.getMaturityDate() != null ? r.getMaturityDate() : "",
@@ -133,10 +134,11 @@ public class CreditBureauExportController {
 
             } else if ("pdf".equalsIgnoreCase(format)) {
                 // ========================================================
-                // NATIVE TRUE PDF ENGINE (OpenPDF)
+                // NATIVE FIXED PDF ENGINE (OpenPDF - Now supports all 20 columns)
                 // ========================================================
                 try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
-                    com.lowagie.text.Document document = new com.lowagie.text.Document(com.lowagie.text.PageSize.A4.rotate());
+                    // Set Page Size to A3 Rotate (Landscape) to accommodate all 20 columns comfortably
+                    com.lowagie.text.Document document = new com.lowagie.text.Document(com.lowagie.text.PageSize.A3.rotate());
                     com.lowagie.text.pdf.PdfWriter.getInstance(document, out);
                     document.open();
 
@@ -144,28 +146,49 @@ public class CreditBureauExportController {
                     title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
                     document.add(title);
 
-                    // Creating table layout matching targeted parameters
-                    com.lowagie.text.Table table = new com.lowagie.text.Table(5);
-                    table.addCell("Full Name");
-                    table.addCell("Loan Number");
-                    table.addCell("Loan Amount");
-                    table.addCell("Outstanding Balance");
-                    table.addCell("Days Past Due");
+                    // Initialize OpenPDF Table with exactly 20 columns to match your DTO
+                    com.lowagie.text.Table table = new com.lowagie.text.Table(20);
+                    table.setPadding(3);
+                    table.setWidth(100);
 
+                    // Add all 20 headers dynamically from your static COLUMNS configuration
+                    for (String columnName : COLUMNS) {
+                        table.addCell(columnName);
+                    }
+
+                    // Feed Data Rows cleanly with complete properties mapping
                     if (records != null) {
                         for (CreditBureauRecord r : records) {
+                            table.addCell(r.getBorrowerId() != null ? String.valueOf(r.getBorrowerId()) : "");
+                            table.addCell(r.getNationalId() != null ? r.getNationalId() : "");
                             table.addCell(r.getFullName() != null ? r.getFullName() : "");
+                            table.addCell(r.getDateOfBirth() != null ? r.getDateOfBirth().toString() : "");
+                            table.addCell(r.getGender() != null ? r.getGender() : "");
+                            table.addCell(r.getPhone() != null ? r.getPhone() : "");
                             table.addCell(r.getLoanNumber() != null ? r.getLoanNumber() : "");
+                            table.addCell(r.getLoanType() != null ? r.getLoanType() : "");
+                            table.addCell(r.getLoanStatus() != null ? r.getLoanStatus() : "");
+                            table.addCell(r.getRepaymentClassification() != null ? r.getRepaymentClassification() : "");
                             table.addCell(String.format("%.2f", r.getLoanAmount()));
                             table.addCell(String.format("%.2f", r.getOutstandingBalance()));
                             table.addCell(String.valueOf(r.getDaysPastDue()));
+                            table.addCell(r.getCreditScore() != null ? String.valueOf(r.getCreditScore()) : "");
+                            table.addCell(r.getDateOpened() != null ? r.getDateOpened().toString() : "");
+                            table.addCell(r.getLastPaymentDate() != null ? r.getLastPaymentDate().toString() : "");
+                            // Add trailing cells to finish out the OpenPDF table matrix
+                            table.addCell(r.getMaturityDate() != null ? r.getMaturityDate().toString() : "");
+                            table.addCell(r.getDateClosed() != null ? r.getDateClosed().toString() : "");
+                            table.addCell(r.getBranchName() != null ? r.getBranchName() : "");
+                            table.addCell(r.getCurrency() != null ? r.getCurrency() : "");
                         }
                     }
 
+                    // Append table to PDF layout and close stream buffers safely
                     document.add(table);
                     document.close();
                     fileBytes = out.toByteArray();
                 }
+
                 headers.setContentType(MediaType.APPLICATION_PDF);
                 headers.setContentDispositionFormData("attachment", fileName + ".pdf");
 
@@ -178,6 +201,7 @@ public class CreditBureauExportController {
                     
                     org.apache.poi.ss.usermodel.Sheet sheet = wb.createSheet("Credit Bureau Report");
                     org.apache.poi.ss.usermodel.Row headerRow = sheet.createRow(0);
+                    
                     for (int i = 0; i < COLUMNS.size(); i++) {
                         headerRow.createCell(i).setCellValue(COLUMNS.get(i));
                     }
@@ -186,9 +210,10 @@ public class CreditBureauExportController {
                     if (records != null) {
                         for (CreditBureauRecord r : records) {
                             org.apache.poi.ss.usermodel.Row row = sheet.createRow(rowIdx++);
-                            row.createCell(0).setCellValue(r.getBorrowerId());
+                            
+                            // Map all 20 columns cleanly to Excel cell indexes row by row
+                            row.createCell(0).setCellValue(r.getBorrowerId() != null ? r.getBorrowerId() : 0L);
                             row.createCell(1).setCellValue(r.getNationalId() != null ? r.getNationalId() : "");
-                            // Map individual text-based fields safely
                             row.createCell(2).setCellValue(r.getFullName() != null ? r.getFullName() : "");
                             row.createCell(3).setCellValue(r.getDateOfBirth() != null ? r.getDateOfBirth().toString() : "");
                             row.createCell(4).setCellValue(r.getGender() != null ? r.getGender() : "");
@@ -197,14 +222,10 @@ public class CreditBureauExportController {
                             row.createCell(7).setCellValue(r.getLoanType() != null ? r.getLoanType() : "");
                             row.createCell(8).setCellValue(r.getLoanStatus() != null ? r.getLoanStatus() : "");
                             row.createCell(9).setCellValue(r.getRepaymentClassification() != null ? r.getRepaymentClassification() : "");
-                            
-                            // Map primitive numerical fields directly without null checks
                             row.createCell(10).setCellValue(r.getLoanAmount());
                             row.createCell(11).setCellValue(r.getOutstandingBalance());
                             row.createCell(12).setCellValue(r.getDaysPastDue());
-                            row.createCell(13).setCellValue(r.getCreditScore());
-                            
-                            // Map trailing date details and metadata properties safely
+                            row.createCell(13).setCellValue(r.getCreditScore() != null ? r.getCreditScore() : 0);
                             row.createCell(14).setCellValue(r.getDateOpened() != null ? r.getDateOpened().toString() : "");
                             row.createCell(15).setCellValue(r.getLastPaymentDate() != null ? r.getLastPaymentDate().toString() : "");
                             row.createCell(16).setCellValue(r.getMaturityDate() != null ? r.getMaturityDate().toString() : "");
@@ -213,13 +234,11 @@ public class CreditBureauExportController {
                             row.createCell(19).setCellValue(r.getCurrency() != null ? r.getCurrency() : "");
                         }
                     }
-
-                    // Flush internal workbook buffers to output binary stream
+                    
                     wb.write(out);
                     fileBytes = out.toByteArray();
                 }
 
-                // Configure presentation headers for Excel format
                 headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
                 headers.setContentDispositionFormData("attachment", fileName + ".xlsx");
             }
@@ -228,10 +247,10 @@ public class CreditBureauExportController {
             throw new IllegalStateException("Failed to securely generate raw binary export payload", e);
         }
 
-        // Apply global security anti-caching headers
+        // Apply strict corporate anti-cache headers
         headers.setCacheControl("no-cache, no-store, must-revalidate");
 
-        // Log actions to persistence auditing registry
+        // Commit execution parameters to system audit tables
         auditService.log(
                 currentUserUtil.getCurrentUser().getOrganization(),
                 currentUserUtil.getCurrentUser(),
@@ -244,7 +263,7 @@ public class CreditBureauExportController {
                 "Regulatory Reporting"
         );
 
-        // Return the binary file stream directly to the client connection
+        // Serve raw file transmission bundle down to connection pipeline
         return ResponseEntity.ok()
                 .headers(headers)
                 .body(fileBytes);
