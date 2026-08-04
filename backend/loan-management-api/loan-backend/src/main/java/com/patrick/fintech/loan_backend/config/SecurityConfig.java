@@ -20,12 +20,16 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 
 import org.springframework.security.config.http.SessionCreationPolicy;
 
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.Arrays;
 import java.util.List;
@@ -82,72 +86,31 @@ public class SecurityConfig {
             )
 
             // ====================================================
-            // EXCEPTION HANDLING
+            // SECURITY EXCEPTION HANDLING
+            //
+            // IMPORTANT:
+            // Security exceptions must be handled here.
+            // GlobalExceptionHandler is not the correct place for
+            // authorization failures occurring inside Spring Security.
             // ====================================================
 
             .exceptionHandling(exception ->
                 exception
 
-                    // ------------------------------------------------
+                    // --------------------------------------------
                     // 401 - NOT AUTHENTICATED
-                    // ------------------------------------------------
+                    // --------------------------------------------
 
                     .authenticationEntryPoint(
-                        (request, response, authException) -> {
-
-                            response.setStatus(
-                                jakarta.servlet.http.HttpServletResponse
-                                    .SC_UNAUTHORIZED
-                            );
-
-                            response.setCharacterEncoding("UTF-8");
-
-                            response.setContentType(
-                                "application/json"
-                            );
-
-                            response.getWriter().write(
-                                """
-                                {
-                                  "success": false,
-                                  "status": 401,
-                                  "error": "UNAUTHORIZED",
-                                  "message": "Your session has expired or is no longer valid. Please log in again."
-                                }
-                                """
-                            );
-                        }
+                        authenticationEntryPoint()
                     )
 
-                    // ------------------------------------------------
+                    // --------------------------------------------
                     // 403 - AUTHENTICATED BUT NOT AUTHORIZED
-                    // ------------------------------------------------
+                    // --------------------------------------------
 
                     .accessDeniedHandler(
-                        (request, response, accessDeniedException) -> {
-
-                            response.setStatus(
-                                jakarta.servlet.http.HttpServletResponse
-                                    .SC_FORBIDDEN
-                            );
-
-                            response.setCharacterEncoding("UTF-8");
-
-                            response.setContentType(
-                                "application/json"
-                            );
-
-                            response.getWriter().write(
-                                """
-                                {
-                                  "success": false,
-                                  "status": 403,
-                                  "error": "FORBIDDEN",
-                                  "message": "You are authenticated but do not have permission to perform this action."
-                                }
-                                """
-                            );
-                        }
+                        accessDeniedHandler()
                     )
             )
 
@@ -158,9 +121,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(authorize ->
                 authorize
 
-                    // ------------------------------------------------
+                    // --------------------------------------------
                     // PUBLIC ENDPOINTS
-                    // ------------------------------------------------
+                    // --------------------------------------------
 
                     .requestMatchers(
                         "/api/auth/**",
@@ -168,15 +131,29 @@ public class SecurityConfig {
                         "/swagger-ui/**",
                         "/swagger-ui.html",
                         "/api-docs/**",
+                        "/v3/api-docs/**",
                         "/actuator/health",
                         "/api/public/**",
                         "/public/**"
                     )
                     .permitAll()
 
-                    // ------------------------------------------------
-                    // EVERYTHING ELSE REQUIRES AUTHENTICATION
-                    // ------------------------------------------------
+                    // --------------------------------------------
+                    // REGULATORY ENDPOINTS
+                    //
+                    // Keep these authenticated.
+                    // Actual role permissions can additionally
+                    // be controlled with @PreAuthorize.
+                    // --------------------------------------------
+
+                    .requestMatchers(
+                        "/api/regulatory/**"
+                    )
+                    .authenticated()
+
+                    // --------------------------------------------
+                    // EVERYTHING ELSE
+                    // --------------------------------------------
 
                     .anyRequest()
                     .authenticated()
@@ -193,7 +170,7 @@ public class SecurityConfig {
             )
 
             // ====================================================
-            // RATE LIMIT FILTER
+            // RATE LIMIT
             // ====================================================
 
             .addFilterBefore(
@@ -202,7 +179,7 @@ public class SecurityConfig {
             )
 
             // ====================================================
-            // JWT FILTER
+            // JWT
             // ====================================================
 
             .addFilterBefore(
@@ -211,7 +188,7 @@ public class SecurityConfig {
             )
 
             // ====================================================
-            // REGULATORY API KEY FILTER
+            // REGULATORY API KEY
             // ====================================================
 
             .addFilterBefore(
@@ -224,7 +201,70 @@ public class SecurityConfig {
 
 
     // ============================================================
-    // CORS CONFIGURATION
+    // 401 AUTHENTICATION ENTRY POINT
+    // ============================================================
+
+    @Bean
+    public AuthenticationEntryPoint authenticationEntryPoint() {
+
+        return (request, response, authException) -> {
+
+            response.setStatus(
+                HttpServletResponse.SC_UNAUTHORIZED
+            );
+
+            response.setCharacterEncoding("UTF-8");
+
+            response.setContentType(
+                "application/json"
+            );
+
+            response.getWriter().write(
+                """
+                {
+                  "success": false,
+                  "error": "Authentication required. Please log in again."
+                }
+                """
+            );
+        };
+    }
+
+
+    // ============================================================
+    // 403 ACCESS DENIED HANDLER
+    // ============================================================
+
+    @Bean
+    public AccessDeniedHandler accessDeniedHandler() {
+
+        return (request, response, accessDeniedException) -> {
+
+            response.setStatus(
+                HttpServletResponse.SC_FORBIDDEN
+            );
+
+            response.setCharacterEncoding("UTF-8");
+
+            response.setContentType(
+                "application/json"
+            );
+
+            response.getWriter().write(
+                """
+                {
+                  "success": false,
+                  "error": "Access denied.",
+                  "detail": "Your account is authenticated but does not have permission to perform this action."
+                }
+                """
+            );
+        };
+    }
+
+
+    // ============================================================
+    // CORS
     // ============================================================
 
     @Bean
