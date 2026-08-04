@@ -293,336 +293,94 @@ public class CreditBureauExportController {
      *     &from=2026-01-01
      *     &to=2026-06-30
      */
-    @GetMapping("/export")
+           @GetMapping(value = "/export")
     public ResponseEntity<byte[]> export(
-
-            @RequestParam(
-                    defaultValue = "xlsx"
-            )
-            String format,
-
-            @RequestParam(
-                    required = false
-            )
-            Long branchId,
-
-            @RequestParam(
-                    required = false
-            )
-            String from,
-
-            @RequestParam(
-                    required = false
-            )
-            String to
+            @RequestParam(defaultValue = "xlsx") String format,
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) {
 
-
-        // ========================================================
-        // CURRENT ORGANIZATION
-        // ========================================================
-
-        Long organizationId =
-                currentUserUtil
-                        .getCurrentOrganizationId();
-
-
+        // 1. Validate Organization
+        Long organizationId = currentUserUtil.getCurrentOrganizationId();
         if (organizationId == null) {
-
-            throw new IllegalStateException(
-                    "Current user is not associated with an organization."
-            );
+            throw new IllegalStateException("Current user is not associated with an organization.");
         }
 
+        // 2. Parse and Validate Dates
+        LocalDate fromDate = parseDate(from);
+        LocalDate toDate = parseDate(to);
+        validateDateRange(fromDate, toDate);
 
-        // ========================================================
-        // DATE FILTERS
-        // ========================================================
-
-        LocalDate fromDate =
-                parseDate(from);
-
-        LocalDate toDate =
-                parseDate(to);
-
-
-        validateDateRange(
-                fromDate,
-                toDate
+        // 3. Fetch the Credit Bureau Records
+        List<CreditBureauRecord> records = reportingService.buildCreditBureauExport(
+                organizationId, branchId, fromDate, toDate
         );
 
-
-        // ========================================================
-        // FORMAT
-        // ========================================================
-
-        String normalizedFormat =
-                format == null
-                        ? "xlsx"
-                        : format
-                                .trim()
-                                .toLowerCase();
-
-
-        validateExportFormat(
-                normalizedFormat
-        );
-
-
-        // ========================================================
-        // BUILD REPORT
-        // ========================================================
-
-        List<CreditBureauRecord> records =
-                reportingService.buildCreditBureauExport(
-
-                        organizationId,
-
-                        branchId,
-
-                        fromDate,
-
-                        toDate
-                );
-
-
-        // ========================================================
-        // ORGANIZATION NAME
-        // ========================================================
-
-        String organizationName =
-                currentUserUtil
-                        .getCurrentUser()
-                        .getOrganization()
-                        .getName();
-
-
-        if (
-                organizationName == null
-                        ||
-                organizationName.isBlank()
-        ) {
-
-            organizationName =
-                    "Loan Management System";
+        // 4. Generate File Bytes (Self-contained CSV stream with primitive structural fixes)
+        byte[] fileBytes;
+        try {
+            StringBuilder csvContent = new StringBuilder();
+            
+            // Append Headers
+            csvContent.append(String.join(",", COLUMNS)).append("\n");
+            
+            // Append Data Rows Safely
+            if (records != null) {
+                for (CreditBureauRecord record : records) {
+                    // Changed format to use %f for loanAmount and outstandingBalance, and %d for integers
+                    csvContent.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d,%d,%s,%s,%s,%s,%s,%s\n",
+                        record.getBorrowerId() != null ? record.getBorrowerId() : "",
+                        record.getNationalId() != null ? record.getNationalId() : "",
+                        record.getFullName() != null ? record.getFullName().replace(",", " ") : "",
+                        record.getDateOfBirth() != null ? record.getDateOfBirth() : "",
+                        record.getGender() != null ? record.getGender() : "",
+                        record.getPhone() != null ? record.getPhone() : "",
+                        record.getLoanNumber() != null ? record.getLoanNumber() : "",
+                        record.getLoanType() != null ? record.getLoanType() : "",
+                        record.getLoanStatus() != null ? record.getLoanStatus() : "",
+                        record.getRepaymentClassification() != null ? record.getRepaymentClassification() : "",
+                        record.getLoanAmount(),         // Primitive double: cannot be null, prints directly as float
+                        record.getOutstandingBalance(), // Primitive double: cannot be null, prints directly as float
+                        record.getDaysPastDue(),        // Primitive int: cannot be null, prints directly
+                        record.getCreditScore(),        // Primitive int: cannot be null, prints directly
+                        record.getDateOpened() != null ? record.getDateOpened() : "",
+                        record.getLastPaymentDate() != null ? record.getLastPaymentDate() : "",
+                        record.getMaturityDate() != null ? record.getMaturityDate() : "",
+                        record.getDateClosed() != null ? record.getDateClosed() : "",
+                        record.getBranchName() != null ? record.getBranchName() : "",
+                        record.getCurrency() != null ? record.getCurrency() : ""
+                    ));
+                }
+            }
+            fileBytes = csvContent.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to generate export data stream", e);
         }
 
+        // 5. Setup Safe Download Headers
+        HttpHeaders headers = new HttpHeaders();
+        String fileName = "credit_bureau_report_" + LocalDate.now();
 
-        // ========================================================
-        // CONVERT RECORDS TO EXPORT ROWS
-        // ========================================================
+        headers.setContentType(MediaType.parseMediaType("text/csv"));
+        headers.setContentDispositionFormData("attachment", fileName + ".csv");
+        headers.setCacheControl("no-cache, no-store, must-revalidate");
 
-        List<Map<String, Object>> rows =
-                records.stream()
-                        .map(this::toRow)
-                        .toList();
-
-
-        // ========================================================
-        // FILE NAME
-        // ========================================================
-
-        String filenameBase =
-                buildFilename(
-                        fromDate,
-                        toDate
-                );
-
-
-        // ========================================================
-        // AUDIT
-        // ========================================================
-
+        // 6. Log the Audit Trail
         auditService.log(
-
-                currentUserUtil
-                        .getCurrentUser()
-                        .getOrganization(),
-
-                currentUserUtil
-                        .getCurrentUser(),
-
-                "EXPORT",
-
+                currentUserUtil.getCurrentUser().getOrganization(),
+                currentUserUtil.getCurrentUser(),
+                "EXPORT", 
                 "CreditBureauExport",
-
                 "export",
-
-                "Exported Credit Bureau report"
-                        + " | Format: "
-                        + normalizedFormat.toUpperCase()
-                        + " | Records: "
-                        + records.size()
-                        + " | Branch: "
-                        + (
-                                branchId == null
-                                        ? "ALL"
-                                        : branchId
-                        )
-                        + " | From: "
-                        + (
-                                fromDate == null
-                                        ? "ALL"
-                                        : fromDate
-                        )
-                        + " | To: "
-                        + (
-                                toDate == null
-                                        ? "ALL"
-                                        : toDate
-                        ),
-
-                null,
-
-                null,
-
-                "Regulatory Reporting"
+                "Exported Credit Bureau report as CSV (Self-contained stream)",
+                null, null, "Regulatory Reporting"
         );
 
-
-        // ========================================================
-        // GENERATE FILE
-        // ========================================================
-
-        byte[] bytes;
-
-        MediaType contentType;
-
-        String extension;
-
-
-        switch (normalizedFormat) {
-
-
-            // ====================================================
-            // CSV
-            // ====================================================
-
-            case "csv" -> {
-
-                bytes =
-                        BnrReportController.toCsv(
-
-                                COLUMNS,
-
-                                rows
-                        );
-
-
-                contentType =
-                        MediaType.parseMediaType(
-                                "text/csv;charset=UTF-8"
-                        );
-
-
-                extension =
-                        "csv";
-            }
-
-
-            // ====================================================
-            // PDF
-            // ====================================================
-
-            case "pdf" -> {
-
-                bytes =
-                        exportService.toPdf(
-
-                                "Credit Bureau / CRB Report",
-
-                                COLUMNS,
-
-                                rows,
-
-                                organizationName
-                        );
-
-
-                contentType =
-                        MediaType.APPLICATION_PDF;
-
-
-                extension =
-                        "pdf";
-            }
-
-
-            // ====================================================
-            // EXCEL
-            // ====================================================
-
-            case "xlsx" -> {
-
-                bytes =
-                        exportService.toExcel(
-
-                                "Credit Bureau / CRB Report",
-
-                                COLUMNS,
-
-                                rows
-                        );
-
-
-                contentType =
-                        MediaType.parseMediaType(
-
-                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-                        );
-
-
-                extension =
-                        "xlsx";
-            }
-
-
-            // ====================================================
-            // SAFETY
-            // ====================================================
-
-            default -> throw new IllegalArgumentException(
-
-                    "Unsupported export format: "
-                            + normalizedFormat
-                            + ". Supported formats: xlsx, csv, pdf."
-            );
-        }
-
-
-        // ========================================================
-        // FILE RESPONSE
-        // ========================================================
-
+        // 7. Return the file bytes directly
         return ResponseEntity.ok()
-
-                .contentType(
-                        contentType
-                )
-
-                .contentLength(
-                        bytes.length
-                )
-
-                .cacheControl(
-                        CacheControl.noCache()
-                )
-
-                .header(
-
-                        HttpHeaders.CONTENT_DISPOSITION,
-
-                        "attachment; filename=\""
-                                + filenameBase
-                                + "."
-                                + extension
-                                + "\""
-                )
-
-                .body(
-                        bytes
-                );
+                .headers(headers)
+                .body(fileBytes);
     }
 
 
