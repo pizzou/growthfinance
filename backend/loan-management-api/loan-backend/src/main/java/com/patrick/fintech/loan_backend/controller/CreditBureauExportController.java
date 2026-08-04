@@ -30,49 +30,11 @@ import java.util.List;
 import java.util.Map;
 
 
-/**
- * Staff-facing Credit Bureau reporting controller.
- *
- * IMPORTANT:
- *
- * This controller is for ADMIN/MANAGER users inside the
- * administration dashboard.
- *
- * It is NOT the external Credit Bureau API.
- *
- * External Credit Bureau API:
- *
- * /api/regulatory/external/credit-bureau/**
- *
- * Staff/Admin Credit Bureau:
- *
- * /api/regulatory/credit-bureau/**
- *
- *
- * AUTHORITY MODEL:
- *
- * This application uses authorities such as:
- *
- * ADMIN
- * MANAGER
- *
- * NOT:
- *
- * ROLE_ADMIN
- * ROLE_MANAGER
- *
- * Therefore this controller uses:
- *
- * @PreAuthorize("hasAnyAuthority('ADMIN','MANAGER')")
- *
- * instead of:
- *
- * @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
- */
+
 @RestController
 @RequestMapping("/api/regulatory/credit-bureau")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyAuthority('ADMIN','MANAGER')")
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
 public class CreditBureauExportController {
 
 
