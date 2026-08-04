@@ -3,7 +3,7 @@ import { get, post } from './api';
 import { Payment } from '../types/index';
 
 
-ggg
+
 export interface BorrowerPayment {
 
   id?: number;
