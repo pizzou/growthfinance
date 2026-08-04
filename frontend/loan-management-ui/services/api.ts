@@ -4,32 +4,98 @@ import axios, {
   AxiosHeaders,
   AxiosInstance,
   AxiosRequestConfig,
+  AxiosResponse,
 } from 'axios';
 
 /**
  * ============================================================
  * API CONFIGURATION
  * ============================================================
+ *
+ * Expected production value:
+ *
+ * NEXT_PUBLIC_API_URL=https://growthfinance.onrender.com/api
+ *
+ * The code below also protects against:
+ *
+ * https://growthfinance.onrender.com/api/
+ *
+ * becoming:
+ *
+ * /api//...
+ *
+ * ============================================================
  */
 
-const API_BASE_URL =
+const RAW_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   'http://localhost:8080/api';
 
+const API_BASE_URL =
+  RAW_API_BASE_URL.replace(/\/+$/, '');
+
+
+/**
+ * ============================================================
+ * AXIOS INSTANCE
+ * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * Do NOT put Content-Type: application/json globally.
+ *
+ * GET requests do not need it.
+ *
+ * Blob downloads especially should not inherit a JSON
+ * Content-Type header unnecessarily.
+ *
+ * Individual POST/PUT requests can specify their own
+ * Content-Type when needed.
+ * ============================================================
+ */
+
 const API: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 20000,
+  timeout: 30000,
+  withCredentials: false,
   headers: {
-    'Content-Type': 'application/json',
+    Accept: 'application/json',
   },
 });
+
+
+/**
+ * ============================================================
+ * TOKEN HELPER
+ * ============================================================
+ */
+
+const getStoredToken = (): string | null => {
+
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const token =
+    localStorage.getItem('token');
+
+  if (
+    !token ||
+    token.trim() === ''
+  ) {
+    return null;
+  }
+
+  return token.trim();
+};
+
 
 /**
  * ============================================================
  * REQUEST INTERCEPTOR
  * ============================================================
  *
- * Every authenticated request receives:
+ * Every request receives:
  *
  * Authorization: Bearer <JWT>
  *
@@ -48,38 +114,131 @@ const API: AxiosInstance = axios.create({
 
 API.interceptors.request.use(
   (config) => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('token');
 
-      if (token) {
-        /**
-         * Axios 1.x expects AxiosHeaders here.
-         *
-         * Using AxiosHeaders.set() avoids:
-         *
-         * Type 'string | number | true | AxiosHeaders | string[]'
-         * is not assignable to type 'string'
-         *
-         * errors.
-         */
-        const headers =
-          config.headers instanceof AxiosHeaders
-            ? config.headers
-            : new AxiosHeaders(config.headers);
+    const token =
+      getStoredToken();
 
-        headers.set(
-          'Authorization',
-          `Bearer ${token}`,
+
+    /**
+     * --------------------------------------------------------
+     * AUTHORIZATION
+     * --------------------------------------------------------
+     */
+
+    if (token) {
+
+      const headers =
+        config.headers instanceof AxiosHeaders
+          ? config.headers
+          : new AxiosHeaders(
+              config.headers
+            );
+
+      headers.set(
+        'Authorization',
+        `Bearer ${token}`,
+      );
+
+      config.headers =
+        headers;
+    }
+
+
+    /**
+     * --------------------------------------------------------
+     * ACCEPT HEADER
+     * --------------------------------------------------------
+     */
+
+    const headers =
+      config.headers instanceof AxiosHeaders
+        ? config.headers
+        : new AxiosHeaders(
+            config.headers
+          );
+
+    if (
+      !headers.has('Accept')
+    ) {
+      headers.set(
+        'Accept',
+        'application/json',
+      );
+    }
+
+    config.headers =
+      headers;
+
+
+    /**
+     * --------------------------------------------------------
+     * DEVELOPMENT DIAGNOSTICS
+     * --------------------------------------------------------
+     *
+     * This is intentionally limited to the browser console.
+     *
+     * It lets us confirm that the Credit Bureau request
+     * actually receives the JWT.
+     * --------------------------------------------------------
+     */
+
+    if (
+      typeof window !== 'undefined'
+    ) {
+
+      const url =
+        `${config.baseURL || ''}${config.url || ''}`;
+
+      if (
+        url.includes(
+          '/regulatory/'
+        )
+      ) {
+
+        console.debug(
+          '[REGULATORY REQUEST]',
+          {
+            method:
+              config.method?.toUpperCase(),
+
+            url,
+
+            hasToken:
+              Boolean(token),
+
+            tokenLength:
+              token?.length ?? 0,
+
+            responseType:
+              config.responseType,
+
+            headers: {
+              Authorization:
+                token
+                  ? 'Bearer [PRESENT]'
+                  : '[MISSING]',
+
+              Accept:
+                headers.get('Accept'),
+
+              ContentType:
+                headers.get(
+                  'Content-Type'
+                ),
+            },
+          }
         );
-
-        config.headers = headers;
       }
     }
 
+
     return config;
   },
-  (error) => Promise.reject(error),
+
+  (error) =>
+    Promise.reject(error),
 );
+
 
 /**
  * ============================================================
@@ -88,81 +247,232 @@ API.interceptors.request.use(
  */
 
 API.interceptors.response.use(
-  (response) => response,
-
-  (error: AxiosError<any>) => {
-    const status = error.response?.status;
-    const responseData = error.response?.data;
+  (response) => {
 
     /**
      * --------------------------------------------------------
-     * 401 = AUTHENTICATION FAILURE
+     * REGULATORY RESPONSE DEBUGGING
+     * --------------------------------------------------------
+     */
+
+    if (
+      typeof window !== 'undefined'
+    ) {
+
+      const url =
+        `${response.config.baseURL || ''}${response.config.url || ''}`;
+
+      if (
+        url.includes(
+          '/regulatory/'
+        )
+      ) {
+
+        console.debug(
+          '[REGULATORY RESPONSE]',
+          {
+            status:
+              response.status,
+
+            url,
+
+            contentType:
+              response.headers[
+                'content-type'
+              ],
+          }
+        );
+      }
+    }
+
+    return response;
+  },
+
+  (error: AxiosError<any>) => {
+
+    const status =
+      error.response?.status;
+
+    const responseData =
+      error.response?.data;
+
+
+    /**
+     * --------------------------------------------------------
+     * REGULATORY ERROR DEBUGGING
+     * --------------------------------------------------------
+     */
+
+    if (
+      typeof window !== 'undefined'
+    ) {
+
+      const config =
+        error.config;
+
+      const url =
+        config
+          ? `${config.baseURL || ''}${config.url || ''}`
+          : '[unknown URL]';
+
+
+      if (
+        url.includes(
+          '/regulatory/'
+        )
+      ) {
+
+        console.error(
+          '[REGULATORY ERROR]',
+          {
+            status,
+
+            url,
+
+            method:
+              config?.method?.toUpperCase(),
+
+            responseType:
+              config?.responseType,
+
+            responseData,
+
+            responseHeaders:
+              error.response?.headers,
+          }
+        );
+      }
+    }
+
+
+    /**
+     * --------------------------------------------------------
+     * 401
      * --------------------------------------------------------
      *
-     * Only remove the token for 401.
+     * Only remove authentication for 401.
      *
-     * A 403 means the user is authenticated but does not have
-     * permission, so we must NOT log them out automatically.
+     * 403 does NOT mean the token should be removed.
      */
+
     if (
       status === 401 &&
       typeof window !== 'undefined'
     ) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
 
-      window.location.href = '/login';
+      localStorage.removeItem(
+        'token'
+      );
+
+      localStorage.removeItem(
+        'user'
+      );
+
+      window.location.href =
+        '/login';
     }
 
-    const message =
+
+    /**
+     * --------------------------------------------------------
+     * ERROR MESSAGE
+     * --------------------------------------------------------
+     */
+
+    let message =
       responseData?.error ||
       responseData?.message ||
       error.message ||
       'An error occurred';
 
-    const err = new Error(message) as Error & {
-      status?: number;
-      data?: unknown;
-    };
 
-    err.status = status;
-    err.data = responseData;
+    /**
+     * --------------------------------------------------------
+     * BLOB ERROR
+     * --------------------------------------------------------
+     *
+     * When responseType = blob, Spring's JSON error response
+     * can itself arrive as a Blob.
+     *
+     * Do not blindly convert it to [object Blob].
+     * --------------------------------------------------------
+     */
 
-    return Promise.reject(err);
+    if (
+      responseData instanceof Blob
+    ) {
+
+      /**
+       * We cannot synchronously read the Blob.
+       *
+       * Keep a useful generic message here.
+       *
+       * The raw Blob remains available through err.data.
+       */
+
+      message =
+        status === 403
+          ? 'Access forbidden. The server rejected the Credit Bureau request.'
+          : status === 401
+            ? 'Authentication failed. Please log in again.'
+            : 'The server rejected the request.';
+    }
+
+
+    const err =
+      new Error(
+        message
+      ) as Error & {
+        status?: number;
+        data?: unknown;
+        response?: AxiosResponse;
+      };
+
+
+    err.status =
+      status;
+
+    err.data =
+      responseData;
+
+    err.response =
+      error.response;
+
+
+    return Promise.reject(
+      err
+    );
   },
 );
+
 
 /**
  * ============================================================
  * RESPONSE UNWRAPPER
- * ============================================================
- *
- * Supports backend responses such as:
- *
- * {
- *   success: true,
- *   data: {...}
- * }
- *
- * and also plain responses.
  * ============================================================
  */
 
 const unwrap = (
   body: unknown,
 ): unknown => {
+
   if (
     body &&
     typeof body === 'object' &&
     'data' in body
   ) {
+
     return (
-      body as Record<string, unknown>
+      body as Record<
+        string,
+        unknown
+      >
     ).data;
   }
 
   return body;
 };
+
 
 /**
  * ============================================================
@@ -173,36 +483,98 @@ const unwrap = (
 export const get = (
   url: string,
   config?: AxiosRequestConfig,
-): Promise<any> =>
-  API.get(url, config).then((response) =>
-    unwrap(response.data),
+): Promise<any> => {
+
+  return API.get(
+    url,
+    config
+  ).then(
+    (response) =>
+      unwrap(
+        response.data
+      )
   );
+};
+
 
 export const post = (
   url: string,
   data?: unknown,
   config?: AxiosRequestConfig,
-): Promise<any> =>
-  API.post(url, data, config).then((response) =>
-    unwrap(response.data),
+): Promise<any> => {
+
+  return API.post(
+    url,
+    data,
+    {
+      ...config,
+
+      headers: {
+        'Content-Type':
+          'application/json',
+
+        Accept:
+          'application/json',
+
+        ...(config?.headers || {}),
+      },
+    }
+  ).then(
+    (response) =>
+      unwrap(
+        response.data
+      )
   );
+};
+
 
 export const put = (
   url: string,
   data?: unknown,
   config?: AxiosRequestConfig,
-): Promise<any> =>
-  API.put(url, data, config).then((response) =>
-    unwrap(response.data),
+): Promise<any> => {
+
+  return API.put(
+    url,
+    data,
+    {
+      ...config,
+
+      headers: {
+        'Content-Type':
+          'application/json',
+
+        Accept:
+          'application/json',
+
+        ...(config?.headers || {}),
+      },
+    }
+  ).then(
+    (response) =>
+      unwrap(
+        response.data
+      )
   );
+};
+
 
 export const del = (
   url: string,
   config?: AxiosRequestConfig,
-): Promise<any> =>
-  API.delete(url, config).then((response) =>
-    unwrap(response.data),
+): Promise<any> => {
+
+  return API.delete(
+    url,
+    config
+  ).then(
+    (response) =>
+      unwrap(
+        response.data
+      )
   );
+};
+
 
 /**
  * ============================================================
@@ -211,18 +583,22 @@ export const del = (
  */
 
 export const authApi = {
+
   login: (
     email: string,
     password: string,
     mfaCode?: string,
     otp?: string,
   ) =>
-    post('/auth/login', {
-      email,
-      password,
-      mfaCode,
-      otp,
-    }),
+    post(
+      '/auth/login',
+      {
+        email,
+        password,
+        mfaCode,
+        otp,
+      },
+    ),
 
   register: (
     data: unknown,
@@ -233,8 +609,11 @@ export const authApi = {
     ),
 
   me: () =>
-    get('/auth/me'),
+    get(
+      '/auth/me'
+    ),
 };
+
 
 /**
  * ============================================================
@@ -243,6 +622,7 @@ export const authApi = {
  */
 
 export const loanApi = {
+
   list: (
     page = 0,
     size = 20,
@@ -312,7 +692,8 @@ export const loanApi = {
     post(
       `/loans/${id}/disburse`,
       {
-        disbursementMethod: method,
+        disbursementMethod:
+          method,
       },
     ),
 
@@ -330,27 +711,29 @@ export const loanApi = {
     ),
 
   dashboard: () =>
-    get('/loans/dashboard'),
+    get(
+      '/loans/dashboard'
+    ),
 
   schedule: (
     id: number,
   ) =>
     get(
-      `/loans/${id}/schedule`,
+      `/loans/${id}/schedule`
     ),
 
   risk: (
     id: number,
   ) =>
     get(
-      `/loans/${id}/risk`,
+      `/loans/${id}/risk`
     ),
 
   documentRequirements: (
     id: number,
   ) =>
     get(
-      `/loans/${id}/document-requirements`,
+      `/loans/${id}/document-requirements`
     ),
 
   restructure: (
@@ -386,7 +769,7 @@ export const loanApi = {
     id: number,
   ) =>
     get(
-      `/loans/${id}/comments`,
+      `/loans/${id}/comments`
     ),
 
   addComment: (
@@ -403,6 +786,7 @@ export const loanApi = {
     ),
 };
 
+
 /**
  * ============================================================
  * BRANCH API
@@ -410,9 +794,13 @@ export const loanApi = {
  */
 
 export const branchApi = {
+
   list: () =>
-    get('/branches'),
+    get(
+      '/branches'
+    ),
 };
+
 
 /**
  * ============================================================
@@ -421,6 +809,7 @@ export const branchApi = {
  */
 
 export const expenseApi = {
+
   list: (
     params: {
       page?: number;
@@ -431,23 +820,28 @@ export const expenseApi = {
       to?: string;
     } = {},
   ) => {
+
     const query =
       new URLSearchParams();
 
     query.set(
       'page',
-      String(params.page ?? 0),
+      String(
+        params.page ?? 0
+      )
     );
 
     query.set(
       'size',
-      String(params.size ?? 20),
+      String(
+        params.size ?? 20
+      )
     );
 
     if (params.category) {
       query.set(
         'category',
-        params.category,
+        params.category
       );
     }
 
@@ -456,26 +850,28 @@ export const expenseApi = {
     ) {
       query.set(
         'branchId',
-        String(params.branchId),
+        String(
+          params.branchId
+        )
       );
     }
 
     if (params.from) {
       query.set(
         'from',
-        params.from,
+        params.from
       );
     }
 
     if (params.to) {
       query.set(
         'to',
-        params.to,
+        params.to
       );
     }
 
     return get(
-      `/expenses?${query.toString()}`,
+      `/expenses?${query.toString()}`
     );
   },
 
@@ -483,7 +879,7 @@ export const expenseApi = {
     id: number,
   ) =>
     get(
-      `/expenses/${id}`,
+      `/expenses/${id}`
     ),
 
   summary: (
@@ -533,27 +929,30 @@ export const expenseApi = {
     paymentNotes?: string;
     receipt?: File | null;
   }) => {
+
     const form =
       new FormData();
 
     form.append(
       'expenseDate',
-      data.expenseDate,
+      data.expenseDate
     );
 
     form.append(
       'category',
-      data.category,
+      data.category
     );
 
     form.append(
       'amount',
-      String(data.amount),
+      String(data.amount)
     );
 
     form.append(
       'paymentAccountId',
-      String(data.paymentAccountId),
+      String(
+        data.paymentAccountId
+      )
     );
 
     if (
@@ -561,33 +960,35 @@ export const expenseApi = {
     ) {
       form.append(
         'branchId',
-        String(data.branchId),
+        String(
+          data.branchId
+        )
       );
     }
 
     if (data.description) {
       form.append(
         'description',
-        data.description,
+        data.description
       );
     }
 
     form.append(
       'paymentMethod',
-      data.paymentMethod,
+      data.paymentMethod
     );
 
     if (data.paymentProvider) {
       form.append(
         'paymentProvider',
-        data.paymentProvider,
+        data.paymentProvider
       );
     }
 
     if (data.paymentPhoneNumber) {
       form.append(
         'paymentPhoneNumber',
-        data.paymentPhoneNumber,
+        data.paymentPhoneNumber
       );
     }
 
@@ -596,28 +997,28 @@ export const expenseApi = {
     ) {
       form.append(
         'paymentTransactionReference',
-        data.paymentTransactionReference,
+        data.paymentTransactionReference
       );
     }
 
     if (data.paymentCode) {
       form.append(
         'paymentCode',
-        data.paymentCode,
+        data.paymentCode
       );
     }
 
     if (data.cardBrand) {
       form.append(
         'cardBrand',
-        data.cardBrand,
+        data.cardBrand
       );
     }
 
     if (data.cardLastFour) {
       form.append(
         'cardLastFour',
-        data.cardLastFour,
+        data.cardLastFour
       );
     }
 
@@ -626,45 +1027,43 @@ export const expenseApi = {
     ) {
       form.append(
         'cardAuthorizationCode',
-        data.cardAuthorizationCode,
+        data.cardAuthorizationCode
       );
     }
 
     if (data.chequeNumber) {
       form.append(
         'chequeNumber',
-        data.chequeNumber,
+        data.chequeNumber
       );
     }
 
     if (data.paymentNotes) {
       form.append(
         'paymentNotes',
-        data.paymentNotes,
+        data.paymentNotes
       );
     }
 
     if (data.receipt) {
       form.append(
         'receipt',
-        data.receipt,
+        data.receipt
       );
     }
 
     return API.post(
       '/expenses',
-      form,
-      {
-        headers: {
-          'Content-Type':
-            'multipart/form-data',
-        },
-      },
-    ).then((response) =>
-      unwrap(response.data),
+      form
+    ).then(
+      (response) =>
+        unwrap(
+          response.data
+        )
     );
   },
 };
+
 
 /**
  * ============================================================
@@ -673,33 +1072,34 @@ export const expenseApi = {
  */
 
 export const paymentApi = {
+
   record: (
     loanId: number,
     data: unknown,
     idempotencyKey?: string,
   ) =>
-    API.post(
+    post(
       `/loans/${loanId}/payments`,
       data,
       {
-        headers: idempotencyKey
-          ? {
-              'Idempotency-Key':
-                idempotencyKey,
-            }
-          : {},
-      },
-    ).then((response) =>
-      unwrap(response.data),
+        headers:
+          idempotencyKey
+            ? {
+                'Idempotency-Key':
+                  idempotencyKey,
+              }
+            : {},
+      }
     ),
 
   schedule: (
     loanId: number,
   ) =>
     get(
-      `/loans/${loanId}/payments`,
+      `/loans/${loanId}/payments`
     ),
 };
+
 
 /**
  * ============================================================
@@ -708,6 +1108,7 @@ export const paymentApi = {
  */
 
 export const borrowerApi = {
+
   list: (
     page = 0,
     size = 20,
@@ -726,14 +1127,14 @@ export const borrowerApi = {
     id: number,
   ) =>
     get(
-      `/borrowers/${id}`,
+      `/borrowers/${id}`
     ),
 
   getDetails: (
     id: number,
   ) =>
     get(
-      `/borrowers/${id}/details`,
+      `/borrowers/${id}/details`
     ),
 
   create: (
@@ -741,7 +1142,7 @@ export const borrowerApi = {
   ) =>
     post(
       '/borrowers',
-      data,
+      data
     ),
 
   update: (
@@ -750,9 +1151,10 @@ export const borrowerApi = {
   ) =>
     put(
       `/borrowers/${id}`,
-      data,
+      data
     ),
 };
+
 
 /**
  * ============================================================
@@ -761,30 +1163,31 @@ export const borrowerApi = {
  */
 
 export const complianceApi = {
+
   screen: (
     borrowerId: number,
   ) =>
     post(
-      `/compliance/borrowers/${borrowerId}/screen`,
+      `/compliance/borrowers/${borrowerId}/screen`
     ),
 
   history: (
     borrowerId: number,
   ) =>
     get(
-      `/compliance/borrowers/${borrowerId}/history`,
+      `/compliance/borrowers/${borrowerId}/history`
     ),
 
   status: (
     borrowerId: number,
   ) =>
     get(
-      `/compliance/borrowers/${borrowerId}/status`,
+      `/compliance/borrowers/${borrowerId}/status`
     ),
 
   pendingReviews: () =>
     get(
-      '/compliance/pending-reviews',
+      '/compliance/pending-reviews'
     ),
 
   decide: (
@@ -793,9 +1196,10 @@ export const complianceApi = {
   ) =>
     post(
       `/compliance/checks/${checkId}/decide`,
-      data,
+      data
     ),
 };
+
 
 /**
  * ============================================================
@@ -804,8 +1208,11 @@ export const complianceApi = {
  */
 
 export const mfaApi = {
+
   setup: () =>
-    post('/mfa/setup'),
+    post(
+      '/mfa/setup'
+    ),
 
   confirm: (
     code: string,
@@ -814,12 +1221,15 @@ export const mfaApi = {
       '/mfa/confirm',
       {
         code,
-      },
+      }
     ),
 
   disable: () =>
-    post('/mfa/disable'),
+    post(
+      '/mfa/disable'
+    ),
 };
+
 
 /**
  * ============================================================
@@ -828,6 +1238,7 @@ export const mfaApi = {
  */
 
 export const bulkApi = {
+
   disburse: (
     loanIds: number[],
     method = 'BANK_TRANSFER',
@@ -836,10 +1247,12 @@ export const bulkApi = {
       '/bulk/disburse',
       {
         loanIds,
-        disbursementMethod: method,
-      },
+        disbursementMethod:
+          method,
+      }
     ),
 };
+
 
 /**
  * ============================================================
@@ -848,22 +1261,26 @@ export const bulkApi = {
  */
 
 export const orgApi = {
+
   me: () =>
-    get('/organizations/me'),
+    get(
+      '/organizations/me'
+    ),
 
   update: (
     data: unknown,
   ) =>
     put(
       '/organizations/me',
-      data,
+      data
     ),
 
   users: () =>
     get(
-      '/organizations/me/users',
+      '/organizations/me/users'
     ),
 };
+
 
 /**
  * ============================================================
@@ -872,24 +1289,28 @@ export const orgApi = {
  */
 
 export const webhookApi = {
+
   list: () =>
-    get('/webhooks'),
+    get(
+      '/webhooks'
+    ),
 
   create: (
     data: unknown,
   ) =>
     post(
       '/webhooks',
-      data,
+      data
     ),
 
   remove: (
     id: number,
   ) =>
     del(
-      `/webhooks/${id}`,
+      `/webhooks/${id}`
     ),
 };
+
 
 /**
  * ============================================================
@@ -898,11 +1319,12 @@ export const webhookApi = {
  */
 
 export const currencyApi = {
+
   rates: (
     base = 'USD',
   ) =>
     get(
-      `/currencies?base=${encodeURIComponent(base)}`,
+      `/currencies?base=${encodeURIComponent(base)}`
     ),
 
   convert: (
@@ -911,24 +1333,25 @@ export const currencyApi = {
     amount: number,
   ) =>
     get(
-      `/currencies/convert?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=${amount}`,
+      `/currencies/convert?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=${amount}`
     ),
 
   supported: () =>
     get(
-      '/currencies/supported',
+      '/currencies/supported'
     ),
 
   status: () =>
     get(
-      '/currencies/status',
+      '/currencies/status'
     ),
 
   refresh: () =>
     post(
-      '/currencies/refresh',
+      '/currencies/refresh'
     ),
 };
+
 
 /**
  * ============================================================
@@ -937,20 +1360,22 @@ export const currencyApi = {
  */
 
 export const privacyApi = {
+
   exportData: (
     id: number,
   ) =>
     get(
-      `/privacy/borrowers/${id}/export`,
+      `/privacy/borrowers/${id}/export`
     ),
 
   eraseData: (
     id: number,
   ) =>
     del(
-      `/privacy/borrowers/${id}/erase`,
+      `/privacy/borrowers/${id}/erase`
     ),
 };
+
 
 /**
  * ============================================================
@@ -959,41 +1384,43 @@ export const privacyApi = {
  */
 
 export const creditBureauApi = {
+
   check: (
     borrowerId: number,
   ) =>
     post(
-      `/credit-bureau/borrowers/${borrowerId}/check`,
+      `/credit-bureau/borrowers/${borrowerId}/check`
     ),
 
   history: (
     borrowerId: number,
   ) =>
     get(
-      `/credit-bureau/borrowers/${borrowerId}/history`,
+      `/credit-bureau/borrowers/${borrowerId}/history`
     ),
 
   latest: (
     borrowerId: number,
   ) =>
     get(
-      `/credit-bureau/borrowers/${borrowerId}/latest`,
+      `/credit-bureau/borrowers/${borrowerId}/latest`
     ),
 
   reportForLoan: (
     loanId: number,
   ) =>
     get(
-      `/credit-bureau/loans/${loanId}/report`,
+      `/credit-bureau/loans/${loanId}/report`
     ),
 
   retryReport: (
     loanId: number,
   ) =>
     post(
-      `/credit-bureau/loans/${loanId}/report/retry`,
+      `/credit-bureau/loans/${loanId}/report/retry`
     ),
 };
+
 
 /**
  * ============================================================
@@ -1002,6 +1429,7 @@ export const creditBureauApi = {
  */
 
 export const esignatureApi = {
+
   initiate: (
     loanId: number,
     documentType = 'LOAN_AGREEMENT',
@@ -1010,16 +1438,17 @@ export const esignatureApi = {
       `/loans/${loanId}/esignature/initiate`,
       {
         documentType,
-      },
+      }
     ),
 
   history: (
     loanId: number,
   ) =>
     get(
-      `/loans/${loanId}/esignature`,
+      `/loans/${loanId}/esignature`
     ),
 };
+
 
 /**
  * ============================================================
@@ -1028,9 +1457,10 @@ export const esignatureApi = {
  */
 
 export const accountingApi = {
+
   chartOfAccounts: () =>
     get(
-      '/accounting/chart-of-accounts',
+      '/accounting/chart-of-accounts'
     ),
 
   createAccount: (data: {
@@ -1041,7 +1471,7 @@ export const accountingApi = {
   }) =>
     post(
       '/accounting/chart-of-accounts',
-      data,
+      data
     ),
 
   updateAccount: (
@@ -1053,12 +1483,12 @@ export const accountingApi = {
   ) =>
     put(
       `/accounting/chart-of-accounts/${id}`,
-      data,
+      data
     ),
 
   journal: () =>
     get(
-      '/accounting/journal',
+      '/accounting/journal'
     ),
 
   reverseEntry: (
@@ -1069,24 +1499,24 @@ export const accountingApi = {
       `/accounting/journal/${id}/reverse`,
       {
         reason,
-      },
+      }
     ),
 
   ledger: (
     accountId: number,
   ) =>
     get(
-      `/accounting/ledger/${accountId}`,
+      `/accounting/ledger/${accountId}`
     ),
 
   trialBalance: () =>
     get(
-      '/accounting/trial-balance',
+      '/accounting/trial-balance'
     ),
 
   balanceSheet: () =>
     get(
-      '/accounting/balance-sheet',
+      '/accounting/balance-sheet'
     ),
 
   profitAndLoss: (
@@ -1098,7 +1528,7 @@ export const accountingApi = {
         from && to
           ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
           : ''
-      }`,
+      }`
     ),
 
   cashFlow: (
@@ -1110,7 +1540,7 @@ export const accountingApi = {
         from && to
           ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
           : ''
-      }`,
+      }`
     ),
 
   branchSummary: (
@@ -1122,9 +1552,10 @@ export const accountingApi = {
         from && to
           ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
           : ''
-      }`,
+      }`
     ),
 };
+
 
 /**
  * ============================================================
@@ -1133,9 +1564,10 @@ export const accountingApi = {
  */
 
 export const bankAccountApi = {
+
   list: () =>
     get(
-      '/bank-accounts',
+      '/bank-accounts'
     ),
 
   create: (data: {
@@ -1148,7 +1580,7 @@ export const bankAccountApi = {
   }) =>
     post(
       '/bank-accounts',
-      data,
+      data
     ),
 
   recordTransaction: (
@@ -1162,7 +1594,7 @@ export const bankAccountApi = {
   ) =>
     post(
       `/bank-accounts/${id}/transactions`,
-      data,
+      data
     ),
 
   transfer: (data: {
@@ -1173,9 +1605,10 @@ export const bankAccountApi = {
   }) =>
     post(
       '/bank-accounts/transfer',
-      data,
+      data
     ),
 };
+
 
 /**
  * ============================================================
@@ -1184,30 +1617,32 @@ export const bankAccountApi = {
  */
 
 export const contactMessageApi = {
+
   list: () =>
     get(
-      '/contact-messages',
+      '/contact-messages'
     ),
 
   unreadCount: () =>
     get(
-      '/contact-messages/unread-count',
+      '/contact-messages/unread-count'
     ),
 
   markRead: (
     id: number,
   ) =>
     post(
-      `/contact-messages/${id}/read`,
+      `/contact-messages/${id}/read`
     ),
 
   delete: (
     id: number,
   ) =>
     del(
-      `/contact-messages/${id}`,
+      `/contact-messages/${id}`
     ),
 };
+
 
 /**
  * ============================================================
@@ -1216,18 +1651,19 @@ export const contactMessageApi = {
  */
 
 export const publicApi = {
+
   getTenant: (
     slug: string,
   ) =>
     get(
-      `/public/tenant/${encodeURIComponent(slug)}`,
+      `/public/tenant/${encodeURIComponent(slug)}`
     ),
 
   getProducts: (
     slug: string,
   ) =>
     get(
-      `/public/tenant/${encodeURIComponent(slug)}/products`,
+      `/public/tenant/${encodeURIComponent(slug)}/products`
     ),
 
   apply: (
@@ -1235,7 +1671,7 @@ export const publicApi = {
   ) =>
     post(
       '/public/loan-application',
-      data,
+      data
     ),
 
   trackApplication: (
@@ -1243,7 +1679,7 @@ export const publicApi = {
     phone: string,
   ) =>
     get(
-      `/public/applications/${encodeURIComponent(reference.trim())}/status?phone=${encodeURIComponent(phone.trim())}`,
+      `/public/applications/${encodeURIComponent(reference.trim())}/status?phone=${encodeURIComponent(phone.trim())}`
     ),
 
   trackDashboard: (
@@ -1253,9 +1689,12 @@ export const publicApi = {
     post(
       '/public/dashboard',
       {
-        reference: reference.trim(),
-        phone: phone.trim(),
-      },
+        reference:
+          reference.trim(),
+
+        phone:
+          phone.trim(),
+      }
     ),
 
   initiatePayment: (
@@ -1263,10 +1702,12 @@ export const publicApi = {
     phone: string,
     data: {
       amount?: number;
+
       paymentMethod:
         | 'MOBILE_MONEY'
         | 'CARD'
         | 'BANK_TRANSFER';
+
       phoneNumber?: string;
       network?: string;
       cardNumber?: string;
@@ -1280,7 +1721,7 @@ export const publicApi = {
   ) =>
     post(
       `/public/applications/${encodeURIComponent(reference.trim())}/payments/initiate?phone=${encodeURIComponent(phone.trim())}`,
-      data,
+      data
     ),
 
   trackComments: (
@@ -1288,7 +1729,7 @@ export const publicApi = {
     phone: string,
   ) =>
     get(
-      `/public/applications/${encodeURIComponent(reference.trim())}/comments?phone=${encodeURIComponent(phone.trim())}`,
+      `/public/applications/${encodeURIComponent(reference.trim())}/comments?phone=${encodeURIComponent(phone.trim())}`
     ),
 
   listDocuments: (
@@ -1296,7 +1737,7 @@ export const publicApi = {
     phone: string,
   ) =>
     get(
-      `/public/applications/${encodeURIComponent(reference.trim())}/documents?phone=${encodeURIComponent(phone.trim())}`,
+      `/public/applications/${encodeURIComponent(reference.trim())}/documents?phone=${encodeURIComponent(phone.trim())}`
     ),
 
   downloadDocument: (
@@ -1310,8 +1751,14 @@ export const publicApi = {
     API.get(
       `/public/applications/${encodeURIComponent(reference.trim())}/documents/${doc}.pdf?phone=${encodeURIComponent(phone.trim())}`,
       {
-        responseType: 'blob',
-      },
+        responseType:
+          'blob',
+
+        headers: {
+          Accept:
+            'application/pdf',
+        },
+      }
     ),
 
   deleteDocument: (
@@ -1320,7 +1767,7 @@ export const publicApi = {
     fileId: number,
   ) =>
     del(
-      `/public/applications/${encodeURIComponent(reference.trim())}/documents/${fileId}?phone=${encodeURIComponent(phone.trim())}`,
+      `/public/applications/${encodeURIComponent(reference.trim())}/documents/${fileId}?phone=${encodeURIComponent(phone.trim())}`
     ),
 
   uploadDocument: (
@@ -1330,30 +1777,19 @@ export const publicApi = {
     file: File | Blob,
     fileName?: string,
   ) => {
+
     const form =
       new FormData();
 
     form.append(
       'phone',
-      phone.trim(),
+      phone.trim()
     );
 
     form.append(
       'documentType',
-      documentType,
+      documentType
     );
-
-    /**
-     * --------------------------------------------------------
-     * FIX:
-     *
-     * File has .name
-     * Blob does not have .name
-     *
-     * Therefore we explicitly check whether the object has
-     * a name property before accessing it.
-     * --------------------------------------------------------
-     */
 
     const resolvedFileName =
       fileName ||
@@ -1367,23 +1803,21 @@ export const publicApi = {
     form.append(
       'file',
       file,
-      resolvedFileName,
+      resolvedFileName
     );
 
     return API.post(
       `/public/applications/${encodeURIComponent(reference.trim())}/documents`,
-      form,
-      {
-        headers: {
-          'Content-Type':
-            'multipart/form-data',
-        },
-      },
-    ).then((response) =>
-      unwrap(response.data),
+      form
+    ).then(
+      (response) =>
+        unwrap(
+          response.data
+        )
     );
   },
 };
+
 
 /**
  * ============================================================
@@ -1392,106 +1826,82 @@ export const publicApi = {
  */
 
 export const importApi = {
+
   template: () =>
     API.get(
       '/import/legacy-loans/template',
       {
-        responseType: 'blob',
-      },
+        responseType:
+          'blob',
+
+        headers: {
+          Accept:
+            'application/octet-stream',
+        },
+      }
     ),
 
   preview: (
     file: File,
   ) => {
+
     const form =
       new FormData();
 
     form.append(
       'file',
-      file,
+      file
     );
 
     return API.post(
       '/import/legacy-loans/preview',
-      form,
-      {
-        headers: {
-          'Content-Type':
-            'multipart/form-data',
-        },
-      },
-    ).then((response) =>
-      unwrap(response.data),
+      form
+    ).then(
+      (response) =>
+        unwrap(
+          response.data
+        )
     );
   },
 
   commit: (
     file: File,
   ) => {
+
     const form =
       new FormData();
 
     form.append(
       'file',
-      file,
+      file
     );
 
     return API.post(
       '/import/legacy-loans/commit',
-      form,
-      {
-        headers: {
-          'Content-Type':
-            'multipart/form-data',
-        },
-      },
-    ).then((response) =>
-      unwrap(response.data),
+      form
+    ).then(
+      (response) =>
+        unwrap(
+          response.data
+        )
     );
   },
 
   batches: () =>
     get(
-      '/import/legacy-loans/batches',
+      '/import/legacy-loans/batches'
     ),
 };
 
+
 /**
  * ============================================================
- * REGULATORY / BNR API
- * ============================================================
- *
- * IMPORTANT:
- *
- * This is ONLY the frontend API client.
- *
- * It is NOT RegulatoryService.java.
- *
- * Frontend:
- *
- * regulatoryApi.summary()
- *       |
- *       v
- * GET /api/regulatory/bnr/summary
- *       |
- *       v
- * Backend RegulatoryController
- *       |
- *       v
- * Backend RegulatoryService
- *
- * Therefore:
- *
- * regulatoryApi.ts
- *     = frontend HTTP client
- *
- * RegulatoryService.java
- *     = backend business/service layer
- *
+ * REGULATORY / BNR / CREDIT BUREAU API
  * ============================================================
  */
 
 export const regulatoryApi = {
+
   /**
    * ----------------------------------------------------------
    * BNR SUMMARY
@@ -1502,8 +1912,9 @@ export const regulatoryApi = {
     period = 'MONTHLY',
   ) =>
     get(
-      `/regulatory/bnr/summary?period=${encodeURIComponent(period)}`,
+      `/regulatory/bnr/summary?period=${encodeURIComponent(period)}`
     ),
+
 
   /**
    * ----------------------------------------------------------
@@ -1515,8 +1926,9 @@ export const regulatoryApi = {
     period = 'MONTHLY',
   ) =>
     get(
-      `/regulatory/bnr/by-loan-type?period=${encodeURIComponent(period)}`,
+      `/regulatory/bnr/by-loan-type?period=${encodeURIComponent(period)}`
     ),
+
 
   /**
    * ----------------------------------------------------------
@@ -1528,8 +1940,9 @@ export const regulatoryApi = {
     period = 'MONTHLY',
   ) =>
     get(
-      `/regulatory/bnr/by-gender?period=${encodeURIComponent(period)}`,
+      `/regulatory/bnr/by-gender?period=${encodeURIComponent(period)}`
     ),
+
 
   /**
    * ----------------------------------------------------------
@@ -1541,12 +1954,13 @@ export const regulatoryApi = {
     period = 'MONTHLY',
   ) =>
     get(
-      `/regulatory/bnr/by-branch?period=${encodeURIComponent(period)}`,
+      `/regulatory/bnr/by-branch?period=${encodeURIComponent(period)}`
     ),
+
 
   /**
    * ----------------------------------------------------------
-   * LOAN TYPE BREAKDOWN
+   * BNR LOAN TYPE BREAKDOWN
    * ----------------------------------------------------------
    */
 
@@ -1554,12 +1968,13 @@ export const regulatoryApi = {
     period = 'MONTHLY',
   ) =>
     get(
-      `/regulatory/bnr/breakdown/loan-type?period=${encodeURIComponent(period)}`,
+      `/regulatory/bnr/breakdown/loan-type?period=${encodeURIComponent(period)}`
     ),
+
 
   /**
    * ----------------------------------------------------------
-   * GENDER BREAKDOWN
+   * BNR GENDER BREAKDOWN
    * ----------------------------------------------------------
    */
 
@@ -1567,12 +1982,13 @@ export const regulatoryApi = {
     period = 'MONTHLY',
   ) =>
     get(
-      `/regulatory/bnr/breakdown/gender?period=${encodeURIComponent(period)}`,
+      `/regulatory/bnr/breakdown/gender?period=${encodeURIComponent(period)}`
     ),
+
 
   /**
    * ----------------------------------------------------------
-   * BRANCH BREAKDOWN
+   * BNR BRANCH BREAKDOWN
    * ----------------------------------------------------------
    */
 
@@ -1580,12 +1996,13 @@ export const regulatoryApi = {
     period = 'MONTHLY',
   ) =>
     get(
-      `/regulatory/bnr/breakdown/branch?period=${encodeURIComponent(period)}`,
+      `/regulatory/bnr/breakdown/branch?period=${encodeURIComponent(period)}`
     ),
+
 
   /**
    * ----------------------------------------------------------
-   * FINANCIAL STATEMENT
+   * BNR FINANCIAL STATEMENT
    * ----------------------------------------------------------
    */
 
@@ -1606,22 +2023,13 @@ export const regulatoryApi = {
         }` +
         `&period=${encodeURIComponent(period)}` +
         `&startDate=${encodeURIComponent(startDate)}` +
-        `&endDate=${encodeURIComponent(endDate)}`,
+        `&endDate=${encodeURIComponent(endDate)}`
     ),
+
 
   /**
    * ----------------------------------------------------------
    * CREDIT BUREAU PREVIEW
-   * ----------------------------------------------------------
-   *
-   * Backend endpoint from your error:
-   *
-   * GET /api/regulatory/credit-bureau/preview
-   *
-   * The JWT interceptor automatically adds:
-   *
-   * Authorization: Bearer <token>
-   *
    * ----------------------------------------------------------
    */
 
@@ -1631,96 +2039,255 @@ export const regulatoryApi = {
       string | number | boolean | null | undefined
     >,
   ) => {
+
     const query =
       new URLSearchParams();
 
+
     if (queryParams) {
+
       Object.entries(
-        queryParams,
+        queryParams
       ).forEach(
         ([key, value]) => {
+
           if (
             value !== null &&
             value !== undefined
           ) {
+
             query.set(
               key,
-              String(value),
+              String(value)
             );
           }
-        },
+        }
       );
     }
+
 
     const queryString =
       query.toString();
 
-    return get(
+
+    const url =
       `/regulatory/credit-bureau/preview${
         queryString
           ? `?${queryString}`
           : ''
-      }`,
+      }`;
+
+
+    /**
+     * Explicitly use the normal authenticated API.
+     *
+     * The JWT interceptor will attach:
+     *
+     * Authorization: Bearer <token>
+     */
+
+    return get(
+      url
     );
   },
+
 
   /**
    * ----------------------------------------------------------
    * CREDIT BUREAU EXPORT
    * ----------------------------------------------------------
    *
-   * Backend endpoint:
+   * IMPORTANT:
    *
-   * GET /api/regulatory/credit-bureau/export
+   * This does NOT use a separate Axios instance.
    *
-   * Example:
+   * It uses the SAME API instance as BNR.
    *
-   * /api/regulatory/credit-bureau/export?format=pdf
+   * Therefore:
+   *
+   * Authorization: Bearer <JWT>
+   *
+   * is added by the same interceptor.
    *
    * ----------------------------------------------------------
    */
 
-  creditBureauExport: (
+  creditBureauExport: async (
     format = 'pdf',
     queryParams?: Record<
       string,
       string | number | boolean | null | undefined
     >,
   ) => {
+
     const query =
       new URLSearchParams();
 
+
+    /**
+     * --------------------------------------------------------
+     * FORMAT
+     * --------------------------------------------------------
+     */
+
+    const normalizedFormat =
+      String(
+        format || 'pdf'
+      )
+        .trim()
+        .toLowerCase();
+
+
     query.set(
       'format',
-      format,
+      normalizedFormat
     );
 
+
+    /**
+     * --------------------------------------------------------
+     * OTHER PARAMETERS
+     * --------------------------------------------------------
+     */
+
     if (queryParams) {
+
       Object.entries(
-        queryParams,
+        queryParams
       ).forEach(
         ([key, value]) => {
+
           if (
             value !== null &&
             value !== undefined
           ) {
+
             query.set(
               key,
-              String(value),
+              String(value)
             );
           }
-        },
+        }
       );
     }
 
+
+    /**
+     * --------------------------------------------------------
+     * FINAL URL
+     * --------------------------------------------------------
+     */
+
+    const endpoint =
+      `/regulatory/credit-bureau/export?${query.toString()}`;
+
+
+    /**
+     * --------------------------------------------------------
+     * TOKEN
+     * --------------------------------------------------------
+     *
+     * Explicitly obtain the token here.
+     *
+     * The interceptor also adds it.
+     *
+     * This gives us a guaranteed authenticated request
+     * from the frontend.
+     * --------------------------------------------------------
+     */
+
+    const token =
+      getStoredToken();
+
+
+    if (!token) {
+
+      const error =
+        new Error(
+          'No authentication token was found. Please log in again.'
+        ) as Error & {
+          status?: number;
+        };
+
+      error.status =
+        401;
+
+      throw error;
+    }
+
+
+    /**
+     * --------------------------------------------------------
+     * DEBUG
+     * --------------------------------------------------------
+     */
+
+    if (
+      typeof window !== 'undefined'
+    ) {
+
+      console.debug(
+        '[CREDIT BUREAU EXPORT]',
+        {
+          baseURL:
+            API_BASE_URL,
+
+          endpoint,
+
+          fullURL:
+            `${API_BASE_URL}${endpoint}`,
+
+          format:
+            normalizedFormat,
+
+          hasToken:
+            Boolean(token),
+
+          tokenLength:
+            token.length,
+        }
+      );
+    }
+
+
+    /**
+     * --------------------------------------------------------
+     * REQUEST
+     * --------------------------------------------------------
+     *
+     * Explicit Authorization.
+     *
+     * Explicit Accept.
+     *
+     * Blob response.
+     *
+     * No Content-Type for GET.
+     *
+     * --------------------------------------------------------
+     */
+
     return API.get(
-      `/regulatory/credit-bureau/export?${query.toString()}`,
+      endpoint,
       {
-        responseType: 'blob',
-      },
+        responseType:
+          'blob',
+
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+
+          Accept:
+            normalizedFormat === 'pdf'
+              ? 'application/pdf'
+              : normalizedFormat === 'xlsx'
+                ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                : 'text/csv',
+        },
+      }
     );
   },
 };
+
 
 /**
  * ============================================================
@@ -1730,10 +2297,14 @@ export const regulatoryApi = {
 
 export default API;
 
+
 /**
  * ============================================================
- * NAMED API EXPORT
+ * NAMED EXPORT
  * ============================================================
  */
 
-export { API };
+export {
+  API,
+  API_BASE_URL,
+};
