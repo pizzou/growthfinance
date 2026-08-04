@@ -35,41 +35,7 @@ import java.util.List;
 import java.util.Map;
 
 
-/**
- * ============================================================
- * BNR REGULATORY REPORT CONTROLLER
- * ============================================================
- *
- * Endpoints:
- *
- * GET
- * /api/regulatory/bnr/summary
- *
- * GET
- * /api/regulatory/bnr/financial-statement
- *
- * GET
- * /api/regulatory/bnr/breakdown/loan-type
- *
- * GET
- * /api/regulatory/bnr/breakdown/branch
- *
- * GET
- * /api/regulatory/bnr/breakdown/gender
- *
- * GET
- * /api/regulatory/bnr/export
- *
- * GET
- * /api/regulatory/bnr/financial-statement/export
- *
- * Supported export formats:
- *
- * - pdf
- * - xlsx
- * - csv
- *
- */
+
 @RestController
 @RequestMapping("/api/regulatory/bnr")
 @RequiredArgsConstructor
@@ -77,9 +43,7 @@ import java.util.Map;
 public class BnrReportController {
 
 
-    // ============================================================
-    // SERVICES
-    // ============================================================
+    
 
     private final RegulatoryReportingService reportingService;
 
@@ -89,22 +53,11 @@ public class BnrReportController {
 
     private final CurrentUserUtil currentUserUtil;
 
-    /**
-     * Jackson is used to convert BNR DTOs into
-     * exportable key/value rows without having to
-     * manually maintain every summary field.
-     */
+   
     private final ObjectMapper objectMapper;
 
 
-    // ============================================================
-    // BNR SUMMARY
-    // ============================================================
-
-    /**
-     * GET
-     * /api/regulatory/bnr/summary
-     */
+   
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<BnrSummaryReport>> summary(
 
@@ -160,14 +113,7 @@ public class BnrReportController {
     }
 
 
-    // ============================================================
-    // BNR FINANCIAL STATEMENT
-    // ============================================================
-
-    /**
-     * GET
-     * /api/regulatory/bnr/financial-statement
-     */
+    
     @GetMapping("/financial-statement")
     public ResponseEntity<ApiResponse<BnrFinancialStatementReport>>
     financialStatement(
@@ -223,15 +169,6 @@ public class BnrReportController {
         );
     }
 
-
-    // ============================================================
-    // LOAN TYPE BREAKDOWN
-    // ============================================================
-
-    /**
-     * GET
-     * /api/regulatory/bnr/breakdown/loan-type
-     */
     @GetMapping("/breakdown/loan-type")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     byLoanType(
@@ -278,14 +215,6 @@ public class BnrReportController {
     }
 
 
-    // ============================================================
-    // BRANCH BREAKDOWN
-    // ============================================================
-
-    /**
-     * GET
-     * /api/regulatory/bnr/breakdown/branch
-     */
     @GetMapping("/breakdown/branch")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     byBranch(
@@ -327,14 +256,6 @@ public class BnrReportController {
     }
 
 
-    // ============================================================
-    // GENDER BREAKDOWN
-    // ============================================================
-
-    /**
-     * GET
-     * /api/regulatory/bnr/breakdown/gender
-     */
     @GetMapping("/breakdown/gender")
     public ResponseEntity<ApiResponse<List<BnrBreakdownRow>>>
     byGender(
@@ -381,28 +302,6 @@ public class BnrReportController {
     }
 
 
-    // ============================================================
-    // BNR SUMMARY EXPORT
-    // ============================================================
-
-    /**
-     * ============================================================
-     * IMPORTANT ENDPOINT
-     * ============================================================
-     *
-     * This is the endpoint your frontend is currently calling:
-     *
-     * /api/regulatory/bnr/export
-     *
-     * Example:
-     *
-     * /api/regulatory/bnr/export?format=pdf&period=MONTHLY
-     *
-     * /api/regulatory/bnr/export?format=xlsx&period=MONTHLY
-     *
-     * /api/regulatory/bnr/export?format=csv&period=MONTHLY
-     *
-     */
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportBnrSummary(
 
@@ -432,9 +331,7 @@ public class BnrReportController {
                 currentUserUtil.getCurrentOrganizationId();
 
 
-        // --------------------------------------------------------
-        // Build BNR summary
-        // --------------------------------------------------------
+       
 
         BnrSummaryReport report =
                 reportingService.buildBnrSummary(
@@ -451,17 +348,13 @@ public class BnrReportController {
                 );
 
 
-        // --------------------------------------------------------
-        // Convert summary DTO into export rows
-        // --------------------------------------------------------
+       
 
         List<Map<String, Object>> rows =
                 summaryRows(report);
 
 
-        // --------------------------------------------------------
-        // Export metadata
-        // --------------------------------------------------------
+       
 
         List<String> columns =
                 List.of(
@@ -484,9 +377,7 @@ public class BnrReportController {
                 );
 
 
-        // --------------------------------------------------------
-        // Audit
-        // --------------------------------------------------------
+       
 
         auditExport(
 
@@ -498,9 +389,7 @@ public class BnrReportController {
         );
 
 
-        // --------------------------------------------------------
-        // Generate file
-        // --------------------------------------------------------
+       
 
         return respond(
 
@@ -519,14 +408,6 @@ public class BnrReportController {
     }
 
 
-    // ============================================================
-    // FINANCIAL STATEMENT EXPORT
-    // ============================================================
-
-    /**
-     * GET
-     * /api/regulatory/bnr/financial-statement/export
-     */
     @GetMapping("/financial-statement/export")
     public ResponseEntity<byte[]> exportFinancialStatement(
 
@@ -624,19 +505,6 @@ public class BnrReportController {
     }
 
 
-    // ============================================================
-    // SUMMARY -> EXPORT ROWS
-    // ============================================================
-
-    /**
-     * Converts BnrSummaryReport into rows:
-     *
-     * Metric | Value
-     *
-     * This approach means you don't need to manually maintain
-     * hundreds of summary fields every time BnrSummaryReport
-     * gets another field.
-     */
     private List<Map<String, Object>> summaryRows(
             BnrSummaryReport report
     ) {
@@ -676,12 +544,7 @@ public class BnrReportController {
                     entry.getValue();
 
 
-            // ----------------------------------------------------
-            // Skip complex arrays/objects from the simple
-            // summary export.
-            //
-            // They have their own breakdown endpoints.
-            // ----------------------------------------------------
+      
 
             if (
                     value instanceof Map
@@ -901,10 +764,6 @@ public class BnrReportController {
     }
 
 
-    // ============================================================
-    // FINANCIAL SECTION ROWS
-    // ============================================================
-
     private void addSectionRows(
 
             List<Map<String, Object>> rows,
@@ -982,9 +841,6 @@ public class BnrReportController {
     }
 
 
-    // ============================================================
-    // GENERIC ROW
-    // ============================================================
 
     private void addRow(
 
