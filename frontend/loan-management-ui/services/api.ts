@@ -45,7 +45,11 @@ API.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-
+/**
+ * ============================================================
+ * RESPONSE INTERCEPTOR
+ * ============================================================
+ */
 
 API.interceptors.response.use(
   (response) => response,
@@ -81,20 +85,6 @@ API.interceptors.response.use(
     return Promise.reject(err);
   },
 );
-
-/**
- * ============================================================
- * DEFAULT EXPORT
- *
- * IMPORTANT:
- * regulatoryService.ts can now use:
- *
- * import api from './api';
- *
- * ============================================================
- */
-
-export default API;
 
 /**
  * ============================================================
@@ -567,6 +557,12 @@ export const paymentApi = {
  */
 
 export const borrowerApi = {
+  /**
+   * List borrowers
+   *
+   * Backend:
+   * GET /api/borrowers
+   */
   list: (
     page = 0,
     size = 20,
@@ -581,12 +577,41 @@ export const borrowerApi = {
         }`,
     ),
 
+  /**
+   * Get basic borrower profile
+   *
+   * Backend:
+   * GET /api/borrowers/{id}
+   */
   get: (id: number) =>
     get(`/borrowers/${id}`),
 
+  /**
+   * Get complete borrower 360-degree profile
+   *
+   * Backend:
+   * GET /api/borrowers/{id}/details
+   *
+   * This is the method that was missing.
+   */
+  getDetails: (id: number) =>
+    get(`/borrowers/${id}/details`),
+
+  /**
+   * Create borrower
+   *
+   * Backend:
+   * POST /api/borrowers
+   */
   create: (data: unknown) =>
     post('/borrowers', data),
 
+  /**
+   * Update borrower
+   *
+   * Backend:
+   * PUT /api/borrowers/{id}
+   */
   update: (
     id: number,
     data: unknown,
@@ -968,7 +993,9 @@ export const contactMessageApi = {
 
 export const publicApi = {
   getTenant: (slug: string) =>
-    get(`/public/tenant/${encodeURIComponent(slug)}`),
+    get(
+      `/public/tenant/${encodeURIComponent(slug)}`,
+    ),
 
   getProducts: (slug: string) =>
     get(
@@ -1170,8 +1197,6 @@ export const importApi = {
 /**
  * ============================================================
  * REGULATORY / BNR API
- *
- * These paths match the backend BNR controller structure.
  * ============================================================
  */
 
@@ -1235,7 +1260,11 @@ export const regulatoryApi = {
     get(
       `/regulatory/bnr/financial-statement` +
         `?organizationId=${organizationId}` +
-        `${branchId != null ? `&branchId=${branchId}` : ''}` +
+        `${
+          branchId != null
+            ? `&branchId=${branchId}`
+            : ''
+        }` +
         `&period=${encodeURIComponent(period)}` +
         `&startDate=${encodeURIComponent(startDate)}` +
         `&endDate=${encodeURIComponent(endDate)}`,
@@ -1244,18 +1273,16 @@ export const regulatoryApi = {
 
 /**
  * ============================================================
- * DEFAULT API ALIAS
- *
- * Supports both:
- *
- * import api from './api';
- *
- * and:
- *
- * import API from './api';
- *
+ * DEFAULT EXPORT
+ * ============================================================
+ */
+
+export default API;
+
+/**
+ * ============================================================
+ * NAMED API EXPORT
  * ============================================================
  */
 
 export { API };
-

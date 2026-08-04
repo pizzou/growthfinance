@@ -2,20 +2,12 @@
 import { get, post } from './api';
 import { Payment } from '../types/index';
 
+
 /**
  * ============================================================
  * BORROWER PAYMENT
  * ============================================================
- *
- * Frontend representation of a payment returned from:
- *
- * GET /borrowers/{borrowerId}/details
- *
- * This intentionally supports the fields used by the borrower
- * details page while remaining compatible with the Spring Boot
- * Payment entity.
  */
-
 export interface BorrowerPayment {
 
   id?: number;
@@ -30,34 +22,29 @@ export interface BorrowerPayment {
 
   borrowerName?: string;
 
+
   // ============================================================
   // PAYMENT AMOUNTS
   // ============================================================
 
-  amount?: number | null;
+  amount?: number;
 
-  amountPaid?: number | null;
+  amountPaid?: number;
 
-  principalComponent?: number | null;
+  principalComponent?: number;
 
-  interestComponent?: number | null;
+  interestComponent?: number;
 
-  /**
-   * Compatibility aliases used by older frontend code.
-   */
-  principal?: number | null;
+  principal?: number;
 
-  interest?: number | null;
+  interest?: number;
 
-  fees?: number | null;
+  fees?: number;
 
-  penalty?: number | null;
+  penalty?: number;
 
-  totalPaid?: number | null;
+  totalPaid?: number;
 
-  outstandingAfter?: number | null;
-
-  waivedAmount?: number | null;
 
   // ============================================================
   // DATES
@@ -67,10 +54,8 @@ export interface BorrowerPayment {
 
   paidDate?: string | null;
 
-  /**
-   * Compatibility field used by older borrower-details code.
-   */
   paymentDate?: string | null;
+
 
   // ============================================================
   // PAYMENT METHOD
@@ -78,10 +63,8 @@ export interface BorrowerPayment {
 
   paymentMethod?: string | null;
 
-  /**
-   * Compatibility alias.
-   */
   method?: string | null;
+
 
   // ============================================================
   // STATUS
@@ -89,17 +72,19 @@ export interface BorrowerPayment {
 
   status?: string | null;
 
-  paid?: boolean | null;
+  paid?: boolean;
 
-  onTime?: boolean | null;
+  onTime?: boolean;
 
-  daysLate?: number | null;
+  daysLate?: number;
+
 
   // ============================================================
-  // LOAN / CURRENCY
+  // LOAN INFORMATION
   // ============================================================
 
   currency?: string | null;
+
 
   // ============================================================
   // TRANSACTION
@@ -111,11 +96,16 @@ export interface BorrowerPayment {
 
   paymentReference?: string | null;
 
+
   // ============================================================
-  // ADDITIONAL INFORMATION
+  // ADDITIONAL
   // ============================================================
 
-  installmentNumber?: number | null;
+  installmentNumber?: number;
+
+  outstandingAfter?: number;
+
+  waivedAmount?: number;
 
   channel?: string | null;
 
@@ -125,17 +115,74 @@ export interface BorrowerPayment {
 
 /**
  * ============================================================
+ * API RESPONSE
+ * ============================================================
+ */
+interface ApiResponse<T> {
+  success?: boolean;
+  message?: string;
+  data?: T;
+  content?: T;
+}
+
+
+/**
+ * ============================================================
+ * UNWRAP API RESPONSE
+ * ============================================================
+ */
+const unwrap = <T>(
+  response: T | ApiResponse<T> | null | undefined
+): T => {
+
+  if (
+    response !== null &&
+    response !== undefined &&
+    typeof response === 'object'
+  ) {
+
+    const wrapped =
+      response as ApiResponse<T>;
+
+    if (
+      wrapped.data !== undefined
+    ) {
+      return wrapped.data;
+    }
+
+    if (
+      wrapped.content !== undefined
+    ) {
+      return wrapped.content;
+    }
+  }
+
+  return response as T;
+};
+
+
+/**
+ * ============================================================
  * LOAN PAYMENTS
  * ============================================================
  */
-
 export const getPaymentsByLoan = async (
   loanId: number
 ): Promise<Payment[]> => {
 
-  return await get(
-    `/loans/${loanId}/payments`
-  ) as Payment[];
+  const response =
+    await get(
+      `/loans/${loanId}/payments`
+    ) as
+      | Payment[]
+      | ApiResponse<Payment[]>;
+
+  const payments =
+    unwrap(response);
+
+  return Array.isArray(payments)
+    ? payments
+    : [];
 };
 
 
@@ -144,12 +191,21 @@ export const getPaymentsByLoan = async (
  * ALL PAYMENTS
  * ============================================================
  */
-
 export const getAllPayments = async (): Promise<Payment[]> => {
 
-  return await get(
-    '/payments'
-  ) as Payment[];
+  const response =
+    await get(
+      '/payments'
+    ) as
+      | Payment[]
+      | ApiResponse<Payment[]>;
+
+  const payments =
+    unwrap(response);
+
+  return Array.isArray(payments)
+    ? payments
+    : [];
 };
 
 
@@ -158,12 +214,21 @@ export const getAllPayments = async (): Promise<Payment[]> => {
  * OVERDUE PAYMENTS
  * ============================================================
  */
-
 export const getOverduePayments = async (): Promise<Payment[]> => {
 
-  return await get(
-    '/payments/overdue'
-  ) as Payment[];
+  const response =
+    await get(
+      '/payments/overdue'
+    ) as
+      | Payment[]
+      | ApiResponse<Payment[]>;
+
+  const payments =
+    unwrap(response);
+
+  return Array.isArray(payments)
+    ? payments
+    : [];
 };
 
 
@@ -172,7 +237,6 @@ export const getOverduePayments = async (): Promise<Payment[]> => {
  * MAKE PAYMENT
  * ============================================================
  */
-
 export const makePayment = async (
   loanId: number,
   amount: number,
@@ -180,14 +244,19 @@ export const makePayment = async (
   txId?: string
 ): Promise<Payment> => {
 
-  return await post(
-    `/loans/${loanId}/payments`,
-    {
-      amount,
-      paymentMethod: method,
-      transactionId: txId,
-    }
-  ) as Payment;
+  const response =
+    await post(
+      `/loans/${loanId}/payments`,
+      {
+        amount,
+        paymentMethod: method,
+        transactionId: txId,
+      }
+    ) as
+      | Payment
+      | ApiResponse<Payment>;
+
+  return unwrap(response);
 };
 
 
@@ -196,25 +265,57 @@ export const makePayment = async (
  * BORROWER PAYMENT HISTORY
  * ============================================================
  *
- * Endpoint:
+ * Backend:
  *
- * GET /borrowers/{borrowerId}/details
+ * GET /api/borrowers/{borrowerId}/details
  *
- * The backend borrower-details response contains a payments
- * collection.
+ * Controller:
+ *
+ * ApiResponse<BorrowerDetailsResponse>
+ *
+ * BorrowerDetailsResponse contains:
+ *
+ * payments
  */
-
 export const getPaymentsByBorrower = async (
   borrowerId: number
 ): Promise<BorrowerPayment[]> => {
 
-  const response = await get(
-    `/borrowers/${borrowerId}/details`
-  ) as {
-    payments?: BorrowerPayment[];
-  };
+  if (
+    !Number.isInteger(borrowerId) ||
+    borrowerId <= 0
+  ) {
+    throw new Error(
+      'Invalid borrower ID'
+    );
+  }
 
-  return response?.payments ?? [];
+  const response =
+    await get(
+      `/borrowers/${borrowerId}/details`
+    ) as
+      | {
+          payments?: BorrowerPayment[];
+        }
+      | ApiResponse<{
+          payments?: BorrowerPayment[];
+        }>;
+
+  const details =
+    unwrap(response);
+
+  if (
+    details &&
+    typeof details === 'object' &&
+    Array.isArray(
+      details.payments
+    )
+  ) {
+
+    return details.payments;
+  }
+
+  return [];
 };
 
 
@@ -223,10 +324,9 @@ export const getPaymentsByBorrower = async (
  * COMPATIBILITY ALIAS
  * ============================================================
  */
-
 export const getBorrowerPayments = (
   borrowerId: number
-): Promise<BorrowerPayment[]> => {
-
-  return getPaymentsByBorrower(borrowerId);
-};
+): Promise<BorrowerPayment[]> =>
+  getPaymentsByBorrower(
+    borrowerId
+  );

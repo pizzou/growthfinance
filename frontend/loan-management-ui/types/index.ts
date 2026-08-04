@@ -1,4 +1,7 @@
 
+
+
+
 export type LoanStatus =
   | 'PENDING'
   | 'UNDER_REVIEW'
@@ -40,6 +43,8 @@ export type RiskCategory =
   | 'MEDIUM'
   | 'HIGH'
   | 'CRITICAL';
+
+  
 
 export type OrgStatus =
   | 'ACTIVE'
