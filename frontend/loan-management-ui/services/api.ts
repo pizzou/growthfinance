@@ -4,98 +4,33 @@ import axios, {
   AxiosHeaders,
   AxiosInstance,
   AxiosRequestConfig,
-  AxiosResponse,
 } from 'axios';
 
 /**
  * ============================================================
  * API CONFIGURATION
  * ============================================================
- *
- * Expected production value:
- *
- * NEXT_PUBLIC_API_URL=https://growthfinance.onrender.com/api
- *
- * The code below also protects against:
- *
- * https://growthfinance.onrender.com/api/
- *
- * becoming:
- *
- * /api//...
- *
- * ============================================================
  */
 
-const RAW_API_BASE_URL =
+const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   'http://localhost:8080/api';
 
-const API_BASE_URL =
-  RAW_API_BASE_URL.replace(/\/+$/, '');
-
-
-/**
- * ============================================================
- * AXIOS INSTANCE
- * ============================================================
- *
- * IMPORTANT:
- *
- * Do NOT put Content-Type: application/json globally.
- *
- * GET requests do not need it.
- *
- * Blob downloads especially should not inherit a JSON
- * Content-Type header unnecessarily.
- *
- * Individual POST/PUT requests can specify their own
- * Content-Type when needed.
- * ============================================================
- */
-
 const API: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
-  withCredentials: false,
+  timeout: 20000,
   headers: {
+    'Content-Type': 'application/json',
     Accept: 'application/json',
   },
 });
-
-
-/**
- * ============================================================
- * TOKEN HELPER
- * ============================================================
- */
-
-const getStoredToken = (): string | null => {
-
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const token =
-    localStorage.getItem('token');
-
-  if (
-    !token ||
-    token.trim() === ''
-  ) {
-    return null;
-  }
-
-  return token.trim();
-};
-
 
 /**
  * ============================================================
  * REQUEST INTERCEPTOR
  * ============================================================
  *
- * Every request receives:
+ * Every authenticated request receives:
  *
  * Authorization: Bearer <JWT>
  *
@@ -114,252 +49,83 @@ const getStoredToken = (): string | null => {
 
 API.interceptors.request.use(
   (config) => {
-
-    const token =
-      getStoredToken();
-
-
-    /**
-     * --------------------------------------------------------
-     * AUTHORIZATION
-     * --------------------------------------------------------
-     */
-
-    if (token) {
-
-      const headers =
-        config.headers instanceof AxiosHeaders
-          ? config.headers
-          : new AxiosHeaders(
-              config.headers
-            );
-
-      headers.set(
-        'Authorization',
-        `Bearer ${token}`,
-      );
-
-      config.headers =
-        headers;
-    }
-
-
-    /**
-     * --------------------------------------------------------
-     * ACCEPT HEADER
-     * --------------------------------------------------------
-     */
-
-    const headers =
-      config.headers instanceof AxiosHeaders
-        ? config.headers
-        : new AxiosHeaders(
-            config.headers
-          );
-
-    if (
-      !headers.has('Accept')
-    ) {
-      headers.set(
-        'Accept',
-        'application/json',
-      );
-    }
-
-    config.headers =
-      headers;
-
-
-    /**
-     * --------------------------------------------------------
-     * DEVELOPMENT DIAGNOSTICS
-     * --------------------------------------------------------
-     *
-     * This is intentionally limited to the browser console.
-     *
-     * It lets us confirm that the Credit Bureau request
-     * actually receives the JWT.
-     * --------------------------------------------------------
-     */
-
     if (
       typeof window !== 'undefined'
     ) {
+      const token =
+        localStorage.getItem('token');
 
-      const url =
-        `${config.baseURL || ''}${config.url || ''}`;
+      if (token) {
+        const headers =
+          config.headers instanceof AxiosHeaders
+            ? config.headers
+            : new AxiosHeaders(
+                config.headers
+              );
 
-      if (
-        url.includes(
-          '/regulatory/'
-        )
-      ) {
-
-        console.debug(
-          '[REGULATORY REQUEST]',
-          {
-            method:
-              config.method?.toUpperCase(),
-
-            url,
-
-            hasToken:
-              Boolean(token),
-
-            tokenLength:
-              token?.length ?? 0,
-
-            responseType:
-              config.responseType,
-
-            headers: {
-              Authorization:
-                token
-                  ? 'Bearer [PRESENT]'
-                  : '[MISSING]',
-
-              Accept:
-                headers.get('Accept'),
-
-              ContentType:
-                headers.get(
-                  'Content-Type'
-                ),
-            },
-          }
+        headers.set(
+          'Authorization',
+          `Bearer ${token}`
         );
+
+        config.headers = headers;
       }
     }
 
-
     return config;
   },
-
-  (error) =>
-    Promise.reject(error),
+  (error) => {
+    return Promise.reject(error);
+  }
 );
-
 
 /**
  * ============================================================
  * RESPONSE INTERCEPTOR
  * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * Do NOT replace AxiosError with a plain Error.
+ *
+ * The original Axios response must remain available because
+ * regulatory exports may return error information as a Blob.
+ *
+ * This is especially important for:
+ *
+ *     403 Forbidden
+ *
+ * ============================================================
  */
 
 API.interceptors.response.use(
   (response) => {
-
-    /**
-     * --------------------------------------------------------
-     * REGULATORY RESPONSE DEBUGGING
-     * --------------------------------------------------------
-     */
-
-    if (
-      typeof window !== 'undefined'
-    ) {
-
-      const url =
-        `${response.config.baseURL || ''}${response.config.url || ''}`;
-
-      if (
-        url.includes(
-          '/regulatory/'
-        )
-      ) {
-
-        console.debug(
-          '[REGULATORY RESPONSE]',
-          {
-            status:
-              response.status,
-
-            url,
-
-            contentType:
-              response.headers[
-                'content-type'
-              ],
-          }
-        );
-      }
-    }
-
     return response;
   },
 
-  (error: AxiosError<any>) => {
-
+  (error: AxiosError<unknown>) => {
     const status =
       error.response?.status;
 
     const responseData =
       error.response?.data;
 
-
     /**
      * --------------------------------------------------------
-     * REGULATORY ERROR DEBUGGING
-     * --------------------------------------------------------
-     */
-
-    if (
-      typeof window !== 'undefined'
-    ) {
-
-      const config =
-        error.config;
-
-      const url =
-        config
-          ? `${config.baseURL || ''}${config.url || ''}`
-          : '[unknown URL]';
-
-
-      if (
-        url.includes(
-          '/regulatory/'
-        )
-      ) {
-
-        console.error(
-          '[REGULATORY ERROR]',
-          {
-            status,
-
-            url,
-
-            method:
-              config?.method?.toUpperCase(),
-
-            responseType:
-              config?.responseType,
-
-            responseData,
-
-            responseHeaders:
-              error.response?.headers,
-          }
-        );
-      }
-    }
-
-
-    /**
-     * --------------------------------------------------------
-     * 401
+     * 401 = AUTHENTICATION FAILURE
      * --------------------------------------------------------
      *
-     * Only remove authentication for 401.
+     * Only 401 removes the JWT.
      *
-     * 403 does NOT mean the token should be removed.
+     * 403 means the server received the request but denied
+     * permission. We must NOT log the user out for 403.
+     * --------------------------------------------------------
      */
 
     if (
       status === 401 &&
       typeof window !== 'undefined'
     ) {
-
       localStorage.removeItem(
         'token'
       );
@@ -372,79 +138,122 @@ API.interceptors.response.use(
         '/login';
     }
 
-
     /**
      * --------------------------------------------------------
-     * ERROR MESSAGE
+     * PRESERVE AXIOS ERROR
+     * --------------------------------------------------------
+     *
+     * This is critical.
+     *
+     * Previously the code created:
+     *
+     *     const err = new Error(...)
+     *
+     * which removed:
+     *
+     *     error.response
+     *     error.response.status
+     *     error.response.data
+     *
+     * Regulatory export error handling therefore could not
+     * inspect the actual 403 response.
      * --------------------------------------------------------
      */
 
-    let message =
-      responseData?.error ||
-      responseData?.message ||
+    const message =
+      getAxiosErrorMessage(
+        responseData
+      ) ||
       error.message ||
-      'An error occurred';
-
+      `Request failed with status ${status ?? 'unknown'}`;
 
     /**
-     * --------------------------------------------------------
-     * BLOB ERROR
-     * --------------------------------------------------------
-     *
-     * When responseType = blob, Spring's JSON error response
-     * can itself arrive as a Blob.
-     *
-     * Do not blindly convert it to [object Blob].
-     * --------------------------------------------------------
+     * Preserve AxiosError while adding a useful message.
      */
 
-    if (
-      responseData instanceof Blob
-    ) {
+    error.message =
+      message;
 
-      /**
-       * We cannot synchronously read the Blob.
-       *
-       * Keep a useful generic message here.
-       *
-       * The raw Blob remains available through err.data.
-       */
+    /**
+     * Add convenient properties without
+     * destroying the original AxiosError.
+     */
 
-      message =
-        status === 403
-          ? 'Access forbidden. The server rejected the Credit Bureau request.'
-          : status === 401
-            ? 'Authentication failed. Please log in again.'
-            : 'The server rejected the request.';
-    }
-
-
-    const err =
-      new Error(
-        message
-      ) as Error & {
+    const enhancedError =
+      error as AxiosError<unknown> & {
         status?: number;
         data?: unknown;
-        response?: AxiosResponse;
       };
 
-
-    err.status =
+    enhancedError.status =
       status;
 
-    err.data =
+    enhancedError.data =
       responseData;
 
-    err.response =
-      error.response;
-
-
     return Promise.reject(
-      err
+      enhancedError
     );
-  },
+  }
 );
 
+/**
+ * ============================================================
+ * AXIOS ERROR MESSAGE
+ * ============================================================
+ */
+
+function getAxiosErrorMessage(
+  data: unknown
+): string | null {
+
+  if (!data) {
+    return null;
+  }
+
+  if (
+    typeof data === 'string'
+  ) {
+    return data || null;
+  }
+
+  if (
+    typeof data === 'object'
+  ) {
+    const value =
+      data as {
+        message?: unknown;
+        error?: unknown;
+        detail?: unknown;
+      };
+
+    if (
+      typeof value.message ===
+        'string' &&
+      value.message
+    ) {
+      return value.message;
+    }
+
+    if (
+      typeof value.error ===
+        'string' &&
+      value.error
+    ) {
+      return value.error;
+    }
+
+    if (
+      typeof value.detail ===
+        'string' &&
+      value.detail
+    ) {
+      return value.detail;
+    }
+  }
+
+  return null;
+}
 
 /**
  * ============================================================
@@ -453,7 +262,7 @@ API.interceptors.response.use(
  */
 
 const unwrap = (
-  body: unknown,
+  body: unknown
 ): unknown => {
 
   if (
@@ -461,7 +270,6 @@ const unwrap = (
     typeof body === 'object' &&
     'data' in body
   ) {
-
     return (
       body as Record<
         string,
@@ -473,7 +281,6 @@ const unwrap = (
   return body;
 };
 
-
 /**
  * ============================================================
  * GENERIC HTTP HELPERS
@@ -482,99 +289,55 @@ const unwrap = (
 
 export const get = (
   url: string,
-  config?: AxiosRequestConfig,
-): Promise<any> => {
-
-  return API.get(
+  config?: AxiosRequestConfig
+): Promise<any> =>
+  API.get(
     url,
     config
   ).then(
     (response) =>
-      unwrap(
-        response.data
-      )
+      unwrap(response.data)
   );
-};
-
 
 export const post = (
   url: string,
   data?: unknown,
-  config?: AxiosRequestConfig,
-): Promise<any> => {
-
-  return API.post(
+  config?: AxiosRequestConfig
+): Promise<any> =>
+  API.post(
     url,
     data,
-    {
-      ...config,
-
-      headers: {
-        'Content-Type':
-          'application/json',
-
-        Accept:
-          'application/json',
-
-        ...(config?.headers || {}),
-      },
-    }
+    config
   ).then(
     (response) =>
-      unwrap(
-        response.data
-      )
+      unwrap(response.data)
   );
-};
-
 
 export const put = (
   url: string,
   data?: unknown,
-  config?: AxiosRequestConfig,
-): Promise<any> => {
-
-  return API.put(
+  config?: AxiosRequestConfig
+): Promise<any> =>
+  API.put(
     url,
     data,
-    {
-      ...config,
-
-      headers: {
-        'Content-Type':
-          'application/json',
-
-        Accept:
-          'application/json',
-
-        ...(config?.headers || {}),
-      },
-    }
+    config
   ).then(
     (response) =>
-      unwrap(
-        response.data
-      )
+      unwrap(response.data)
   );
-};
-
 
 export const del = (
   url: string,
-  config?: AxiosRequestConfig,
-): Promise<any> => {
-
-  return API.delete(
+  config?: AxiosRequestConfig
+): Promise<any> =>
+  API.delete(
     url,
     config
   ).then(
     (response) =>
-      unwrap(
-        response.data
-      )
+      unwrap(response.data)
   );
-};
-
 
 /**
  * ============================================================
@@ -583,12 +346,11 @@ export const del = (
  */
 
 export const authApi = {
-
   login: (
     email: string,
     password: string,
     mfaCode?: string,
-    otp?: string,
+    otp?: string
   ) =>
     post(
       '/auth/login',
@@ -597,23 +359,20 @@ export const authApi = {
         password,
         mfaCode,
         otp,
-      },
+      }
     ),
 
   register: (
-    data: unknown,
+    data: unknown
   ) =>
     post(
       '/auth/register',
-      data,
+      data
     ),
 
   me: () =>
-    get(
-      '/auth/me'
-    ),
+    get('/auth/me'),
 };
-
 
 /**
  * ============================================================
@@ -622,12 +381,11 @@ export const authApi = {
  */
 
 export const loanApi = {
-
   list: (
     page = 0,
     size = 20,
     status = '',
-    type = '',
+    type = ''
   ) =>
     get(
       `/loans?page=${page}&size=${size}` +
@@ -640,28 +398,28 @@ export const loanApi = {
           type
             ? `&type=${encodeURIComponent(type)}`
             : ''
-        }`,
+        }`
     ),
 
   get: (
-    id: number,
+    id: number
   ) =>
     get(
-      `/loans/${id}`,
+      `/loans/${id}`
     ),
 
   create: (
-    data: unknown,
+    data: unknown
   ) =>
     post(
       '/loans',
-      data,
+      data
     ),
 
   approve: (
     id: number,
     notes = '',
-    interestRate?: number,
+    interestRate?: number
   ) =>
     post(
       `/loans/${id}/approve`,
@@ -669,45 +427,47 @@ export const loanApi = {
         notes,
         interestRate:
           interestRate != null
-            ? String(interestRate)
+            ? String(
+                interestRate
+              )
             : undefined,
-      },
+      }
     ),
 
   reject: (
     id: number,
-    reason: string,
+    reason: string
   ) =>
     post(
       `/loans/${id}/reject`,
       {
         reason,
-      },
+      }
     ),
 
   disburse: (
     id: number,
-    method: string,
+    method: string
   ) =>
     post(
       `/loans/${id}/disburse`,
       {
         disbursementMethod:
           method,
-      },
+      }
     ),
 
   updateStatus: (
     id: number,
     status: string,
-    notes?: string,
+    notes?: string
   ) =>
     post(
       `/loans/${id}/status`,
       {
         status,
         notes,
-      },
+      }
     ),
 
   dashboard: () =>
@@ -716,21 +476,21 @@ export const loanApi = {
     ),
 
   schedule: (
-    id: number,
+    id: number
   ) =>
     get(
       `/loans/${id}/schedule`
     ),
 
   risk: (
-    id: number,
+    id: number
   ) =>
     get(
       `/loans/${id}/risk`
     ),
 
   documentRequirements: (
-    id: number,
+    id: number
   ) =>
     get(
       `/loans/${id}/document-requirements`
@@ -738,35 +498,35 @@ export const loanApi = {
 
   restructure: (
     id: number,
-    data: unknown,
+    data: unknown
   ) =>
     post(
       `/loans/${id}/restructure`,
-      data,
+      data
     ),
 
   writeOff: (
     id: number,
-    reason: string,
+    reason: string
   ) =>
     post(
       `/loans/${id}/write-off`,
       {
         reason,
-      },
+      }
     ),
 
   moratorium: (
     id: number,
-    data: unknown,
+    data: unknown
   ) =>
     post(
       `/loans/${id}/moratorium`,
-      data,
+      data
     ),
 
   getComments: (
-    id: number,
+    id: number
   ) =>
     get(
       `/loans/${id}/comments`
@@ -775,17 +535,16 @@ export const loanApi = {
   addComment: (
     id: number,
     message: string,
-    visibleToApplicant = true,
+    visibleToApplicant = true
   ) =>
     post(
       `/loans/${id}/comments`,
       {
         message,
         visibleToApplicant,
-      },
+      }
     ),
 };
-
 
 /**
  * ============================================================
@@ -794,13 +553,9 @@ export const loanApi = {
  */
 
 export const branchApi = {
-
   list: () =>
-    get(
-      '/branches'
-    ),
+    get('/branches'),
 };
-
 
 /**
  * ============================================================
@@ -809,7 +564,6 @@ export const branchApi = {
  */
 
 export const expenseApi = {
-
   list: (
     params: {
       page?: number;
@@ -818,7 +572,7 @@ export const expenseApi = {
       branchId?: number;
       from?: string;
       to?: string;
-    } = {},
+    } = {}
   ) => {
 
     const query =
@@ -876,7 +630,7 @@ export const expenseApi = {
   },
 
   get: (
-    id: number,
+    id: number
   ) =>
     get(
       `/expenses/${id}`
@@ -884,29 +638,29 @@ export const expenseApi = {
 
   summary: (
     from?: string,
-    to?: string,
+    to?: string
   ) =>
     get(
       `/expenses/summary${
         from && to
           ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
           : ''
-      }`,
+      }`
     ),
 
   void: (
     id: number,
-    reason?: string,
+    reason?: string
   ) =>
     post(
       `/expenses/${id}/void`,
       {
         reason,
-      },
+      }
     ),
 
   receiptUrl: (
-    id: number,
+    id: number
   ) =>
     `${API_BASE_URL}/expenses/${id}/receipt`,
 
@@ -985,7 +739,9 @@ export const expenseApi = {
       );
     }
 
-    if (data.paymentPhoneNumber) {
+    if (
+      data.paymentPhoneNumber
+    ) {
       form.append(
         'paymentPhoneNumber',
         data.paymentPhoneNumber
@@ -1054,16 +810,19 @@ export const expenseApi = {
 
     return API.post(
       '/expenses',
-      form
+      form,
+      {
+        headers: {
+          'Content-Type':
+            'multipart/form-data',
+        },
+      }
     ).then(
       (response) =>
-        unwrap(
-          response.data
-        )
+        unwrap(response.data)
     );
   },
 };
-
 
 /**
  * ============================================================
@@ -1072,13 +831,12 @@ export const expenseApi = {
  */
 
 export const paymentApi = {
-
   record: (
     loanId: number,
     data: unknown,
-    idempotencyKey?: string,
+    idempotencyKey?: string
   ) =>
-    post(
+    API.post(
       `/loans/${loanId}/payments`,
       data,
       {
@@ -1090,16 +848,18 @@ export const paymentApi = {
               }
             : {},
       }
+    ).then(
+      (response) =>
+        unwrap(response.data)
     ),
 
   schedule: (
-    loanId: number,
+    loanId: number
   ) =>
     get(
       `/loans/${loanId}/payments`
     ),
 };
-
 
 /**
  * ============================================================
@@ -1108,11 +868,10 @@ export const paymentApi = {
  */
 
 export const borrowerApi = {
-
   list: (
     page = 0,
     size = 20,
-    q = '',
+    q = ''
   ) =>
     get(
       `/borrowers?page=${page}&size=${size}` +
@@ -1120,25 +879,25 @@ export const borrowerApi = {
           q
             ? `&q=${encodeURIComponent(q)}`
             : ''
-        }`,
+        }`
     ),
 
   get: (
-    id: number,
+    id: number
   ) =>
     get(
       `/borrowers/${id}`
     ),
 
   getDetails: (
-    id: number,
+    id: number
   ) =>
     get(
       `/borrowers/${id}/details`
     ),
 
   create: (
-    data: unknown,
+    data: unknown
   ) =>
     post(
       '/borrowers',
@@ -1147,14 +906,13 @@ export const borrowerApi = {
 
   update: (
     id: number,
-    data: unknown,
+    data: unknown
   ) =>
     put(
       `/borrowers/${id}`,
       data
     ),
 };
-
 
 /**
  * ============================================================
@@ -1163,23 +921,22 @@ export const borrowerApi = {
  */
 
 export const complianceApi = {
-
   screen: (
-    borrowerId: number,
+    borrowerId: number
   ) =>
     post(
       `/compliance/borrowers/${borrowerId}/screen`
     ),
 
   history: (
-    borrowerId: number,
+    borrowerId: number
   ) =>
     get(
       `/compliance/borrowers/${borrowerId}/history`
     ),
 
   status: (
-    borrowerId: number,
+    borrowerId: number
   ) =>
     get(
       `/compliance/borrowers/${borrowerId}/status`
@@ -1192,14 +949,13 @@ export const complianceApi = {
 
   decide: (
     checkId: number,
-    data: unknown,
+    data: unknown
   ) =>
     post(
       `/compliance/checks/${checkId}/decide`,
       data
     ),
 };
-
 
 /**
  * ============================================================
@@ -1208,14 +964,11 @@ export const complianceApi = {
  */
 
 export const mfaApi = {
-
   setup: () =>
-    post(
-      '/mfa/setup'
-    ),
+    post('/mfa/setup'),
 
   confirm: (
-    code: string,
+    code: string
   ) =>
     post(
       '/mfa/confirm',
@@ -1225,11 +978,8 @@ export const mfaApi = {
     ),
 
   disable: () =>
-    post(
-      '/mfa/disable'
-    ),
+    post('/mfa/disable'),
 };
-
 
 /**
  * ============================================================
@@ -1238,10 +988,9 @@ export const mfaApi = {
  */
 
 export const bulkApi = {
-
   disburse: (
     loanIds: number[],
-    method = 'BANK_TRANSFER',
+    method = 'BANK_TRANSFER'
   ) =>
     post(
       '/bulk/disburse',
@@ -1253,7 +1002,6 @@ export const bulkApi = {
     ),
 };
 
-
 /**
  * ============================================================
  * ORGANIZATION API
@@ -1261,14 +1009,13 @@ export const bulkApi = {
  */
 
 export const orgApi = {
-
   me: () =>
     get(
       '/organizations/me'
     ),
 
   update: (
-    data: unknown,
+    data: unknown
   ) =>
     put(
       '/organizations/me',
@@ -1281,7 +1028,6 @@ export const orgApi = {
     ),
 };
 
-
 /**
  * ============================================================
  * WEBHOOK API
@@ -1289,14 +1035,11 @@ export const orgApi = {
  */
 
 export const webhookApi = {
-
   list: () =>
-    get(
-      '/webhooks'
-    ),
+    get('/webhooks'),
 
   create: (
-    data: unknown,
+    data: unknown
   ) =>
     post(
       '/webhooks',
@@ -1304,13 +1047,12 @@ export const webhookApi = {
     ),
 
   remove: (
-    id: number,
+    id: number
   ) =>
     del(
       `/webhooks/${id}`
     ),
 };
-
 
 /**
  * ============================================================
@@ -1319,9 +1061,8 @@ export const webhookApi = {
  */
 
 export const currencyApi = {
-
   rates: (
-    base = 'USD',
+    base = 'USD'
   ) =>
     get(
       `/currencies?base=${encodeURIComponent(base)}`
@@ -1330,7 +1071,7 @@ export const currencyApi = {
   convert: (
     from: string,
     to: string,
-    amount: number,
+    amount: number
   ) =>
     get(
       `/currencies/convert?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=${amount}`
@@ -1352,7 +1093,6 @@ export const currencyApi = {
     ),
 };
 
-
 /**
  * ============================================================
  * PRIVACY API
@@ -1360,22 +1100,20 @@ export const currencyApi = {
  */
 
 export const privacyApi = {
-
   exportData: (
-    id: number,
+    id: number
   ) =>
     get(
       `/privacy/borrowers/${id}/export`
     ),
 
   eraseData: (
-    id: number,
+    id: number
   ) =>
     del(
       `/privacy/borrowers/${id}/erase`
     ),
 };
-
 
 /**
  * ============================================================
@@ -1384,43 +1122,41 @@ export const privacyApi = {
  */
 
 export const creditBureauApi = {
-
   check: (
-    borrowerId: number,
+    borrowerId: number
   ) =>
     post(
       `/credit-bureau/borrowers/${borrowerId}/check`
     ),
 
   history: (
-    borrowerId: number,
+    borrowerId: number
   ) =>
     get(
       `/credit-bureau/borrowers/${borrowerId}/history`
     ),
 
   latest: (
-    borrowerId: number,
+    borrowerId: number
   ) =>
     get(
       `/credit-bureau/borrowers/${borrowerId}/latest`
     ),
 
   reportForLoan: (
-    loanId: number,
+    loanId: number
   ) =>
     get(
       `/credit-bureau/loans/${loanId}/report`
     ),
 
   retryReport: (
-    loanId: number,
+    loanId: number
   ) =>
     post(
       `/credit-bureau/loans/${loanId}/report/retry`
     ),
 };
-
 
 /**
  * ============================================================
@@ -1429,10 +1165,10 @@ export const creditBureauApi = {
  */
 
 export const esignatureApi = {
-
   initiate: (
     loanId: number,
-    documentType = 'LOAN_AGREEMENT',
+    documentType =
+      'LOAN_AGREEMENT'
   ) =>
     post(
       `/loans/${loanId}/esignature/initiate`,
@@ -1442,13 +1178,12 @@ export const esignatureApi = {
     ),
 
   history: (
-    loanId: number,
+    loanId: number
   ) =>
     get(
       `/loans/${loanId}/esignature`
     ),
 };
-
 
 /**
  * ============================================================
@@ -1457,7 +1192,6 @@ export const esignatureApi = {
  */
 
 export const accountingApi = {
-
   chartOfAccounts: () =>
     get(
       '/accounting/chart-of-accounts'
@@ -1479,7 +1213,7 @@ export const accountingApi = {
     data: {
       name?: string;
       active?: boolean;
-    },
+    }
   ) =>
     put(
       `/accounting/chart-of-accounts/${id}`,
@@ -1493,7 +1227,7 @@ export const accountingApi = {
 
   reverseEntry: (
     id: number,
-    reason?: string,
+    reason?: string
   ) =>
     post(
       `/accounting/journal/${id}/reverse`,
@@ -1503,7 +1237,7 @@ export const accountingApi = {
     ),
 
   ledger: (
-    accountId: number,
+    accountId: number
   ) =>
     get(
       `/accounting/ledger/${accountId}`
@@ -1521,7 +1255,7 @@ export const accountingApi = {
 
   profitAndLoss: (
     from?: string,
-    to?: string,
+    to?: string
   ) =>
     get(
       `/accounting/profit-and-loss${
@@ -1533,7 +1267,7 @@ export const accountingApi = {
 
   cashFlow: (
     from?: string,
-    to?: string,
+    to?: string
   ) =>
     get(
       `/accounting/cash-flow${
@@ -1545,7 +1279,7 @@ export const accountingApi = {
 
   branchSummary: (
     from?: string,
-    to?: string,
+    to?: string
   ) =>
     get(
       `/accounting/branch-summary${
@@ -1556,7 +1290,6 @@ export const accountingApi = {
     ),
 };
 
-
 /**
  * ============================================================
  * BANK ACCOUNT API
@@ -1564,7 +1297,6 @@ export const accountingApi = {
  */
 
 export const bankAccountApi = {
-
   list: () =>
     get(
       '/bank-accounts'
@@ -1590,7 +1322,7 @@ export const bankAccountApi = {
       amount: number;
       counterAccountId: number;
       description?: string;
-    },
+    }
   ) =>
     post(
       `/bank-accounts/${id}/transactions`,
@@ -1609,7 +1341,6 @@ export const bankAccountApi = {
     ),
 };
 
-
 /**
  * ============================================================
  * CONTACT MESSAGE API
@@ -1617,7 +1348,6 @@ export const bankAccountApi = {
  */
 
 export const contactMessageApi = {
-
   list: () =>
     get(
       '/contact-messages'
@@ -1629,20 +1359,19 @@ export const contactMessageApi = {
     ),
 
   markRead: (
-    id: number,
+    id: number
   ) =>
     post(
       `/contact-messages/${id}/read`
     ),
 
   delete: (
-    id: number,
+    id: number
   ) =>
     del(
       `/contact-messages/${id}`
     ),
 };
-
 
 /**
  * ============================================================
@@ -1651,23 +1380,22 @@ export const contactMessageApi = {
  */
 
 export const publicApi = {
-
   getTenant: (
-    slug: string,
+    slug: string
   ) =>
     get(
       `/public/tenant/${encodeURIComponent(slug)}`
     ),
 
   getProducts: (
-    slug: string,
+    slug: string
   ) =>
     get(
       `/public/tenant/${encodeURIComponent(slug)}/products`
     ),
 
   apply: (
-    data: unknown,
+    data: unknown
   ) =>
     post(
       '/public/loan-application',
@@ -1676,7 +1404,7 @@ export const publicApi = {
 
   trackApplication: (
     reference: string,
-    phone: string,
+    phone: string
   ) =>
     get(
       `/public/applications/${encodeURIComponent(reference.trim())}/status?phone=${encodeURIComponent(phone.trim())}`
@@ -1684,14 +1412,13 @@ export const publicApi = {
 
   trackDashboard: (
     reference: string,
-    phone: string,
+    phone: string
   ) =>
     post(
       '/public/dashboard',
       {
         reference:
           reference.trim(),
-
         phone:
           phone.trim(),
       }
@@ -1710,14 +1437,17 @@ export const publicApi = {
 
       phoneNumber?: string;
       network?: string;
+
       cardNumber?: string;
       cardCvv?: string;
       cardExpiryMonth?: string;
       cardExpiryYear?: string;
+
       accountNumber?: string;
       bankCode?: string;
+
       email?: string;
-    },
+    }
   ) =>
     post(
       `/public/applications/${encodeURIComponent(reference.trim())}/payments/initiate?phone=${encodeURIComponent(phone.trim())}`,
@@ -1726,7 +1456,7 @@ export const publicApi = {
 
   trackComments: (
     reference: string,
-    phone: string,
+    phone: string
   ) =>
     get(
       `/public/applications/${encodeURIComponent(reference.trim())}/comments?phone=${encodeURIComponent(phone.trim())}`
@@ -1734,7 +1464,7 @@ export const publicApi = {
 
   listDocuments: (
     reference: string,
-    phone: string,
+    phone: string
   ) =>
     get(
       `/public/applications/${encodeURIComponent(reference.trim())}/documents?phone=${encodeURIComponent(phone.trim())}`
@@ -1746,25 +1476,19 @@ export const publicApi = {
     doc:
       | 'agreement'
       | 'schedule'
-      | 'receipt',
+      | 'receipt'
   ) =>
     API.get(
       `/public/applications/${encodeURIComponent(reference.trim())}/documents/${doc}.pdf?phone=${encodeURIComponent(phone.trim())}`,
       {
-        responseType:
-          'blob',
-
-        headers: {
-          Accept:
-            'application/pdf',
-        },
+        responseType: 'blob',
       }
     ),
 
   deleteDocument: (
     reference: string,
     phone: string,
-    fileId: number,
+    fileId: number
   ) =>
     del(
       `/public/applications/${encodeURIComponent(reference.trim())}/documents/${fileId}?phone=${encodeURIComponent(phone.trim())}`
@@ -1775,7 +1499,7 @@ export const publicApi = {
     phone: string,
     documentType: string,
     file: File | Blob,
-    fileName?: string,
+    fileName?: string
   ) => {
 
     const form =
@@ -1795,7 +1519,8 @@ export const publicApi = {
       fileName ||
       (
         'name' in file &&
-        typeof file.name === 'string'
+        typeof file.name ===
+          'string'
           ? file.name
           : 'upload.jpg'
       );
@@ -1808,16 +1533,19 @@ export const publicApi = {
 
     return API.post(
       `/public/applications/${encodeURIComponent(reference.trim())}/documents`,
-      form
+      form,
+      {
+        headers: {
+          'Content-Type':
+            'multipart/form-data',
+        },
+      }
     ).then(
       (response) =>
-        unwrap(
-          response.data
-        )
+        unwrap(response.data)
     );
   },
 };
-
 
 /**
  * ============================================================
@@ -1826,23 +1554,17 @@ export const publicApi = {
  */
 
 export const importApi = {
-
   template: () =>
     API.get(
       '/import/legacy-loans/template',
       {
         responseType:
           'blob',
-
-        headers: {
-          Accept:
-            'application/octet-stream',
-        },
       }
     ),
 
   preview: (
-    file: File,
+    file: File
   ) => {
 
     const form =
@@ -1855,17 +1577,21 @@ export const importApi = {
 
     return API.post(
       '/import/legacy-loans/preview',
-      form
+      form,
+      {
+        headers: {
+          'Content-Type':
+            'multipart/form-data',
+        },
+      }
     ).then(
       (response) =>
-        unwrap(
-          response.data
-        )
+        unwrap(response.data)
     );
   },
 
   commit: (
-    file: File,
+    file: File
   ) => {
 
     const form =
@@ -1878,12 +1604,16 @@ export const importApi = {
 
     return API.post(
       '/import/legacy-loans/commit',
-      form
+      form,
+      {
+        headers: {
+          'Content-Type':
+            'multipart/form-data',
+        },
+      }
     ).then(
       (response) =>
-        unwrap(
-          response.data
-        )
+        unwrap(response.data)
     );
   },
 
@@ -1893,10 +1623,9 @@ export const importApi = {
     ),
 };
 
-
 /**
  * ============================================================
- * REGULATORY / BNR / CREDIT BUREAU API
+ * REGULATORY / BNR API
  * ============================================================
  */
 
@@ -1909,12 +1638,11 @@ export const regulatoryApi = {
    */
 
   summary: (
-    period = 'MONTHLY',
+    period = 'MONTHLY'
   ) =>
     get(
       `/regulatory/bnr/summary?period=${encodeURIComponent(period)}`
     ),
-
 
   /**
    * ----------------------------------------------------------
@@ -1923,12 +1651,11 @@ export const regulatoryApi = {
    */
 
   byLoanType: (
-    period = 'MONTHLY',
+    period = 'MONTHLY'
   ) =>
     get(
       `/regulatory/bnr/by-loan-type?period=${encodeURIComponent(period)}`
     ),
-
 
   /**
    * ----------------------------------------------------------
@@ -1937,12 +1664,11 @@ export const regulatoryApi = {
    */
 
   byGender: (
-    period = 'MONTHLY',
+    period = 'MONTHLY'
   ) =>
     get(
       `/regulatory/bnr/by-gender?period=${encodeURIComponent(period)}`
     ),
-
 
   /**
    * ----------------------------------------------------------
@@ -1951,12 +1677,11 @@ export const regulatoryApi = {
    */
 
   byBranch: (
-    period = 'MONTHLY',
+    period = 'MONTHLY'
   ) =>
     get(
       `/regulatory/bnr/by-branch?period=${encodeURIComponent(period)}`
     ),
-
 
   /**
    * ----------------------------------------------------------
@@ -1965,12 +1690,11 @@ export const regulatoryApi = {
    */
 
   loanTypeBreakdown: (
-    period = 'MONTHLY',
+    period = 'MONTHLY'
   ) =>
     get(
       `/regulatory/bnr/breakdown/loan-type?period=${encodeURIComponent(period)}`
     ),
-
 
   /**
    * ----------------------------------------------------------
@@ -1979,12 +1703,11 @@ export const regulatoryApi = {
    */
 
   genderBreakdown: (
-    period = 'MONTHLY',
+    period = 'MONTHLY'
   ) =>
     get(
       `/regulatory/bnr/breakdown/gender?period=${encodeURIComponent(period)}`
     ),
-
 
   /**
    * ----------------------------------------------------------
@@ -1993,12 +1716,11 @@ export const regulatoryApi = {
    */
 
   branchBreakdown: (
-    period = 'MONTHLY',
+    period = 'MONTHLY'
   ) =>
     get(
       `/regulatory/bnr/breakdown/branch?period=${encodeURIComponent(period)}`
     ),
-
 
   /**
    * ----------------------------------------------------------
@@ -2011,7 +1733,7 @@ export const regulatoryApi = {
     branchId: number | null,
     period: string,
     startDate: string,
-    endDate: string,
+    endDate: string
   ) =>
     get(
       `/regulatory/bnr/financial-statement` +
@@ -2026,7 +1748,6 @@ export const regulatoryApi = {
         `&endDate=${encodeURIComponent(endDate)}`
     ),
 
-
   /**
    * ----------------------------------------------------------
    * CREDIT BUREAU PREVIEW
@@ -2036,16 +1757,15 @@ export const regulatoryApi = {
   creditBureauPreview: (
     queryParams?: Record<
       string,
-      string | number | boolean | null | undefined
-    >,
+      string | number | boolean |
+        null | undefined
+    >
   ) => {
 
     const query =
       new URLSearchParams();
 
-
     if (queryParams) {
-
       Object.entries(
         queryParams
       ).forEach(
@@ -2055,7 +1775,6 @@ export const regulatoryApi = {
             value !== null &&
             value !== undefined
           ) {
-
             query.set(
               key,
               String(value)
@@ -2065,93 +1784,42 @@ export const regulatoryApi = {
       );
     }
 
-
     const queryString =
       query.toString();
 
-
-    const url =
+    return get(
       `/regulatory/credit-bureau/preview${
         queryString
           ? `?${queryString}`
           : ''
-      }`;
-
-
-    /**
-     * Explicitly use the normal authenticated API.
-     *
-     * The JWT interceptor will attach:
-     *
-     * Authorization: Bearer <token>
-     */
-
-    return get(
-      url
+      }`
     );
   },
-
 
   /**
    * ----------------------------------------------------------
    * CREDIT BUREAU EXPORT
    * ----------------------------------------------------------
-   *
-   * IMPORTANT:
-   *
-   * This does NOT use a separate Axios instance.
-   *
-   * It uses the SAME API instance as BNR.
-   *
-   * Therefore:
-   *
-   * Authorization: Bearer <JWT>
-   *
-   * is added by the same interceptor.
-   *
-   * ----------------------------------------------------------
    */
 
-  creditBureauExport: async (
+  creditBureauExport: (
     format = 'pdf',
     queryParams?: Record<
       string,
-      string | number | boolean | null | undefined
-    >,
+      string | number | boolean |
+        null | undefined
+    >
   ) => {
 
     const query =
       new URLSearchParams();
 
-
-    /**
-     * --------------------------------------------------------
-     * FORMAT
-     * --------------------------------------------------------
-     */
-
-    const normalizedFormat =
-      String(
-        format || 'pdf'
-      )
-        .trim()
-        .toLowerCase();
-
-
     query.set(
       'format',
-      normalizedFormat
+      format
     );
 
-
-    /**
-     * --------------------------------------------------------
-     * OTHER PARAMETERS
-     * --------------------------------------------------------
-     */
-
     if (queryParams) {
-
       Object.entries(
         queryParams
       ).forEach(
@@ -2161,7 +1829,6 @@ export const regulatoryApi = {
             value !== null &&
             value !== undefined
           ) {
-
             query.set(
               key,
               String(value)
@@ -2171,123 +1838,50 @@ export const regulatoryApi = {
       );
     }
 
-
-    /**
-     * --------------------------------------------------------
-     * FINAL URL
-     * --------------------------------------------------------
-     */
-
-    const endpoint =
-      `/regulatory/credit-bureau/export?${query.toString()}`;
-
-
-    /**
-     * --------------------------------------------------------
-     * TOKEN
-     * --------------------------------------------------------
-     *
-     * Explicitly obtain the token here.
-     *
-     * The interceptor also adds it.
-     *
-     * This gives us a guaranteed authenticated request
-     * from the frontend.
-     * --------------------------------------------------------
-     */
-
-    const token =
-      getStoredToken();
-
-
-    if (!token) {
-
-      const error =
-        new Error(
-          'No authentication token was found. Please log in again.'
-        ) as Error & {
-          status?: number;
-        };
-
-      error.status =
-        401;
-
-      throw error;
-    }
-
-
-    /**
-     * --------------------------------------------------------
-     * DEBUG
-     * --------------------------------------------------------
-     */
-
-    if (
-      typeof window !== 'undefined'
-    ) {
-
-      console.debug(
-        '[CREDIT BUREAU EXPORT]',
-        {
-          baseURL:
-            API_BASE_URL,
-
-          endpoint,
-
-          fullURL:
-            `${API_BASE_URL}${endpoint}`,
-
-          format:
-            normalizedFormat,
-
-          hasToken:
-            Boolean(token),
-
-          tokenLength:
-            token.length,
-        }
-      );
-    }
-
-
-    /**
-     * --------------------------------------------------------
-     * REQUEST
-     * --------------------------------------------------------
-     *
-     * Explicit Authorization.
-     *
-     * Explicit Accept.
-     *
-     * Blob response.
-     *
-     * No Content-Type for GET.
-     *
-     * --------------------------------------------------------
-     */
-
     return API.get(
-      endpoint,
+      `/regulatory/credit-bureau/export?${query.toString()}`,
       {
         responseType:
           'blob',
 
         headers: {
-          Authorization:
-            `Bearer ${token}`,
-
           Accept:
-            normalizedFormat === 'pdf'
-              ? 'application/pdf'
-              : normalizedFormat === 'xlsx'
-                ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                : 'text/csv',
+            getExportAcceptHeader(
+              format
+            ),
         },
       }
     );
   },
 };
 
+/**
+ * ============================================================
+ * EXPORT MIME TYPE
+ * ============================================================
+ */
+
+function getExportAcceptHeader(
+  format: string
+): string {
+
+  switch (
+    format.toLowerCase()
+  ) {
+
+    case 'pdf':
+      return 'application/pdf';
+
+    case 'csv':
+      return 'text/csv';
+
+    case 'xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+    default:
+      return '*/*';
+  }
+}
 
 /**
  * ============================================================
@@ -2297,14 +1891,10 @@ export const regulatoryApi = {
 
 export default API;
 
-
 /**
  * ============================================================
- * NAMED EXPORT
+ * NAMED API EXPORT
  * ============================================================
  */
 
-export {
-  API,
-  API_BASE_URL,
-};
+export { API };
