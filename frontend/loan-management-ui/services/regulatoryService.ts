@@ -1,11 +1,7 @@
 
 import api from '@/services/api';
 
-/**
- * ============================================================
- * TYPES
- * ============================================================
- */
+
 
 export type RegulatoryPeriod =
   | 'DAILY'
@@ -1308,7 +1304,7 @@ export const regulatoryApi = {
       'Credit Bureau export request:',
       {
         url:
-          '/regulatory/credit-bureau/export',
+          '/regulatory/credit-bureau/download',
 
         format,
 
