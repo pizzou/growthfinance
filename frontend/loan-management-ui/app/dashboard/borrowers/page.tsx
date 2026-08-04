@@ -1,11 +1,9 @@
-
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { borrowerApi } from '@/services/api';
-
 import { Borrower } from '@/types';
 
 import { Card } from '@/components/ui/Card';
@@ -22,7 +20,7 @@ import {
 } from '@/components/ui/Table';
 
 import {
-  Modal
+  Modal,
 } from '@/components/ui/Modal';
 
 import {
@@ -42,736 +40,442 @@ import {
 
 import { useAuth } from '@/hooks/useAuth';
 
-
-// ============================================================
-// PAGE
-// ============================================================
-
 export default function BorrowersPage() {
-
   const router = useRouter();
 
-  const [borrowers, setBorrowers] =
-    useState<Borrower[]>([]);
+  const [borrowers, setBorrowers] = useState<Borrower[]>([]);
+  const [total, setTotal] = useState(0);
 
-  const [total, setTotal] =
-    useState(0);
+  const [page, setPage] = useState(0);
+  const [q, setQ] = useState('');
 
-  const [page, setPage] =
-    useState(0);
+  const [loading, setLoading] = useState(true);
 
-  const [q, setQ] =
-    useState('');
+  const [addOpen, setAddOpen] = useState(false);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [msg, setMsg] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const [addOpen, setAddOpen] =
-    useState(false);
+  const { currency, locale } = useAuth();
 
-  const [msg, setMsg] =
-    useState('');
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const {
-    currency,
-    locale,
-  } = useAuth();
-
-
-  // ============================================================
-  // FORM
-  // ============================================================
-
-  const blank: Record<string, string> = {
-
+  const blank = {
     firstName: '',
     lastName: '',
-
     email: '',
     phone: '',
-
     nationalId: '',
-
     dateOfBirth: '',
-
     gender: '',
-
     nationality: 'RW',
-
     employerName: '',
-
     employmentType: 'PERMANENT',
-
     jobTitle: '',
-
     monthlyIncome: '',
-
     monthlyExpenses: '',
-
     creditScore: '',
-
     addressLine1: '',
-
     city: '',
-
     country: 'RW',
-
     bankName: '',
-
     bankAccountNumber: '',
   };
 
-
   const [form, setForm] =
-    useState<Record<string, string>>(
-      blank
-    );
+    useState<Record<string, string>>(blank);
 
+  /**
+   * ============================================================
+   * LOAD BORROWERS
+   * ============================================================
+   */
 
-  // ============================================================
-  // LOAD BORROWERS
-  // ============================================================
+  const load = useCallback(async () => {
+    setLoading(true);
 
-  const load = useCallback(
-    async () => {
-
-      try {
-
-        setLoading(true);
-
-
-        const response =
-          await borrowerApi.list(
-            page,
-            20,
-            q
-          );
-
-
-        const content =
-          Array.isArray(response)
-            ? response
-            : response?.content ?? [];
-
-
-        setBorrowers(
-          content
+    try {
+      const response: any =
+        await borrowerApi.list(
+          page,
+          20,
+          q,
         );
 
+      const content =
+        Array.isArray(response)
+          ? response
+          : response?.content ?? [];
 
-        setTotal(
-          Array.isArray(response)
-            ? content.length
-            : response?.totalElements ??
-              content.length
-        );
+      setBorrowers(content);
 
-      } catch (error) {
+      setTotal(
+        response?.totalElements ??
+        content.length,
+      );
+    } catch (error) {
+      console.error(
+        'Failed to load borrowers:',
+        error,
+      );
 
-        console.error(
-          'Failed to load borrowers:',
-          error
-        );
-
-        setBorrowers([]);
-
-        setTotal(0);
-
-      } finally {
-
-        setLoading(false);
-      }
-
-    },
-    [page, q]
-  );
-
-
-  // ============================================================
-  // LOAD
-  // ============================================================
+      setBorrowers([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, q]);
 
   useEffect(() => {
-
     load();
-
   }, [load]);
 
-
-  // ============================================================
-  // ADD BORROWER
-  // ============================================================
+  /**
+   * ============================================================
+   * ADD BORROWER
+   * ============================================================
+   */
 
   const handleAdd = async (
-    e: React.FormEvent
+    e: React.FormEvent,
   ) => {
-
     e.preventDefault();
 
     setSaving(true);
-
     setMsg('');
 
-
     try {
-
       await borrowerApi.create({
-
         ...form,
 
         monthlyIncome:
           form.monthlyIncome
-            ? Number(
-                form.monthlyIncome
-              )
-            : null,
+            ? Number(form.monthlyIncome)
+            : undefined,
 
         monthlyExpenses:
           form.monthlyExpenses
-            ? Number(
-                form.monthlyExpenses
-              )
-            : null,
+            ? Number(form.monthlyExpenses)
+            : undefined,
 
         creditScore:
           form.creditScore
-            ? Number(
-                form.creditScore
-              )
-            : null,
-
+            ? Number(form.creditScore)
+            : undefined,
       });
-
 
       setAddOpen(false);
 
       setForm({
-        ...blank
+        ...blank,
       });
 
-
       await load();
-
-    } catch (err: any) {
-
-      setMsg(
-        err?.message ||
-        'Unable to create borrower.'
+    } catch (error: any) {
+      console.error(
+        'Failed to create borrower:',
+        error,
       );
 
+      setMsg(
+        error?.message ||
+        'Failed to create borrower',
+      );
     } finally {
-
       setSaving(false);
     }
   };
 
+  /**
+   * ============================================================
+   * FORM HELPER
+   * ============================================================
+   */
 
-  // ============================================================
-  // FORM SETTER
-  // ============================================================
-
-  const set = (
-    key: string
-  ) => (
-    e: React.ChangeEvent<
-      HTMLInputElement |
-      HTMLSelectElement
-    >
-  ) => {
-
-    setForm(
-      current => ({
+  const set =
+    (key: string) =>
+    (
+      e: React.ChangeEvent<
+        HTMLInputElement |
+        HTMLSelectElement
+      >,
+    ) => {
+      setForm((current) => ({
         ...current,
         [key]: e.target.value,
-      })
+      }));
+    };
+
+  /**
+   * ============================================================
+   * OPEN BORROWER DETAILS
+   * ============================================================
+   *
+   * IMPORTANT:
+   *
+   * The correct route is:
+   *
+   * /dashboard/borrowers/{id}
+   *
+   * NOT:
+   *
+   * /dashboard/{id}
+   *
+   */
+
+  const openBorrower = (
+    borrowerId: number,
+  ) => {
+    router.push(
+      `/dashboard/borrowers/${borrowerId}`,
     );
   };
 
-
-  // ============================================================
-  // RENDER
-  // ============================================================
-
   return (
-
     <div>
-
-
       {/* ======================================================
           HEADER
       ====================================================== */}
 
-      <div
-        className="
-          flex
-          items-start
-          justify-between
-          mb-6
-        "
-      >
-
+      <div className="flex items-start justify-between mb-6">
         <div>
-
-          <h1
-            className="
-              text-2xl
-              font-extrabold
-              text-gray-900
-            "
-          >
+          <h1 className="text-2xl font-extrabold text-gray-900">
             Borrowers
           </h1>
 
           <p className="text-sm text-gray-500 mt-0.5">
-            {formatNumber(total)}
-            {' '}
-            registered clients
+            {formatNumber(total)} registered clients
           </p>
-
         </div>
-
 
         <Button
           icon="+"
-          onClick={() =>
-            setAddOpen(true)
-          }
+          onClick={() => {
+            setMsg('');
+            setAddOpen(true);
+          }}
         >
           Add Borrower
         </Button>
-
       </div>
-
 
       {/* ======================================================
           SEARCH
       ====================================================== */}
 
       <div className="flex gap-3 mb-4">
-
         <div className="relative">
-
-          <span
-            className="
-              absolute
-              left-3
-              top-1/2
-              -translate-y-1/2
-              text-gray-400
-              text-sm
-            "
-          >
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
             🔍
           </span>
-
 
           <Input
             placeholder="Search name, email, ID…"
             className="pl-9 w-64"
             value={q}
-            onChange={e => {
-
-              setQ(
-                e.target.value
-              );
-
+            onChange={(e) => {
+              setQ(e.target.value);
               setPage(0);
-
             }}
           />
-
         </div>
-
       </div>
 
-
       {/* ======================================================
-          TABLE
+          BORROWER TABLE
       ====================================================== */}
 
       <Card>
-
         {loading ? (
-
-          <div
-            className="
-              flex
-              items-center
-              justify-center
-              py-16
-            "
-          >
-
-            <div
-              className="
-                w-8
-                h-8
-                border-2
-                border-teal-500
-                border-t-transparent
-                rounded-full
-                animate-spin
-              "
-            />
-
+          <div className="flex items-center justify-center py-16">
+            <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
           </div>
-
         ) : (
+          <Table>
+            <Thead>
+              <tr>
+                <Th>Name</Th>
+                <Th>Email</Th>
+                <Th>Phone</Th>
+                <Th>National ID</Th>
+                <Th>Employer</Th>
+                <Th>Income</Th>
+                <Th>Credit Score</Th>
+                <Th>Country</Th>
+                <Th>Since</Th>
+              </tr>
+            </Thead>
 
-          <>
+            <Tbody>
+              {borrowers.length === 0 ? (
+                <EmptyRow
+                  cols={9}
+                  message="No borrowers found"
+                />
+              ) : (
+                borrowers.map(
+                  (borrower: Borrower) => (
+                    <Tr
+                      key={borrower.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() =>
+                        openBorrower(
+                          borrower.id,
+                        )
+                      }
+                    >
+                      {/* ==================================================
+                          NAME
+                      ================================================== */}
 
-            <Table>
-
-              <Thead>
-
-                <tr>
-
-                  <Th>Name</Th>
-
-                  <Th>Email</Th>
-
-                  <Th>Phone</Th>
-
-                  <Th>National ID</Th>
-
-                  <Th>Employer</Th>
-
-                  <Th>Income</Th>
-
-                  <Th>Credit Score</Th>
-
-                  <Th>Country</Th>
-
-                  <Th>Since</Th>
-
-                </tr>
-
-              </Thead>
-
-
-              <Tbody>
-
-                {borrowers.length === 0 ? (
-
-                  <EmptyRow
-                    cols={9}
-                    message="No borrowers found"
-                  />
-
-                ) : (
-
-                  borrowers.map(
-                    (
-                      borrower: Borrower
-                    ) => (
-
-                      <Tr
-                        key={borrower.id}
-                        className="
-                          cursor-pointer
-                          hover:bg-gray-50
-                        "
-                        onClick={() =>
-                          router.push(
-                            `/dashboard/${borrower.id}`
-                          )
-                        }
-                      >
-
-                        {/* NAME */}
-
-                        <Td>
-
-                          <div
-                            className="
-                              flex
-                              items-center
-                              gap-2
-                            "
-                          >
-
-                            <div
-                              className="
-                                w-8
-                                h-8
-                                bg-teal-100
-                                rounded-full
-                                flex
-                                items-center
-                                justify-center
-                                text-sm
-                                font-bold
-                                text-teal-700
-                                flex-shrink-0
-                              "
-                            >
-
-                              {borrower.firstName?.[0]}
-
-                              {borrower.lastName?.[0]}
-
-                            </div>
-
-
-                            <div>
-
-                              <div
-                                className="
-                                  font-semibold
-                                  text-sm
-                                  text-gray-900
-                                "
-                              >
-
-                                {borrower.firstName}
-                                {' '}
-                                {borrower.lastName}
-
-                              </div>
-
-
-                              <div
-                                className="
-                                  text-xs
-                                  text-gray-400
-                                "
-                              >
-                                {borrower.employmentType ||
-                                  '—'}
-                              </div>
-
-                            </div>
-
+                      <Td>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-sm font-bold text-teal-700 flex-shrink-0">
+                            {borrower.firstName?.[0] ?? ''}
+                            {borrower.lastName?.[0] ?? ''}
                           </div>
 
-                        </Td>
+                          <div>
+                            <div className="font-semibold text-sm text-gray-900">
+                              {borrower.firstName}{' '}
+                              {borrower.lastName}
+                            </div>
 
+                            <div className="text-xs text-gray-400">
+                              {borrower.employmentType ??
+                                '—'}
+                            </div>
+                          </div>
+                        </div>
+                      </Td>
 
-                        {/* EMAIL */}
+                      {/* ==================================================
+                          EMAIL
+                      ================================================== */}
 
-                        <Td
-                          className="
-                            text-sm
-                            text-gray-600
-                          "
+                      <Td className="text-sm text-gray-600">
+                        {borrower.email ?? '—'}
+                      </Td>
+
+                      {/* ==================================================
+                          PHONE
+                      ================================================== */}
+
+                      <Td className="text-sm text-gray-600">
+                        {borrower.phone ?? '—'}
+                      </Td>
+
+                      {/* ==================================================
+                          NATIONAL ID
+                      ================================================== */}
+
+                      <Td>
+                        <code className="text-xs bg-gray-100 px-2 py-0.5 rounded">
+                          {borrower.nationalId ?? '—'}
+                        </code>
+                      </Td>
+
+                      {/* ==================================================
+                          EMPLOYER
+                      ================================================== */}
+
+                      <Td className="text-sm text-gray-600">
+                        {borrower.employerName ?? '—'}
+                      </Td>
+
+                      {/* ==================================================
+                          INCOME
+                      ================================================== */}
+
+                      <Td className="font-semibold text-sm">
+                        {formatCurrency(
+                          borrower.monthlyIncome,
+                          currency,
+                          locale,
+                        )}
+                      </Td>
+
+                      {/* ==================================================
+                          CREDIT SCORE
+                      ================================================== */}
+
+                      <Td>
+                        <span
+                          className={`font-bold text-sm ${
+                            (borrower.creditScore ?? 0) >=
+                            700
+                              ? 'text-teal-600'
+                              : (borrower.creditScore ?? 0) >=
+                                600
+                              ? 'text-yellow-600'
+                              : 'text-red-500'
+                          }`}
                         >
-                          {borrower.email ?? '—'}
-                        </Td>
+                          {borrower.creditScore ??
+                            '—'}
+                        </span>
+                      </Td>
 
+                      {/* ==================================================
+                          COUNTRY
+                      ================================================== */}
 
-                        {/* PHONE */}
+                      <Td className="text-xs text-gray-500">
+                        {borrower.country ?? '—'}
+                      </Td>
 
-                        <Td
-                          className="
-                            text-sm
-                            text-gray-600
-                          "
-                        >
-                          {borrower.phone ?? '—'}
-                        </Td>
+                      {/* ==================================================
+                          CREATED DATE
+                      ================================================== */}
 
-
-                        {/* NATIONAL ID */}
-
-                        <Td>
-
-                          <code
-                            className="
-                              text-xs
-                              bg-gray-100
-                              px-2
-                              py-0.5
-                              rounded
-                            "
-                          >
-                            {borrower.nationalId ?? '—'}
-                          </code>
-
-                        </Td>
-
-
-                        {/* EMPLOYER */}
-
-                        <Td
-                          className="
-                            text-sm
-                            text-gray-600
-                          "
-                        >
-                          {borrower.employerName ?? '—'}
-                        </Td>
-
-
-                        {/* INCOME */}
-
-                        <Td
-                          className="
-                            font-semibold
-                            text-sm
-                          "
-                        >
-
-                          {formatCurrency(
-                            borrower.monthlyIncome,
-                            currency,
-                            locale
-                          )}
-
-                        </Td>
-
-
-                        {/* CREDIT SCORE */}
-
-                        <Td>
-
-                          <span
-                            className={`
-                              font-bold
-                              text-sm
-                              ${
-                                (
-                                  borrower.creditScore ??
-                                  0
-                                ) >= 700
-
-                                  ? 'text-teal-600'
-
-                                  : (
-                                      borrower.creditScore ??
-                                      0
-                                    ) >= 600
-
-                                    ? 'text-yellow-600'
-
-                                    : 'text-red-500'
-                              }
-                            `}
-                          >
-
-                            {
-                              borrower.creditScore ??
-                              '—'
-                            }
-
-                          </span>
-
-                        </Td>
-
-
-                        {/* COUNTRY */}
-
-                        <Td
-                          className="
-                            text-xs
-                            text-gray-500
-                          "
-                        >
-                          {borrower.country ?? '—'}
-                        </Td>
-
-
-                        {/* CREATED */}
-
-                        <Td
-                          className="
-                            text-xs
-                            text-gray-400
-                          "
-                        >
-
-                          {formatDate(
-                            borrower.createdAt,
-                            locale
-                          )}
-
-                        </Td>
-
-                      </Tr>
-
-                    )
-                  )
-
-                )}
-
-              </Tbody>
-
-            </Table>
-
-
-            {/* ==================================================
-                PAGINATION
-            ================================================== */}
-
-            <div
-              className="
-                flex
-                items-center
-                justify-between
-                border-t
-                px-4
-                py-3
-              "
-            >
-
-              <span
-                className="
-                  text-xs
-                  text-gray-500
-                "
-              >
-                Page {page + 1}
-              </span>
-
-
-              <div className="flex gap-2">
-
-                <Button
-                  variant="secondary"
-                  disabled={
-                    page === 0
-                  }
-                  onClick={() =>
-                    setPage(
-                      current =>
-                        Math.max(
-                          0,
-                          current - 1
-                        )
-                    )
-                  }
-                >
-                  Previous
-                </Button>
-
-
-                <Button
-                  variant="secondary"
-                  disabled={
-                    borrowers.length < 20
-                  }
-                  onClick={() =>
-                    setPage(
-                      current =>
-                        current + 1
-                    )
-                  }
-                >
-                  Next
-                </Button>
-
-              </div>
-
-            </div>
-
-          </>
-
+                      <Td className="text-xs text-gray-400">
+                        {formatDate(
+                          borrower.createdAt,
+                          locale,
+                        )}
+                      </Td>
+                    </Tr>
+                  ),
+                )
+              )}
+            </Tbody>
+          </Table>
         )}
-
       </Card>
 
+      {/* ======================================================
+          PAGINATION
+      ====================================================== */}
+
+      {total > 20 && (
+        <div className="flex items-center justify-between mt-4">
+          <Button
+            variant="secondary"
+            disabled={page === 0}
+            onClick={() =>
+              setPage(
+                Math.max(0, page - 1),
+              )
+            }
+          >
+            Previous
+          </Button>
+
+          <span className="text-sm text-gray-500">
+            Page {page + 1}
+          </span>
+
+          <Button
+            variant="secondary"
+            disabled={
+              (page + 1) * 20 >= total
+            }
+            onClick={() =>
+              setPage(page + 1)
+            }
+          >
+            Next
+          </Button>
+        </div>
+      )}
 
       {/* ======================================================
           ADD BORROWER MODAL
@@ -784,11 +488,8 @@ export default function BorrowersPage() {
         }
         title="Add New Borrower"
         size="lg"
-
         footer={
-
           <>
-
             <Button
               variant="secondary"
               onClick={() =>
@@ -798,76 +499,49 @@ export default function BorrowersPage() {
               Cancel
             </Button>
 
-
             <Button
               loading={saving}
-              onClick={() =>
-                document
-                  .getElementById(
-                    'add-borrower-form'
-                  )
-                  ?.dispatchEvent(
-                    new Event(
-                      'submit',
-                      {
-                        bubbles: true,
-                        cancelable: true,
-                      }
-                    )
-                  )
+              onClick={
+                handleAdd as any
               }
             >
               Save Borrower
             </Button>
-
           </>
-
         }
       >
-
         <form
-          id="add-borrower-form"
           onSubmit={handleAdd}
         >
-
           {msg && (
-
             <Alert type="error">
               {msg}
             </Alert>
-
           )}
 
+          {/* ==================================================
+              PERSONAL INFORMATION
+          ================================================== */}
 
-          {/* PERSONAL */}
-
-          <div
-            className="
-              text-xs
-              font-bold
-              text-gray-400
-              uppercase
-              tracking-wider
-              mb-3
-            "
-          >
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
             Personal Information
           </div>
 
-
           <FormRow>
-
             <FormGroup
               label="First Name"
               required
             >
               <Input
                 required
-                value={form.firstName}
-                onChange={set('firstName')}
+                value={
+                  form.firstName
+                }
+                onChange={set(
+                  'firstName',
+                )}
               />
             </FormGroup>
-
 
             <FormGroup
               label="Last Name"
@@ -875,73 +549,70 @@ export default function BorrowersPage() {
             >
               <Input
                 required
-                value={form.lastName}
-                onChange={set('lastName')}
+                value={
+                  form.lastName
+                }
+                onChange={set(
+                  'lastName',
+                )}
               />
             </FormGroup>
-
           </FormRow>
 
-
           <FormRow>
-
             <FormGroup label="Email">
-
               <Input
                 type="email"
                 value={form.email}
-                onChange={set('email')}
+                onChange={set(
+                  'email',
+                )}
               />
-
             </FormGroup>
-
 
             <FormGroup label="Phone">
-
               <Input
                 value={form.phone}
-                onChange={set('phone')}
+                onChange={set(
+                  'phone',
+                )}
               />
-
             </FormGroup>
-
           </FormRow>
 
-
           <FormRow>
-
             <FormGroup label="National ID">
-
               <Input
-                value={form.nationalId}
-                onChange={set('nationalId')}
+                value={
+                  form.nationalId
+                }
+                onChange={set(
+                  'nationalId',
+                )}
               />
-
             </FormGroup>
-
 
             <FormGroup label="Date of Birth">
-
               <Input
                 type="date"
-                value={form.dateOfBirth}
-                onChange={set('dateOfBirth')}
+                value={
+                  form.dateOfBirth
+                }
+                onChange={set(
+                  'dateOfBirth',
+                )}
               />
-
             </FormGroup>
-
           </FormRow>
 
-
           <FormRow>
-
             <FormGroup label="Gender">
-
               <Select
                 value={form.gender}
-                onChange={set('gender')}
+                onChange={set(
+                  'gender',
+                )}
               >
-
                 <option value="">
                   Select…
                 </option>
@@ -951,230 +622,191 @@ export default function BorrowersPage() {
                   'Female',
                   'Other',
                   'Prefer not to say',
-                ].map(
-                  gender => (
-
-                    <option
-                      key={gender}
-                      value={gender}
-                    >
-                      {gender}
-                    </option>
-
-                  )
-                )}
-
+                ].map((gender) => (
+                  <option
+                    key={gender}
+                    value={gender}
+                  >
+                    {gender}
+                  </option>
+                ))}
               </Select>
-
             </FormGroup>
 
-
             <FormGroup label="Nationality">
-
               <Select
-                value={form.nationality}
-                onChange={set('nationality')}
+                value={
+                  form.nationality
+                }
+                onChange={set(
+                  'nationality',
+                )}
               >
-
                 {COUNTRIES.map(
-                  country => (
-
+                  (country) => (
                     <option
-                      key={country.code}
-                      value={country.code}
+                      key={
+                        country.code
+                      }
+                      value={
+                        country.code
+                      }
                     >
                       {country.name}
                     </option>
-
-                  )
+                  ),
                 )}
-
               </Select>
-
             </FormGroup>
-
           </FormRow>
 
+          {/* ==================================================
+              EMPLOYMENT & FINANCE
+          ================================================== */}
 
-          {/* EMPLOYMENT */}
-
-          <div
-            className="
-              text-xs
-              font-bold
-              text-gray-400
-              uppercase
-              tracking-wider
-              mb-3
-              mt-4
-            "
-          >
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 mt-4">
             Employment & Finance
           </div>
 
-
           <FormRow>
-
             <FormGroup label="Employer Name">
-
               <Input
-                value={form.employerName}
-                onChange={set('employerName')}
+                value={
+                  form.employerName
+                }
+                onChange={set(
+                  'employerName',
+                )}
               />
-
             </FormGroup>
 
-
             <FormGroup label="Employment Type">
-
               <Select
-                value={form.employmentType}
-                onChange={set('employmentType')}
+                value={
+                  form.employmentType
+                }
+                onChange={set(
+                  'employmentType',
+                )}
               >
-
                 {[
                   'PERMANENT',
                   'CONTRACT',
                   'SELF_EMPLOYED',
                   'UNEMPLOYED',
-                ].map(
-                  type => (
-
-                    <option
-                      key={type}
-                      value={type}
-                    >
-                      {type}
-                    </option>
-
-                  )
-                )}
-
+                ].map((type) => (
+                  <option
+                    key={type}
+                    value={type}
+                  >
+                    {type}
+                  </option>
+                ))}
               </Select>
-
             </FormGroup>
-
           </FormRow>
 
-
           <FormRow>
-
             <FormGroup label="Monthly Income">
-
               <Input
                 type="number"
                 min="0"
-                value={form.monthlyIncome}
-                onChange={set('monthlyIncome')}
+                value={
+                  form.monthlyIncome
+                }
+                onChange={set(
+                  'monthlyIncome',
+                )}
               />
-
             </FormGroup>
-
 
             <FormGroup label="Monthly Expenses">
-
               <Input
                 type="number"
                 min="0"
-                value={form.monthlyExpenses}
-                onChange={set('monthlyExpenses')}
+                value={
+                  form.monthlyExpenses
+                }
+                onChange={set(
+                  'monthlyExpenses',
+                )}
               />
-
             </FormGroup>
-
           </FormRow>
 
-
           <FormRow>
-
             <FormGroup label="Credit Score">
-
               <Input
                 type="number"
                 min="300"
                 max="850"
-                value={form.creditScore}
-                onChange={set('creditScore')}
+                value={
+                  form.creditScore
+                }
+                onChange={set(
+                  'creditScore',
+                )}
               />
-
             </FormGroup>
 
-
             <FormGroup label="Country">
-
               <Select
                 value={form.country}
-                onChange={set('country')}
+                onChange={set(
+                  'country',
+                )}
               >
-
                 {COUNTRIES.map(
-                  country => (
-
+                  (country) => (
                     <option
-                      key={country.code}
-                      value={country.code}
+                      key={
+                        country.code
+                      }
+                      value={
+                        country.code
+                      }
                     >
                       {country.name}
                     </option>
-
-                  )
+                  ),
                 )}
-
               </Select>
-
             </FormGroup>
-
           </FormRow>
 
+          {/* ==================================================
+              BANK DETAILS
+          ================================================== */}
 
-          {/* BANK */}
-
-          <div
-            className="
-              text-xs
-              font-bold
-              text-gray-400
-              uppercase
-              tracking-wider
-              mb-3
-              mt-4
-            "
-          >
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 mt-4">
             Bank Details
           </div>
 
-
           <FormRow>
-
             <FormGroup label="Bank Name">
-
               <Input
-                value={form.bankName}
-                onChange={set('bankName')}
+                value={
+                  form.bankName
+                }
+                onChange={set(
+                  'bankName',
+                )}
               />
-
             </FormGroup>
 
-
             <FormGroup label="Account Number">
-
               <Input
                 value={
                   form.bankAccountNumber
                 }
-                onChange={
-                  set('bankAccountNumber')
-                }
+                onChange={set(
+                  'bankAccountNumber',
+                )}
               />
-
             </FormGroup>
-
           </FormRow>
-
         </form>
-
       </Modal>
-
     </div>
   );
 }

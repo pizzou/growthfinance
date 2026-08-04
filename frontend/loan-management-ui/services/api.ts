@@ -1,9 +1,10 @@
-
 import axios, {
   AxiosError,
   AxiosInstance,
   AxiosRequestConfig,
 } from 'axios';
+
+import type { BorrowerDetails } from '@/types';
 
 /**
  * ============================================================
@@ -145,6 +146,25 @@ export const del = (
   API.delete(url, config).then((response) =>
     unwrap(response.data),
   );
+
+/**
+ * ============================================================
+ * BORROWER DETAILS TYPE EXPORT
+ *
+ * This allows existing code such as:
+ *
+ * import {
+ *   borrowerApi,
+ *   BorrowerDetails
+ * } from '@/services/api';
+ *
+ * The actual interface remains defined in:
+ *
+ * types/index.ts
+ * ============================================================
+ */
+
+export type { BorrowerDetails };
 
 /**
  * ============================================================
@@ -558,11 +578,14 @@ export const paymentApi = {
 
 export const borrowerApi = {
   /**
-   * List borrowers
+   * ----------------------------------------------------------
+   * LIST BORROWERS
    *
    * Backend:
    * GET /api/borrowers
+   * ----------------------------------------------------------
    */
+
   list: (
     page = 0,
     size = 20,
@@ -578,45 +601,72 @@ export const borrowerApi = {
     ),
 
   /**
-   * Get basic borrower profile
+   * ----------------------------------------------------------
+   * GET BASIC BORROWER
    *
    * Backend:
    * GET /api/borrowers/{id}
+   * ----------------------------------------------------------
    */
+
   get: (id: number) =>
     get(`/borrowers/${id}`),
 
   /**
-   * Get complete borrower 360-degree profile
+   * ----------------------------------------------------------
+   * GET COMPLETE BORROWER DETAILS
    *
    * Backend:
    * GET /api/borrowers/{id}/details
    *
-   * This is the method that was missing.
+   * This is the endpoint used by:
+   *
+   * app/dashboard/borrowers/[id]/page.tsx
+   *
+   * ----------------------------------------------------------
    */
-  getDetails: (id: number) =>
-    get(`/borrowers/${id}/details`),
+
+  getDetails: (
+    id: number,
+  ): Promise<BorrowerDetails> =>
+    get(
+      `/borrowers/${id}/details`,
+    ) as Promise<BorrowerDetails>,
 
   /**
-   * Create borrower
+   * ----------------------------------------------------------
+   * CREATE BORROWER
    *
    * Backend:
    * POST /api/borrowers
+   * ----------------------------------------------------------
    */
-  create: (data: unknown) =>
-    post('/borrowers', data),
+
+  create: (
+    data: unknown,
+  ) =>
+    post(
+      '/borrowers',
+      data,
+    ),
 
   /**
-   * Update borrower
+   * ----------------------------------------------------------
+   * UPDATE BORROWER
    *
    * Backend:
    * PUT /api/borrowers/{id}
+   * ----------------------------------------------------------
    */
+
   update: (
     id: number,
     data: unknown,
   ) =>
-    put(`/borrowers/${id}`, data),
+    put(
+      `/borrowers/${id}`,
+      data,
+    ),
 };
 
 /**
@@ -626,23 +676,31 @@ export const borrowerApi = {
  */
 
 export const complianceApi = {
-  screen: (borrowerId: number) =>
+  screen: (
+    borrowerId: number,
+  ) =>
     post(
       `/compliance/borrowers/${borrowerId}/screen`,
     ),
 
-  history: (borrowerId: number) =>
+  history: (
+    borrowerId: number,
+  ) =>
     get(
       `/compliance/borrowers/${borrowerId}/history`,
     ),
 
-  status: (borrowerId: number) =>
+  status: (
+    borrowerId: number,
+  ) =>
     get(
       `/compliance/borrowers/${borrowerId}/status`,
     ),
 
   pendingReviews: () =>
-    get('/compliance/pending-reviews'),
+    get(
+      '/compliance/pending-reviews',
+    ),
 
   decide: (
     checkId: number,
@@ -664,10 +722,15 @@ export const mfaApi = {
   setup: () =>
     post('/mfa/setup'),
 
-  confirm: (code: string) =>
-    post('/mfa/confirm', {
-      code,
-    }),
+  confirm: (
+    code: string,
+  ) =>
+    post(
+      '/mfa/confirm',
+      {
+        code,
+      },
+    ),
 
   disable: () =>
     post('/mfa/disable'),
@@ -684,10 +747,13 @@ export const bulkApi = {
     loanIds: number[],
     method = 'BANK_TRANSFER',
   ) =>
-    post('/bulk/disburse', {
-      loanIds,
-      disbursementMethod: method,
-    }),
+    post(
+      '/bulk/disburse',
+      {
+        loanIds,
+        disbursementMethod: method,
+      },
+    ),
 };
 
 /**
@@ -700,11 +766,18 @@ export const orgApi = {
   me: () =>
     get('/organizations/me'),
 
-  update: (data: unknown) =>
-    put('/organizations/me', data),
+  update: (
+    data: unknown,
+  ) =>
+    put(
+      '/organizations/me',
+      data,
+    ),
 
   users: () =>
-    get('/organizations/me/users'),
+    get(
+      '/organizations/me/users',
+    ),
 };
 
 /**
@@ -717,11 +790,20 @@ export const webhookApi = {
   list: () =>
     get('/webhooks'),
 
-  create: (data: unknown) =>
-    post('/webhooks', data),
+  create: (
+    data: unknown,
+  ) =>
+    post(
+      '/webhooks',
+      data,
+    ),
 
-  remove: (id: number) =>
-    del(`/webhooks/${id}`),
+  remove: (
+    id: number,
+  ) =>
+    del(
+      `/webhooks/${id}`,
+    ),
 };
 
 /**
@@ -731,7 +813,9 @@ export const webhookApi = {
  */
 
 export const currencyApi = {
-  rates: (base = 'USD') =>
+  rates: (
+    base = 'USD',
+  ) =>
     get(
       `/currencies?base=${encodeURIComponent(base)}`,
     ),
@@ -746,13 +830,19 @@ export const currencyApi = {
     ),
 
   supported: () =>
-    get('/currencies/supported'),
+    get(
+      '/currencies/supported',
+    ),
 
   status: () =>
-    get('/currencies/status'),
+    get(
+      '/currencies/status',
+    ),
 
   refresh: () =>
-    post('/currencies/refresh'),
+    post(
+      '/currencies/refresh',
+    ),
 };
 
 /**
@@ -762,11 +852,19 @@ export const currencyApi = {
  */
 
 export const privacyApi = {
-  exportData: (id: number) =>
-    get(`/privacy/borrowers/${id}/export`),
+  exportData: (
+    id: number,
+  ) =>
+    get(
+      `/privacy/borrowers/${id}/export`,
+    ),
 
-  eraseData: (id: number) =>
-    del(`/privacy/borrowers/${id}/erase`),
+  eraseData: (
+    id: number,
+  ) =>
+    del(
+      `/privacy/borrowers/${id}/erase`,
+    ),
 };
 
 /**
@@ -776,27 +874,37 @@ export const privacyApi = {
  */
 
 export const creditBureauApi = {
-  check: (borrowerId: number) =>
+  check: (
+    borrowerId: number,
+  ) =>
     post(
       `/credit-bureau/borrowers/${borrowerId}/check`,
     ),
 
-  history: (borrowerId: number) =>
+  history: (
+    borrowerId: number,
+  ) =>
     get(
       `/credit-bureau/borrowers/${borrowerId}/history`,
     ),
 
-  latest: (borrowerId: number) =>
+  latest: (
+    borrowerId: number,
+  ) =>
     get(
       `/credit-bureau/borrowers/${borrowerId}/latest`,
     ),
 
-  reportForLoan: (loanId: number) =>
+  reportForLoan: (
+    loanId: number,
+  ) =>
     get(
       `/credit-bureau/loans/${loanId}/report`,
     ),
 
-  retryReport: (loanId: number) =>
+  retryReport: (
+    loanId: number,
+  ) =>
     post(
       `/credit-bureau/loans/${loanId}/report/retry`,
     ),
@@ -820,8 +928,12 @@ export const esignatureApi = {
       },
     ),
 
-  history: (loanId: number) =>
-    get(`/loans/${loanId}/esignature`),
+  history: (
+    loanId: number,
+  ) =>
+    get(
+      `/loans/${loanId}/esignature`,
+    ),
 };
 
 /**
@@ -832,7 +944,9 @@ export const esignatureApi = {
 
 export const accountingApi = {
   chartOfAccounts: () =>
-    get('/accounting/chart-of-accounts'),
+    get(
+      '/accounting/chart-of-accounts',
+    ),
 
   createAccount: (data: {
     code: string;
@@ -858,7 +972,9 @@ export const accountingApi = {
     ),
 
   journal: () =>
-    get('/accounting/journal'),
+    get(
+      '/accounting/journal',
+    ),
 
   reverseEntry: (
     id: number,
@@ -871,16 +987,22 @@ export const accountingApi = {
       },
     ),
 
-  ledger: (accountId: number) =>
+  ledger: (
+    accountId: number,
+  ) =>
     get(
       `/accounting/ledger/${accountId}`,
     ),
 
   trialBalance: () =>
-    get('/accounting/trial-balance'),
+    get(
+      '/accounting/trial-balance',
+    ),
 
   balanceSheet: () =>
-    get('/accounting/balance-sheet'),
+    get(
+      '/accounting/balance-sheet',
+    ),
 
   profitAndLoss: (
     from?: string,
@@ -927,7 +1049,9 @@ export const accountingApi = {
 
 export const bankAccountApi = {
   list: () =>
-    get('/bank-accounts'),
+    get(
+      '/bank-accounts',
+    ),
 
   create: (data: {
     name: string;
@@ -937,7 +1061,10 @@ export const bankAccountApi = {
     openingBalance?: number;
     branchId?: number;
   }) =>
-    post('/bank-accounts', data),
+    post(
+      '/bank-accounts',
+      data,
+    ),
 
   recordTransaction: (
     id: number,
@@ -973,16 +1100,28 @@ export const bankAccountApi = {
 
 export const contactMessageApi = {
   list: () =>
-    get('/contact-messages'),
+    get(
+      '/contact-messages',
+    ),
 
   unreadCount: () =>
-    get('/contact-messages/unread-count'),
+    get(
+      '/contact-messages/unread-count',
+    ),
 
-  markRead: (id: number) =>
-    post(`/contact-messages/${id}/read`),
+  markRead: (
+    id: number,
+  ) =>
+    post(
+      `/contact-messages/${id}/read`,
+    ),
 
-  delete: (id: number) =>
-    del(`/contact-messages/${id}`),
+  delete: (
+    id: number,
+  ) =>
+    del(
+      `/contact-messages/${id}`,
+    ),
 };
 
 /**
@@ -992,18 +1131,27 @@ export const contactMessageApi = {
  */
 
 export const publicApi = {
-  getTenant: (slug: string) =>
+  getTenant: (
+    slug: string,
+  ) =>
     get(
       `/public/tenant/${encodeURIComponent(slug)}`,
     ),
 
-  getProducts: (slug: string) =>
+  getProducts: (
+    slug: string,
+  ) =>
     get(
       `/public/tenant/${encodeURIComponent(slug)}/products`,
     ),
 
-  apply: (data: unknown) =>
-    post('/public/loan-application', data),
+  apply: (
+    data: unknown,
+  ) =>
+    post(
+      '/public/loan-application',
+      data,
+    ),
 
   trackApplication: (
     reference: string,
@@ -1017,10 +1165,13 @@ export const publicApi = {
     reference: string,
     phone: string,
   ) =>
-    post('/public/dashboard', {
-      reference: reference.trim(),
-      phone: phone.trim(),
-    }),
+    post(
+      '/public/dashboard',
+      {
+        reference: reference.trim(),
+        phone: phone.trim(),
+      },
+    ),
 
   initiatePayment: (
     reference: string,
@@ -1146,7 +1297,9 @@ export const importApi = {
       },
     ),
 
-  preview: (file: File) => {
+  preview: (
+    file: File,
+  ) => {
     const form = new FormData();
 
     form.append(
@@ -1168,7 +1321,9 @@ export const importApi = {
     );
   },
 
-  commit: (file: File) => {
+  commit: (
+    file: File,
+  ) => {
     const form = new FormData();
 
     form.append(
@@ -1191,7 +1346,9 @@ export const importApi = {
   },
 
   batches: () =>
-    get('/import/legacy-loans/batches'),
+    get(
+      '/import/legacy-loans/batches',
+    ),
 };
 
 /**

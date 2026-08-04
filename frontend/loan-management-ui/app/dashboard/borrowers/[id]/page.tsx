@@ -1,7 +1,7 @@
-
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
 import { borrowerApi } from '@/services/api';
@@ -23,36 +23,20 @@ import {
 
 import { useAuth } from '@/hooks/useAuth';
 
-
-// ============================================================
-// PAGE
-// ============================================================
-
 export default function BorrowerDetailsPage() {
-
   const params = useParams();
   const router = useRouter();
 
   const { currency, locale } = useAuth();
 
-
-  // ============================================================
-  // BORROWER ID
-  // ============================================================
-
   const borrowerId = Number(
-    Array.isArray(params?.id)
-      ? params.id[0]
-      : params?.id
+    params?.id,
   );
 
-
-  // ============================================================
-  // STATE
-  // ============================================================
-
-  const [borrower, setBorrower] =
-    useState<BorrowerDetails | null>(null);
+  const [details, setDetails] =
+    useState<BorrowerDetails | null>(
+      null,
+    );
 
   const [loading, setLoading] =
     useState(true);
@@ -60,1456 +44,1027 @@ export default function BorrowerDetailsPage() {
   const [error, setError] =
     useState('');
 
-  const [activeTab, setActiveTab] =
-    useState<'overview' | 'loans' | 'payments'>(
-      'overview'
-    );
-
-
-  // ============================================================
-  // LOAD BORROWER DETAILS
-  // ============================================================
-
-  const loadBorrower = useCallback(
-    async () => {
-
-      if (
-        !Number.isFinite(borrowerId) ||
-        borrowerId <= 0
-      ) {
-
-        setError(
-          'Invalid borrower ID.'
-        );
-
-        setLoading(false);
-
-        return;
-      }
-
-
-      try {
-
-        setLoading(true);
-        setError('');
-
-
-        const result =
-          await borrowerApi.getDetails(
-            borrowerId
-          );
-
-
-        setBorrower(result);
-
-      } catch (err: any) {
-
-        console.error(
-          'Failed to load borrower details:',
-          err
-        );
-
-
-        setError(
-          err?.message ||
-          'Unable to load borrower details.'
-        );
-
-      } finally {
-
-        setLoading(false);
-      }
-
-    },
-    [borrowerId]
-  );
-
-
-  // ============================================================
-  // LOAD
-  // ============================================================
+  /**
+   * ============================================================
+   * LOAD BORROWER DETAILS
+   * ============================================================
+   */
 
   useEffect(() => {
+    if (
+      !borrowerId ||
+      Number.isNaN(borrowerId)
+    ) {
+      setError(
+        'Invalid borrower ID.',
+      );
 
-    loadBorrower();
+      setLoading(false);
 
-  }, [loadBorrower]);
+      return;
+    }
 
+    let cancelled = false;
 
-  // ============================================================
-  // LOADING
-  // ============================================================
+    const load = async () => {
+      setLoading(true);
+      setError('');
+
+      try {
+        const response =
+          await borrowerApi.getDetails(
+            borrowerId,
+          );
+
+        if (!cancelled) {
+          setDetails(
+            response as BorrowerDetails,
+          );
+        }
+      } catch (err: any) {
+        console.error(
+          'Failed to load borrower details:',
+          err,
+        );
+
+        if (!cancelled) {
+          setError(
+            err?.message ||
+              'Failed to load borrower details.',
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [borrowerId]);
+
+  /**
+   * ============================================================
+   * LOADING
+   * ============================================================
+   */
 
   if (loading) {
-
     return (
-      <div className="min-h-[400px] flex items-center justify-center">
-
-        <div className="flex flex-col items-center gap-3">
-
-          <div
-            className="
-              w-10
-              h-10
-              border-4
-              border-gray-200
-              border-t-teal-600
-              rounded-full
-              animate-spin
-            "
-          />
-
-          <p className="text-sm text-gray-500">
-            Loading borrower details...
-          </p>
-
-        </div>
-
+      <div className="flex items-center justify-center py-20">
+        <div className="w-10 h-10 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
+  /**
+   * ============================================================
+   * ERROR
+   * ============================================================
+   */
 
-  // ============================================================
-  // ERROR
-  // ============================================================
-
-  if (error || !borrower) {
-
+  if (error || !details) {
     return (
       <div className="space-y-4">
-
         <Button
           variant="secondary"
-          onClick={() => router.back()}
+          onClick={() =>
+            router.push(
+              '/dashboard/borrowers',
+            )
+          }
         >
-          ← Back
+          ← Back to Borrowers
         </Button>
 
-
         <Card>
-
           <div className="py-12 text-center">
-
-            <div className="text-4xl mb-3">
-              ⚠️
+            <div className="text-red-500 text-4xl mb-3">
+              !
             </div>
 
             <h2 className="text-lg font-bold text-gray-900">
-              Unable to load borrower
+              Failed to load borrower
             </h2>
 
             <p className="text-sm text-gray-500 mt-2">
-              {error || 'Borrower was not found.'}
+              {error ||
+                'Borrower details could not be loaded.'}
             </p>
 
-
-            <div className="mt-5 flex justify-center gap-3">
-
+            <div className="mt-5">
               <Button
-                variant="secondary"
-                onClick={() => router.back()}
-              >
-                Go Back
-              </Button>
-
-              <Button
-                onClick={loadBorrower}
+                onClick={() =>
+                  window.location.reload()
+                }
               >
                 Try Again
               </Button>
-
             </div>
-
           </div>
-
         </Card>
-
       </div>
     );
   }
 
+  const loans =
+    details.loans ?? [];
 
-  // ============================================================
-  // HELPERS
-  // ============================================================
+  const payments =
+    details.payments ?? [];
 
-  const money = (
-    value?: number | null
-  ) => {
+  /**
+   * ============================================================
+   * BORROWER INITIALS
+   * ============================================================
+   */
 
-    return formatCurrency(
-      value ?? 0,
-      currency,
-      locale
-    );
-  };
-
-
-  const date = (
-    value?: string | null
-  ) => {
-
-    if (!value) {
-      return '—';
-    }
-
-    return formatDate(
-      value,
-      locale
-    );
-  };
-
-
-  const percentage = (
-    value?: number | null
-  ) => {
-
-    return `${(
-      value ?? 0
-    ).toFixed(1)}%`;
-  };
-
-
-  const getInitials = () => {
-
-    const first =
-      borrower.firstName?.[0] ||
-      '';
-
-    const last =
-      borrower.lastName?.[0] ||
-      '';
-
-    return (
-      `${first}${last}`
-    ).toUpperCase();
-  };
-
-
-  const getLoanStatusClass = (
-    status?: string | null
-  ) => {
-
-    switch (
-      status?.toUpperCase()
-    ) {
-
-      case 'ACTIVE':
-        return 'bg-teal-100 text-teal-700';
-
-      case 'APPROVED':
-        return 'bg-blue-100 text-blue-700';
-
-      case 'DISBURSED':
-        return 'bg-blue-100 text-blue-700';
-
-      case 'OVERDUE':
-        return 'bg-orange-100 text-orange-700';
-
-      case 'DEFAULTED':
-        return 'bg-red-100 text-red-700';
-
-      case 'WRITTEN_OFF':
-        return 'bg-red-100 text-red-700';
-
-      case 'PAID':
-        return 'bg-green-100 text-green-700';
-
-      case 'CLOSED':
-        return 'bg-gray-100 text-gray-700';
-
-      case 'REJECTED':
-        return 'bg-red-100 text-red-700';
-
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
-  };
-
-
-  const getPaymentStatusClass = (
-    status?: string | null
-  ) => {
-
-    switch (
-      status?.toUpperCase()
-    ) {
-
-      case 'COMPLETED':
-        return 'bg-green-100 text-green-700';
-
-      case 'PARTIALLY_PAID':
-        return 'bg-yellow-100 text-yellow-700';
-
-      case 'FAILED':
-        return 'bg-red-100 text-red-700';
-
-      case 'REVERSED':
-        return 'bg-red-100 text-red-700';
-
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
-  };
-
-
-  // ============================================================
-  // RENDER
-  // ============================================================
+  const initials =
+    `${details.firstName?.[0] ?? ''}${details.lastName?.[0] ?? ''}`
+      .toUpperCase();
 
   return (
-
     <div className="space-y-6">
+      {/* ========================================================
+          BACK
+      ======================================================== */}
 
+      <div>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            router.push(
+              '/dashboard/borrowers',
+            )
+          }
+        >
+          ← Back to Borrowers
+        </Button>
+      </div>
 
-      {/* ======================================================
+      {/* ========================================================
           HEADER
-      ====================================================== */}
+      ======================================================== */}
 
-      <div className="flex items-start justify-between gap-4">
+      <Card>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center text-xl font-bold text-teal-700">
+              {initials ||
+                details.fullName?.[0] ||
+                '?'}
+            </div>
 
-        <div className="flex items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-extrabold text-gray-900">
+                {details.fullName ||
+                  `${details.firstName ?? ''} ${details.lastName ?? ''}`}
+              </h1>
 
-          <Button
-            variant="secondary"
-            onClick={() => router.back()}
-          >
-            ← Back
-          </Button>
+              <p className="text-sm text-gray-500 mt-1">
+                Borrower #{details.borrowerId}
+              </p>
 
+              <div className="flex flex-wrap gap-2 mt-2">
+                {details.status && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                    {details.status}
+                  </span>
+                )}
 
-          <div
-            className="
-              w-14
-              h-14
-              rounded-full
-              bg-teal-100
-              text-teal-700
-              flex
-              items-center
-              justify-center
-              text-lg
-              font-extrabold
-            "
-          >
-            {getInitials()}
+                {details.goodPayer && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-100 text-teal-700">
+                    Good Payer
+                  </span>
+                )}
+
+                {details.currentlyOverdue && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                    Currently Overdue
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
+          <div className="text-left md:text-right">
+            <div className="text-xs uppercase tracking-wider text-gray-400 font-bold">
+              Credit Score
+            </div>
 
-          <div>
-
-            <h1 className="text-2xl font-extrabold text-gray-900">
-
-              {borrower.fullName ||
-                `${borrower.firstName ?? ''} ${borrower.lastName ?? ''}`}
-
-            </h1>
-
-            <p className="text-sm text-gray-500 mt-1">
-
-              Borrower ID:
-              {' '}
-              {borrower.borrowerId}
-
-            </p>
-
-          </div>
-
-        </div>
-
-
-        <div className="flex items-center gap-2">
-
-          <span
-            className={`
-              px-3
-              py-1.5
-              rounded-full
-              text-xs
-              font-bold
-              ${
-                borrower.status === 'ACTIVE'
-                  ? 'bg-green-100 text-green-700'
-                  : 'bg-gray-100 text-gray-700'
-              }
-            `}
-          >
-            {borrower.status ?? 'UNKNOWN'}
-          </span>
-
-
-          {borrower.currentlyOverdue && (
-
-            <span
-              className="
-                px-3
-                py-1.5
-                rounded-full
-                text-xs
-                font-bold
-                bg-red-100
-                text-red-700
-              "
+            <div
+              className={`text-3xl font-extrabold ${
+                (details.creditScore ?? 0) >=
+                700
+                  ? 'text-teal-600'
+                  : (details.creditScore ?? 0) >=
+                    600
+                  ? 'text-yellow-600'
+                  : 'text-red-500'
+              }`}
             >
-              OVERDUE
-            </span>
+              {details.creditScore ??
+                '—'}
+            </div>
+          </div>
+        </div>
+      </Card>
 
-          )}
+      {/* ========================================================
+          PROFILE INFORMATION
+      ======================================================== */}
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <div className="font-bold text-gray-900 mb-4">
+            Personal Information
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Info
+              label="First Name"
+              value={
+                details.firstName
+              }
+            />
+
+            <Info
+              label="Last Name"
+              value={
+                details.lastName
+              }
+            />
+
+            <Info
+              label="Email"
+              value={
+                details.email
+              }
+            />
+
+            <Info
+              label="Phone"
+              value={
+                details.phone
+              }
+            />
+
+            <Info
+              label="Alternate Phone"
+              value={
+                details.alternatePhone
+              }
+            />
+
+            <Info
+              label="National ID"
+              value={
+                details.nationalId
+              }
+            />
+
+            <Info
+              label="Passport"
+              value={
+                details.passportNumber
+              }
+            />
+
+            <Info
+              label="Date of Birth"
+              value={
+                details.dateOfBirth
+                  ? formatDate(
+                      details.dateOfBirth,
+                      locale,
+                    )
+                  : undefined
+              }
+            />
+
+            <Info
+              label="Gender"
+              value={
+                details.gender
+              }
+            />
+
+            <Info
+              label="Marital Status"
+              value={
+                details.maritalStatus
+              }
+            />
+
+            <Info
+              label="Nationality"
+              value={
+                details.nationality
+              }
+            />
+
+            <Info
+              label="Country"
+              value={
+                details.country
+              }
+            />
+          </div>
+        </Card>
+
+        <Card>
+          <div className="font-bold text-gray-900 mb-4">
+            Employment & Finance
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Info
+              label="Employer"
+              value={
+                details.employerName
+              }
+            />
+
+            <Info
+              label="Employment Type"
+              value={
+                details.employmentType
+              }
+            />
+
+            <Info
+              label="Job Title"
+              value={
+                details.jobTitle
+              }
+            />
+
+            <Info
+              label="Monthly Income"
+              value={formatCurrency(
+                details.monthlyIncome,
+                currency,
+                locale,
+              )}
+            />
+
+            <Info
+              label="Monthly Expenses"
+              value={formatCurrency(
+                details.monthlyExpenses,
+                currency,
+                locale,
+              )}
+            />
+
+            <Info
+              label="Net Worth"
+              value={formatCurrency(
+                details.netWorth,
+                currency,
+                locale,
+              )}
+            />
+
+            <Info
+              label="Credit Bureau"
+              value={
+                details.creditBureau
+              }
+            />
+
+            <Info
+              label="Credit Report Date"
+              value={
+                details.creditReportDate
+                  ? formatDate(
+                      details.creditReportDate,
+                      locale,
+                    )
+                  : undefined
+              }
+            />
+          </div>
+        </Card>
+      </div>
+
+      {/* ========================================================
+          ADDRESS
+      ======================================================== */}
+
+      <Card>
+        <div className="font-bold text-gray-900 mb-4">
+          Address
         </div>
 
+        <div className="text-sm text-gray-600">
+          {details.address ||
+            'No address recorded.'}
+        </div>
+      </Card>
+
+      {/* ========================================================
+          PORTFOLIO SUMMARY
+      ======================================================== */}
+
+      <div>
+        <h2 className="text-lg font-bold text-gray-900 mb-3">
+          Loan Portfolio
+        </h2>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          <StatCard
+            label="Total Loans"
+            value={formatNumber(
+              details.totalLoans,
+            )}
+          />
+
+          <StatCard
+            label="Active Loans"
+            value={formatNumber(
+              details.activeLoans,
+            )}
+          />
+
+          <StatCard
+            label="Completed"
+            value={formatNumber(
+              details.completedLoans,
+            )}
+          />
+
+          <StatCard
+            label="Overdue"
+            value={formatNumber(
+              details.overdueLoans,
+            )}
+          />
+
+          <StatCard
+            label="Defaulted"
+            value={formatNumber(
+              details.defaultedLoans,
+            )}
+          />
+
+          <StatCard
+            label="Written Off"
+            value={formatNumber(
+              details.writtenOffLoans,
+            )}
+          />
+
+          <StatCard
+            label="Total Borrowed"
+            value={formatCurrency(
+              details.totalBorrowed,
+              currency,
+              locale,
+            )}
+          />
+
+          <StatCard
+            label="Total Disbursed"
+            value={formatCurrency(
+              details.totalDisbursed,
+              currency,
+              locale,
+            )}
+          />
+
+          <StatCard
+            label="Outstanding"
+            value={formatCurrency(
+              details.totalOutstanding,
+              currency,
+              locale,
+            )}
+          />
+
+          <StatCard
+            label="Total Paid"
+            value={formatCurrency(
+              details.totalPaid,
+              currency,
+              locale,
+            )}
+          />
+        </div>
       </div>
 
-
-      {/* ======================================================
-          QUICK SUMMARY
-      ====================================================== */}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-        <SummaryCard
-          title="Total Borrowed"
-          value={money(borrower.totalBorrowed)}
-        />
-
-        <SummaryCard
-          title="Outstanding"
-          value={money(borrower.totalOutstanding)}
-          danger={
-            borrower.totalOutstanding > 0 &&
-            borrower.currentlyOverdue
-          }
-        />
-
-        <SummaryCard
-          title="Total Paid"
-          value={money(borrower.totalPaid)}
-        />
-
-        <SummaryCard
-          title="Repayment Rate"
-          value={percentage(borrower.repaymentRate)}
-        />
-
-      </div>
-
-
-      {/* ======================================================
-          TABS
-      ====================================================== */}
-
-      <div
-        className="
-          border-b
-          border-gray-200
-          flex
-          gap-6
-        "
-      >
-
-        <TabButton
-          active={
-            activeTab === 'overview'
-          }
-          onClick={() =>
-            setActiveTab('overview')
-          }
-        >
-          Overview
-        </TabButton>
-
-
-        <TabButton
-          active={
-            activeTab === 'loans'
-          }
-          onClick={() =>
-            setActiveTab('loans')
-          }
-        >
-          Loans
-          {' '}
-          ({borrower.loans?.length ?? 0})
-        </TabButton>
-
-
-        <TabButton
-          active={
-            activeTab === 'payments'
-          }
-          onClick={() =>
-            setActiveTab('payments')
-          }
-        >
-          Payments
-          {' '}
-          ({borrower.payments?.length ?? 0})
-        </TabButton>
-
-      </div>
-
-
-      {/* ======================================================
-          OVERVIEW
-      ====================================================== */}
-
-      {activeTab === 'overview' && (
-
-        <div className="space-y-6">
-
-
-          {/* --------------------------------------------------
-              PERSONAL INFORMATION
-          -------------------------------------------------- */}
-
-          <Card>
-
-            <SectionTitle>
-              Personal Information
-            </SectionTitle>
-
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-
-              <InfoItem
-                label="First Name"
-                value={borrower.firstName}
-              />
-
-              <InfoItem
-                label="Last Name"
-                value={borrower.lastName}
-              />
-
-              <InfoItem
-                label="Email"
-                value={borrower.email}
-              />
-
-              <InfoItem
-                label="Phone"
-                value={borrower.phone}
-              />
-
-              <InfoItem
-                label="Alternate Phone"
-                value={borrower.alternatePhone}
-              />
-
-              <InfoItem
-                label="National ID"
-                value={borrower.nationalId}
-              />
-
-              <InfoItem
-                label="Passport Number"
-                value={borrower.passportNumber}
-              />
-
-              <InfoItem
-                label="Date of Birth"
-                value={date(borrower.dateOfBirth)}
-              />
-
-              <InfoItem
-                label="Gender"
-                value={borrower.gender}
-              />
-
-              <InfoItem
-                label="Marital Status"
-                value={borrower.maritalStatus}
-              />
-
-              <InfoItem
-                label="Nationality"
-                value={borrower.nationality}
-              />
-
-              <InfoItem
-                label="Country"
-                value={borrower.country}
-              />
-
-              <InfoItem
-                label="Address"
-                value={borrower.address}
-              />
-
-            </div>
-
-          </Card>
-
-
-          {/* --------------------------------------------------
-              EMPLOYMENT & FINANCIAL
-          -------------------------------------------------- */}
-
-          <Card>
-
-            <SectionTitle>
-              Employment & Financial Information
-            </SectionTitle>
-
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-
-              <InfoItem
-                label="Employer"
-                value={borrower.employerName}
-              />
-
-              <InfoItem
-                label="Employment Type"
-                value={borrower.employmentType}
-              />
-
-              <InfoItem
-                label="Job Title"
-                value={borrower.jobTitle}
-              />
-
-              <InfoItem
-                label="Monthly Income"
-                value={money(borrower.monthlyIncome)}
-              />
-
-              <InfoItem
-                label="Monthly Expenses"
-                value={money(borrower.monthlyExpenses)}
-              />
-
-              <InfoItem
-                label="Net Worth"
-                value={money(borrower.netWorth)}
-              />
-
-            </div>
-
-          </Card>
-
-
-          {/* --------------------------------------------------
-              CREDIT & RISK
-          -------------------------------------------------- */}
-
-          <Card>
-
-            <SectionTitle>
-              Credit & Risk
-            </SectionTitle>
-
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-
-              <InfoItem
-                label="Credit Score"
-                value={
-                  borrower.creditScore !== null &&
-                  borrower.creditScore !== undefined
-                    ? formatNumber(
-                        borrower.creditScore
-                      )
-                    : '—'
-                }
-              />
-
-              <InfoItem
-                label="Credit Bureau"
-                value={borrower.creditBureau}
-              />
-
-              <InfoItem
-                label="Risk Level"
-                value={borrower.riskLevel}
-              />
-
-              <InfoItem
-                label="Repayment Behaviour"
-                value={
-                  borrower.repaymentBehaviour
-                }
-              />
-
-              <InfoItem
-                label="Good Payer"
-                value={
-                  borrower.goodPayer
-                    ? 'Yes'
-                    : 'No'
-                }
-              />
-
-              <InfoItem
-                label="Currently Overdue"
-                value={
-                  borrower.currentlyOverdue
-                    ? 'Yes'
-                    : 'No'
-                }
-              />
-
-              <InfoItem
-                label="Default History"
-                value={
-                  borrower.hasDefaultHistory
-                    ? 'Yes'
-                    : 'No'
-                }
-              />
-
-              <InfoItem
-                label="Multiple Active Loans"
-                value={
-                  borrower.hasMultipleActiveLoans
-                    ? 'Yes'
-                    : 'No'
-                }
-              />
-
-            </div>
-
-          </Card>
-
-
-          {/* --------------------------------------------------
-              PORTFOLIO SUMMARY
-          -------------------------------------------------- */}
-
-          <Card>
-
-            <SectionTitle>
-              Loan Portfolio
-            </SectionTitle>
-
-
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-
-              <Metric
-                label="Total Loans"
-                value={
-                  borrower.totalLoans
-                }
-              />
-
-              <Metric
-                label="Active"
-                value={
-                  borrower.activeLoans
-                }
-              />
-
-              <Metric
-                label="Completed"
-                value={
-                  borrower.completedLoans
-                }
-              />
-
-              <Metric
-                label="Overdue"
-                value={
-                  borrower.overdueLoans
-                }
-              />
-
-              <Metric
-                label="Defaulted"
-                value={
-                  borrower.defaultedLoans
-                }
-              />
-
-              <Metric
-                label="Written Off"
-                value={
-                  borrower.writtenOffLoans
-                }
-              />
-
-            </div>
-
-          </Card>
-
-
-          {/* --------------------------------------------------
-              REPAYMENT PERFORMANCE
-          -------------------------------------------------- */}
-
-          <Card>
-
-            <SectionTitle>
-              Repayment Performance
-            </SectionTitle>
-
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-
-              <Metric
-                label="Total Payments"
-                value={
-                  borrower.totalPayments
-                }
-              />
-
-              <Metric
-                label="Successful"
-                value={
-                  borrower.successfulPayments
-                }
-              />
-
-              <Metric
-                label="Missed"
-                value={
-                  borrower.missedPayments
-                }
-              />
-
-              <Metric
-                label="Overdue"
-                value={
-                  borrower.overduePayments
-                }
-              />
-
-              <Metric
-                label="Repayment Rate"
-                value={
-                  percentage(
-                    borrower.repaymentRate
-                  )
-                }
-              />
-
-              <Metric
-                label="On-Time Rate"
-                value={
-                  percentage(
-                    borrower.onTimePaymentRate
-                  )
-                }
-              />
-
-              <Metric
-                label="Current DPD"
-                value={
-                  borrower.currentDaysPastDue
-                }
-              />
-
-              <Metric
-                label="Maximum DPD"
-                value={
-                  borrower.maximumDaysPastDue
-                }
-              />
-
-            </div>
-
-          </Card>
-
+      {/* ========================================================
+          REPAYMENT PERFORMANCE
+      ======================================================== */}
+
+      <Card>
+        <div className="font-bold text-gray-900 mb-4">
+          Repayment Performance
         </div>
 
-      )}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+          <Performance
+            label="Total Payments"
+            value={formatNumber(
+              details.totalPayments,
+            )}
+          />
 
+          <Performance
+            label="Successful Payments"
+            value={formatNumber(
+              details.successfulPayments,
+            )}
+          />
 
-      {/* ======================================================
+          <Performance
+            label="Missed Payments"
+            value={formatNumber(
+              details.missedPayments,
+            )}
+          />
+
+          <Performance
+            label="Overdue Payments"
+            value={formatNumber(
+              details.overduePayments,
+            )}
+          />
+
+          <Performance
+            label="Repayment Rate"
+            value={`${Number(
+              details.repaymentRate ?? 0,
+            ).toFixed(1)}%`}
+          />
+
+          <Performance
+            label="On-Time Rate"
+            value={`${Number(
+              details.onTimePaymentRate ?? 0,
+            ).toFixed(1)}%`}
+          />
+
+          <Performance
+            label="Current Days Past Due"
+            value={formatNumber(
+              details.currentDaysPastDue,
+            )}
+          />
+
+          <Performance
+            label="Maximum Days Past Due"
+            value={formatNumber(
+              details.maximumDaysPastDue,
+            )}
+          />
+        </div>
+      </Card>
+
+      {/* ========================================================
+          RISK
+      ======================================================== */}
+
+      <Card>
+        <div className="font-bold text-gray-900 mb-4">
+          Risk & Behaviour
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Info
+            label="Risk Level"
+            value={
+              details.riskLevel
+            }
+          />
+
+          <Info
+            label="Repayment Behaviour"
+            value={
+              details.repaymentBehaviour
+            }
+          />
+
+          <Info
+            label="Good Payer"
+            value={
+              details.goodPayer
+                ? 'Yes'
+                : 'No'
+            }
+          />
+
+          <Info
+            label="Currently Overdue"
+            value={
+              details.currentlyOverdue
+                ? 'Yes'
+                : 'No'
+            }
+          />
+
+          <Info
+            label="Default History"
+            value={
+              details.hasDefaultHistory
+                ? 'Yes'
+                : 'No'
+            }
+          />
+
+          <Info
+            label="Multiple Active Loans"
+            value={
+              details.hasMultipleActiveLoans
+                ? 'Yes'
+                : 'No'
+            }
+          />
+        </div>
+      </Card>
+
+      {/* ========================================================
           LOANS
-      ====================================================== */}
+      ======================================================== */}
 
-      {activeTab === 'loans' && (
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div className="font-bold text-gray-900">
+            Loans
+          </div>
 
-        <Card>
+          <span className="text-sm text-gray-500">
+            {loans.length} loans
+          </span>
+        </div>
 
-          <SectionTitle>
-            Borrower Loans
-          </SectionTitle>
+        {loans.length === 0 ? (
+          <div className="py-10 text-center text-sm text-gray-500">
+            No loans found for this borrower.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="py-3 px-2">
+                    Reference
+                  </th>
 
+                  <th className="py-3 px-2">
+                    Type
+                  </th>
 
-          {!borrower.loans ||
-          borrower.loans.length === 0 ? (
+                  <th className="py-3 px-2">
+                    Status
+                  </th>
 
-            <EmptyState
-              message="This borrower has no loans."
-            />
+                  <th className="py-3 px-2">
+                    Amount
+                  </th>
 
-          ) : (
+                  <th className="py-3 px-2">
+                    Outstanding
+                  </th>
 
-            <div className="overflow-x-auto">
+                  <th className="py-3 px-2">
+                    Rate
+                  </th>
 
-              <table
-                className="
-                  min-w-full
-                  text-sm
-                "
-              >
+                  <th className="py-3 px-2">
+                    Maturity
+                  </th>
+                </tr>
+              </thead>
 
-                <thead>
+              <tbody>
+                {loans.map(
+                  (
+                    loan: BorrowerLoanSummary,
+                  ) => (
+                    <tr
+                      key={
+                        loan.loanId
+                      }
+                      className="border-b hover:bg-gray-50"
+                    >
+                      <td className="py-3 px-2 font-semibold">
+                        {loan.referenceNumber ??
+                          `#${loan.loanId}`}
+                      </td>
 
-                  <tr className="border-b">
+                      <td className="py-3 px-2">
+                        {loan.loanType ??
+                          '—'}
+                      </td>
 
-                    <th className="text-left py-3 pr-4">
-                      Reference
-                    </th>
+                      <td className="py-3 px-2">
+                        <span className="px-2 py-1 rounded-full bg-gray-100 text-xs font-semibold">
+                          {loan.status ??
+                            '—'}
+                        </span>
+                      </td>
 
-                    <th className="text-left py-3 pr-4">
-                      Type
-                    </th>
+                      <td className="py-3 px-2">
+                        {formatCurrency(
+                          loan.loanAmount,
+                          loan.currency ??
+                            currency,
+                          locale,
+                        )}
+                      </td>
 
-                    <th className="text-left py-3 pr-4">
-                      Status
-                    </th>
+                      <td className="py-3 px-2 font-semibold">
+                        {formatCurrency(
+                          loan.outstandingBalance,
+                          loan.currency ??
+                            currency,
+                          locale,
+                        )}
+                      </td>
 
-                    <th className="text-right py-3 pr-4">
-                      Amount
-                    </th>
+                      <td className="py-3 px-2">
+                        {loan.interestRate !=
+                        null
+                          ? `${loan.interestRate}%`
+                          : '—'}
+                      </td>
 
-                    <th className="text-right py-3 pr-4">
-                      Outstanding
-                    </th>
+                      <td className="py-3 px-2">
+                        {loan.maturityDate
+                          ? formatDate(
+                              loan.maturityDate,
+                              locale,
+                            )
+                          : '—'}
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
-                    <th className="text-right py-3 pr-4">
-                      Paid
-                    </th>
-
-                    <th className="text-right py-3 pr-4">
-                      Rate
-                    </th>
-
-                    <th className="text-left py-3">
-                      Maturity
-                    </th>
-
-                  </tr>
-
-                </thead>
-
-
-                <tbody>
-
-                  {borrower.loans.map(
-                    (
-                      loan: BorrowerLoanSummary
-                    ) => (
-
-                      <tr
-                        key={loan.loanId}
-                        className="border-b hover:bg-gray-50"
-                      >
-
-                        <td className="py-3 pr-4">
-
-                          <button
-                            className="
-                              font-semibold
-                              text-teal-700
-                              hover:underline
-                            "
-                            onClick={() =>
-                              router.push(
-                                `/dashboard/loans/${loan.loanId}`
-                              )
-                            }
-                          >
-                            {
-                              loan.referenceNumber ||
-                              `Loan #${loan.loanId}`
-                            }
-                          </button>
-
-                        </td>
-
-
-                        <td className="py-3 pr-4">
-                          {loan.loanType || '—'}
-                        </td>
-
-
-                        <td className="py-3 pr-4">
-
-                          <span
-                            className={`
-                              px-2.5
-                              py-1
-                              rounded-full
-                              text-xs
-                              font-bold
-                              ${getLoanStatusClass(
-                                loan.status
-                              )}
-                            `}
-                          >
-                            {loan.status || '—'}
-                          </span>
-
-                        </td>
-
-
-                        <td className="py-3 pr-4 text-right">
-                          {money(loan.loanAmount)}
-                        </td>
-
-
-                        <td className="py-3 pr-4 text-right font-semibold">
-                          {money(
-                            loan.outstandingBalance
-                          )}
-                        </td>
-
-
-                        <td className="py-3 pr-4 text-right">
-                          {money(
-                            loan.totalPaid
-                          )}
-                        </td>
-
-
-                        <td className="py-3 pr-4 text-right">
-                          {loan.interestRate !== null &&
-                          loan.interestRate !== undefined
-                            ? `${loan.interestRate}%`
-                            : '—'}
-                        </td>
-
-
-                        <td className="py-3">
-                          {date(
-                            loan.maturityDate
-                          )}
-                        </td>
-
-                      </tr>
-
-                    )
-                  )}
-
-                </tbody>
-
-              </table>
-
-            </div>
-
-          )}
-
-        </Card>
-
-      )}
-
-
-      {/* ======================================================
+      {/* ========================================================
           PAYMENTS
-      ====================================================== */}
+      ======================================================== */}
 
-      {activeTab === 'payments' && (
-
-        <Card>
-
-          <SectionTitle>
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div className="font-bold text-gray-900">
             Payment History
-          </SectionTitle>
+          </div>
 
+          <span className="text-sm text-gray-500">
+            {payments.length} payments
+          </span>
+        </div>
 
-          {!borrower.payments ||
-          borrower.payments.length === 0 ? (
+        {payments.length === 0 ? (
+          <div className="py-10 text-center text-sm text-gray-500">
+            No payments found for this borrower.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="py-3 px-2">
+                    Date
+                  </th>
 
-            <EmptyState
-              message="This borrower has no payment history."
-            />
+                  <th className="py-3 px-2">
+                    Loan
+                  </th>
 
-          ) : (
+                  <th className="py-3 px-2">
+                    Amount
+                  </th>
 
-            <div className="overflow-x-auto">
+                  <th className="py-3 px-2">
+                    Principal
+                  </th>
 
-              <table
-                className="
-                  min-w-full
-                  text-sm
-                "
-              >
+                  <th className="py-3 px-2">
+                    Interest
+                  </th>
 
-                <thead>
+                  <th className="py-3 px-2">
+                    Method
+                  </th>
 
-                  <tr className="border-b">
+                  <th className="py-3 px-2">
+                    Status
+                  </th>
 
-                    <th className="text-left py-3 pr-4">
-                      Date
-                    </th>
+                  <th className="py-3 px-2">
+                    Late
+                  </th>
+                </tr>
+              </thead>
 
-                    <th className="text-left py-3 pr-4">
-                      Loan
-                    </th>
+              <tbody>
+                {payments.map(
+                  (
+                    payment: BorrowerPayment,
+                  ) => (
+                    <tr
+                      key={
+                        payment.paymentId
+                      }
+                      className="border-b hover:bg-gray-50"
+                    >
+                      <td className="py-3 px-2">
+                        {(
+                          payment.paidDate ??
+                          payment.paymentDate ??
+                          payment.dueDate
+                        )
+                          ? formatDate(
+                              payment.paidDate ??
+                                payment.paymentDate ??
+                                payment.dueDate ??
+                                undefined,
+                              locale,
+                            )
+                          : '—'}
+                      </td>
 
-                    <th className="text-left py-3 pr-4">
-                      Method
-                    </th>
+                      <td className="py-3 px-2 font-semibold">
+                        {payment.loanReference ??
+                          payment.loanNumber ??
+                          `#${payment.loanId}`}
+                      </td>
 
-                    <th className="text-right py-3 pr-4">
-                      Amount
-                    </th>
-
-                    <th className="text-right py-3 pr-4">
-                      Principal
-                    </th>
-
-                    <th className="text-right py-3 pr-4">
-                      Interest
-                    </th>
-
-                    <th className="text-right py-3 pr-4">
-                      Penalty
-                    </th>
-
-                    <th className="text-left py-3">
-                      Status
-                    </th>
-
-                  </tr>
-
-                </thead>
-
-
-                <tbody>
-
-                  {borrower.payments.map(
-                    (
-                      payment: BorrowerPayment
-                    ) => (
-
-                      <tr
-                        key={payment.paymentId}
-                        className="border-b hover:bg-gray-50"
-                      >
-
-                        <td className="py-3 pr-4">
-
-                          {date(
-                            payment.paidDate ||
-                            payment.paymentDate
-                          )}
-
-                        </td>
-
-
-                        <td className="py-3 pr-4">
-
-                          {payment.loanReference ||
-                            payment.loanNumber ||
-                            (
-                              payment.loanId
-                                ? `Loan #${payment.loanId}`
-                                : '—'
-                            )}
-
-                        </td>
-
-
-                        <td className="py-3 pr-4">
-
-                          {
-                            payment.paymentMethod ||
-                            payment.method ||
-                            '—'
-                          }
-
-                        </td>
-
-
-                        <td className="py-3 pr-4 text-right font-semibold">
-
-                          {money(
-                            payment.amountPaid ??
+                      <td className="py-3 px-2 font-semibold">
+                        {formatCurrency(
+                          payment.amountPaid ??
                             payment.amount ??
-                            payment.totalPaid
+                            payment.totalPaid,
+                          payment.currency ??
+                            currency,
+                          locale,
+                        )}
+                      </td>
+
+                      <td className="py-3 px-2">
+                        {formatCurrency(
+                          payment.principalComponent ??
+                            payment.principal,
+                          payment.currency ??
+                            currency,
+                          locale,
+                        )}
+                      </td>
+
+                      <td className="py-3 px-2">
+                        {formatCurrency(
+                          payment.interestComponent ??
+                            payment.interest,
+                          payment.currency ??
+                            currency,
+                          locale,
+                        )}
+                      </td>
+
+                      <td className="py-3 px-2">
+                        {payment.paymentMethod ??
+                          payment.method ??
+                          '—'}
+                      </td>
+
+                      <td className="py-3 px-2">
+                        <span className="px-2 py-1 rounded-full bg-gray-100 text-xs font-semibold">
+                          {payment.status ??
+                            '—'}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-2">
+                        {payment.isLate ||
+                        payment.onTime ===
+                          false
+                          ? (
+                            <span className="text-red-600 font-semibold">
+                              Yes
+                            </span>
+                          )
+                          : (
+                            <span className="text-teal-600 font-semibold">
+                              No
+                            </span>
                           )}
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
-                        </td>
+      {/* ========================================================
+          CREATED
+      ======================================================== */}
 
-
-                        <td className="py-3 pr-4 text-right">
-
-                          {money(
-                            payment.principalComponent ??
-                            payment.principal
-                          )}
-
-                        </td>
-
-
-                        <td className="py-3 pr-4 text-right">
-
-                          {money(
-                            payment.interestComponent ??
-                            payment.interest
-                          )}
-
-                        </td>
-
-
-                        <td className="py-3 pr-4 text-right">
-
-                          {money(
-                            payment.penalty
-                          )}
-
-                        </td>
-
-
-                        <td className="py-3">
-
-                          <span
-                            className={`
-                              px-2.5
-                              py-1
-                              rounded-full
-                              text-xs
-                              font-bold
-                              ${getPaymentStatusClass(
-                                payment.status
-                              )}
-                            `}
-                          >
-                            {
-                              payment.status ||
-                              (
-                                payment.paid
-                                  ? 'COMPLETED'
-                                  : 'PENDING'
-                              )
-                            }
-                          </span>
-
-                        </td>
-
-                      </tr>
-
-                    )
-                  )}
-
-                </tbody>
-
-              </table>
-
-            </div>
-
+      {details.createdAt && (
+        <div className="text-xs text-gray-400">
+          Borrower registered{' '}
+          {formatDate(
+            details.createdAt,
+            locale,
           )}
-
-        </Card>
-
+        </div>
       )}
-
     </div>
   );
 }
 
+/**
+ * ============================================================
+ * INFO COMPONENT
+ * ============================================================
+ */
 
-// ============================================================
-// SUMMARY CARD
-// ============================================================
-
-function SummaryCard({
-  title,
-  value,
-  danger = false,
-}: {
-  title: string;
-  value: string;
-  danger?: boolean;
-}) {
-
-  return (
-
-    <Card>
-
-      <div className="p-1">
-
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-          {title}
-        </p>
-
-        <p
-          className={`
-            text-xl
-            font-extrabold
-            mt-2
-            ${
-              danger
-                ? 'text-red-600'
-                : 'text-gray-900'
-            }
-          `}
-        >
-          {value}
-        </p>
-
-      </div>
-
-    </Card>
-  );
-}
-
-
-// ============================================================
-// TAB BUTTON
-// ============================================================
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-
-  return (
-
-    <button
-      type="button"
-      onClick={onClick}
-      className={`
-        pb-3
-        text-sm
-        font-semibold
-        border-b-2
-        transition
-        ${
-          active
-            ? 'border-teal-600 text-teal-700'
-            : 'border-transparent text-gray-500 hover:text-gray-900'
-        }
-      `}
-    >
-      {children}
-    </button>
-  );
-}
-
-
-// ============================================================
-// SECTION TITLE
-// ============================================================
-
-function SectionTitle({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-
-  return (
-
-    <h2
-      className="
-        text-sm
-        font-extrabold
-        uppercase
-        tracking-wider
-        text-gray-500
-        mb-5
-      "
-    >
-      {children}
-    </h2>
-  );
-}
-
-
-// ============================================================
-// INFO ITEM
-// ============================================================
-
-function InfoItem({
+function Info({
   label,
   value,
 }: {
   label: string;
   value?: string | number | null;
 }) {
-
   return (
-
     <div>
-
-      <p className="text-xs text-gray-400 mb-1">
+      <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-1">
         {label}
-      </p>
+      </div>
 
-      <p className="text-sm font-semibold text-gray-900 break-words">
-        {
-          value !== undefined &&
-          value !== null &&
-          String(value).trim() !== ''
-            ? value
-            : '—'
-        }
-      </p>
-
+      <div className="text-sm text-gray-800 font-medium break-words">
+        {value !== undefined &&
+        value !== null &&
+        String(value).trim() !== ''
+          ? String(value)
+          : '—'}
+      </div>
     </div>
   );
 }
 
+/**
+ * ============================================================
+ * STAT CARD
+ * ============================================================
+ */
 
-// ============================================================
-// METRIC
-// ============================================================
-
-function Metric({
+function StatCard({
   label,
   value,
 }: {
   label: string;
-  value: string | number;
+  value: string;
 }) {
-
   return (
-
-    <div
-      className="
-        rounded-lg
-        bg-gray-50
-        border
-        border-gray-100
-        p-4
-      "
-    >
-
-      <p className="text-xs text-gray-500">
+    <Card>
+      <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold">
         {label}
-      </p>
+      </div>
 
-      <p className="text-lg font-extrabold text-gray-900 mt-1">
+      <div className="text-xl font-extrabold text-gray-900 mt-2">
         {value}
-      </p>
-
-    </div>
+      </div>
+    </Card>
   );
 }
 
+/**
+ * ============================================================
+ * PERFORMANCE
+ * ============================================================
+ */
 
-// ============================================================
-// EMPTY STATE
-// ============================================================
-
-function EmptyState({
-  message,
+function Performance({
+  label,
+  value,
 }: {
-  message: string;
+  label: string;
+  value: string;
 }) {
-
   return (
-
-    <div className="py-12 text-center">
-
-      <div className="text-3xl mb-2">
-        📋
+    <div>
+      <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold">
+        {label}
       </div>
 
-      <p className="text-sm text-gray-500">
-        {message}
-      </p>
-
+      <div className="text-lg font-bold text-gray-900 mt-1">
+        {value}
+      </div>
     </div>
   );
 }
