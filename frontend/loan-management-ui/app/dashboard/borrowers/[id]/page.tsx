@@ -29,26 +29,6 @@ export default function BorrowerDetailsPage() {
 
   const { currency, locale } = useAuth();
 
-  /*
-   * ============================================================
-   * BORROWER ID
-   * ============================================================
-   *
-   * This page is:
-   *
-   * app/dashboard/borrowers/[id]/page.tsx
-   *
-   * Therefore the URL is:
-   *
-   * /dashboard/borrowers/1
-   * /dashboard/borrowers/2
-   * /dashboard/borrowers/25
-   *
-   * NOT:
-   *
-   * /dashboard/1
-   */
-
   const borrowerId = Number(params?.id);
 
   const [details, setDetails] =
@@ -60,7 +40,7 @@ export default function BorrowerDetailsPage() {
   const [error, setError] =
     useState('');
 
-  /*
+  /**
    * ============================================================
    * LOAD BORROWER
    * ============================================================
@@ -78,23 +58,21 @@ export default function BorrowerDetailsPage() {
 
     let cancelled = false;
 
-    const loadBorrower = async () => {
-      try {
-        setLoading(true);
-        setError('');
+    const load = async () => {
+      setLoading(true);
+      setError('');
 
+      try {
         const response =
           await borrowerApi.getDetails(
             borrowerId,
           );
 
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setDetails(
+            response as BorrowerDetails,
+          );
         }
-
-        setDetails(
-          response as BorrowerDetails,
-        );
       } catch (err: any) {
         console.error(
           'Failed to load borrower details:',
@@ -114,26 +92,14 @@ export default function BorrowerDetailsPage() {
       }
     };
 
-    loadBorrower();
+    load();
 
     return () => {
       cancelled = true;
     };
   }, [borrowerId]);
 
-  /*
-   * ============================================================
-   * BACK TO BORROWERS
-   * ============================================================
-   */
-
-  const goBack = () => {
-    router.push(
-      '/dashboard/borrowers',
-    );
-  };
-
-  /*
+  /**
    * ============================================================
    * LOADING
    * ============================================================
@@ -141,13 +107,21 @@ export default function BorrowerDetailsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+
+          <div className="mx-auto w-11 h-11 border-[3px] border-teal-500 border-t-transparent rounded-full animate-spin" />
+
+          <p className="mt-4 text-sm text-gray-500">
+            Loading borrower profile...
+          </p>
+
+        </div>
       </div>
     );
   }
 
-  /*
+  /**
    * ============================================================
    * ERROR
    * ============================================================
@@ -155,32 +129,37 @@ export default function BorrowerDetailsPage() {
 
   if (error || !details) {
     return (
-      <div className="space-y-4">
+      <div className="max-w-3xl mx-auto py-10">
 
-        <Button
-          variant="secondary"
-          onClick={goBack}
+        <button
+          type="button"
+          onClick={() =>
+            router.push(
+              '/dashboard/borrowers',
+            )
+          }
+          className="text-sm font-semibold text-gray-500 hover:text-gray-900 mb-5"
         >
-          ← Back to Borrowers
-        </Button>
+          ← Back to borrowers
+        </button>
 
         <Card>
-          <div className="py-12 text-center">
+          <div className="py-16 text-center">
 
-            <div className="text-red-500 text-4xl mb-3">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center text-2xl font-bold">
               !
             </div>
 
-            <h2 className="text-lg font-bold text-gray-900">
-              Failed to load borrower
+            <h2 className="mt-5 text-xl font-bold text-gray-900">
+              Unable to load borrower
             </h2>
 
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="mt-2 text-sm text-gray-500">
               {error ||
                 'Borrower details could not be loaded.'}
             </p>
 
-            <div className="mt-5">
+            <div className="mt-6">
               <Button
                 onClick={() =>
                   window.location.reload()
@@ -192,15 +171,10 @@ export default function BorrowerDetailsPage() {
 
           </div>
         </Card>
+
       </div>
     );
   }
-
-  /*
-   * ============================================================
-   * DATA
-   * ============================================================
-   */
 
   const loans =
     details.loans ?? [];
@@ -208,163 +182,322 @@ export default function BorrowerDetailsPage() {
   const payments =
     details.payments ?? [];
 
-  /*
-   * ============================================================
-   * INITIALS
-   * ============================================================
-   */
-
   const initials =
     `${details.firstName?.[0] ?? ''}${details.lastName?.[0] ?? ''}`
       .toUpperCase();
 
-  /*
-   * ============================================================
-   * PAGE
-   * ============================================================
-   */
+  const fullName =
+    details.fullName ||
+    `${details.firstName ?? ''} ${details.lastName ?? ''}`.trim();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-10">
 
-      {/* ========================================================
-          BACK
-      ======================================================== */}
+      {/* ======================================================
+          TOP NAVIGATION
+      ====================================================== */}
 
-      <div>
-        <Button
-          variant="secondary"
-          onClick={goBack}
+      <div className="flex items-center justify-between">
+
+        <button
+          type="button"
+          onClick={() =>
+            router.push(
+              '/dashboard/borrowers',
+            )
+          }
+          className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900 transition"
         >
-          ← Back to Borrowers
-        </Button>
+          <span className="text-lg">
+            ←
+          </span>
+
+          Borrowers
+        </button>
+
+        <div className="text-xs text-gray-400">
+          Borrower #{details.borrowerId}
+        </div>
+
       </div>
 
-      {/* ========================================================
-          BORROWER HEADER
-      ======================================================== */}
+      {/* ======================================================
+          HERO
+      ====================================================== */}
 
-      <Card>
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+      <section className="rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden">
 
-          <div className="flex items-center gap-4">
+        <div className="h-2 bg-teal-500" />
 
-            <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center text-xl font-bold text-teal-700">
-              {initials ||
-                details.fullName?.[0] ||
-                '?'}
+        <div className="p-6 md:p-8">
+
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-7">
+
+            {/* PROFILE */}
+
+            <div className="flex items-start gap-5">
+
+              <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center text-2xl md:text-3xl font-extrabold text-teal-700 flex-shrink-0">
+                {initials ||
+                  fullName?.[0] ||
+                  '?'}
+              </div>
+
+              <div className="min-w-0">
+
+                <div className="flex flex-wrap items-center gap-2">
+
+                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900">
+                    {fullName ||
+                      'Unnamed Borrower'}
+                  </h1>
+
+                  {details.goodPayer && (
+                    <span className="px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-bold">
+                      Good Payer
+                    </span>
+                  )}
+
+                  {details.currentlyOverdue && (
+                    <span className="px-2.5 py-1 rounded-full bg-red-50 text-red-600 text-xs font-bold">
+                      Overdue
+                    </span>
+                  )}
+
+                </div>
+
+                <div className="mt-2 text-sm text-gray-500">
+                  Customer since{' '}
+                  {details.createdAt
+                    ? formatDate(
+                        details.createdAt,
+                        locale,
+                      )
+                    : '—'}
+                </div>
+
+                <div className="flex flex-wrap gap-2 mt-4">
+
+                  {details.status && (
+                    <Badge
+                      label={details.status}
+                      type="neutral"
+                    />
+                  )}
+
+                  {details.riskLevel && (
+                    <Badge
+                      label={`Risk: ${details.riskLevel}`}
+                      type={
+                        details.riskLevel
+                          ?.toString()
+                          .toUpperCase()
+                          .includes('HIGH')
+                          ? 'danger'
+                          : 'neutral'
+                      }
+                    />
+                  )}
+
+                  {details.employmentType && (
+                    <Badge
+                      label={
+                        details.employmentType
+                      }
+                      type="neutral"
+                    />
+                  )}
+
+                </div>
+
+              </div>
+
             </div>
 
-            <div>
+            {/* CREDIT */}
 
-              <h1 className="text-2xl font-extrabold text-gray-900">
-                {details.fullName ||
-                  `${details.firstName ?? ''} ${details.lastName ?? ''}`}
-              </h1>
+            <div className="xl:min-w-[220px] xl:border-l xl:border-gray-100 xl:pl-8">
 
-              <p className="text-sm text-gray-500 mt-1">
-                Borrower #{details.borrowerId}
-              </p>
+              <div className="text-xs uppercase tracking-[0.12em] text-gray-400 font-bold">
+                Credit Score
+              </div>
 
-              <div className="flex flex-wrap gap-2 mt-2">
+              <div className="flex items-end gap-3 mt-1">
 
-                {details.status && (
-                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-                    {details.status}
-                  </span>
-                )}
+                <div
+                  className={`text-4xl font-extrabold ${
+                    getCreditColor(
+                      details.creditScore,
+                    )
+                  }`}
+                >
+                  {details.creditScore ??
+                    '—'}
+                </div>
 
-                {details.goodPayer && (
-                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-100 text-teal-700">
-                    Good Payer
-                  </span>
-                )}
-
-                {details.currentlyOverdue && (
-                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                    Currently Overdue
-                  </span>
+                {details.creditScore !=
+                  null && (
+                  <div className="text-xs text-gray-500 pb-1">
+                    {getCreditLabel(
+                      details.creditScore,
+                    )}
+                  </div>
                 )}
 
               </div>
-            </div>
-          </div>
 
-          <div className="text-left md:text-right">
+              <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
 
-            <div className="text-xs uppercase tracking-wider text-gray-400 font-bold">
-              Credit Score
-            </div>
+                <div
+                  className={`h-full rounded-full ${getCreditBarColor(
+                    details.creditScore,
+                  )}`}
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        ((details.creditScore ??
+                          0) -
+                          300) /
+                          5.5,
+                      ),
+                    )}%`,
+                  }}
+                />
 
-            <div
-              className={`text-3xl font-extrabold ${
-                (details.creditScore ?? 0) >= 700
-                  ? 'text-teal-600'
-                  : (details.creditScore ?? 0) >= 600
-                  ? 'text-yellow-600'
-                  : 'text-red-500'
-              }`}
-            >
-              {details.creditScore ?? '—'}
+              </div>
+
+              <div className="flex justify-between mt-1 text-[10px] text-gray-400">
+                <span>300</span>
+                <span>850</span>
+              </div>
+
             </div>
 
           </div>
 
         </div>
-      </Card>
 
-      {/* ========================================================
-          PROFILE
-      ======================================================== */}
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ======================================================
+          FINANCIAL KPI GRID
+      ====================================================== */}
+
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+
+        <KpiCard
+          label="Total Loans"
+          value={formatNumber(
+            details.totalLoans,
+          )}
+          icon="↗"
+        />
+
+        <KpiCard
+          label="Active Loans"
+          value={formatNumber(
+            details.activeLoans,
+          )}
+          icon="◷"
+        />
+
+        <KpiCard
+          label="Outstanding"
+          value={formatCurrency(
+            details.totalOutstanding,
+            currency,
+            locale,
+          )}
+          icon="◆"
+        />
+
+        <KpiCard
+          label="Total Paid"
+          value={formatCurrency(
+            details.totalPaid,
+            currency,
+            locale,
+          )}
+          icon="✓"
+        />
+
+        <KpiCard
+          label="Repayment Rate"
+          value={`${Number(
+            details.repaymentRate ?? 0,
+          ).toFixed(1)}%`}
+          icon="%"
+        />
+
+      </div>
+
+      {/* ======================================================
+          PROFILE + FINANCE
+      ====================================================== */}
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
         {/* PERSONAL */}
 
-        <Card>
+        <SectionCard
+          title="Personal Information"
+          subtitle="Identity and contact details"
+        >
 
-          <div className="font-bold text-gray-900 mb-4">
-            Personal Information
-          </div>
+          <InfoGrid>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-            <Info
+            <InfoItem
               label="First Name"
-              value={details.firstName}
+              value={
+                details.firstName
+              }
             />
 
-            <Info
+            <InfoItem
               label="Last Name"
-              value={details.lastName}
+              value={
+                details.lastName
+              }
             />
 
-            <Info
+            <InfoItem
               label="Email"
-              value={details.email}
+              value={
+                details.email
+              }
             />
 
-            <Info
+            <InfoItem
               label="Phone"
-              value={details.phone}
+              value={
+                details.phone
+              }
             />
 
-            <Info
+            <InfoItem
               label="Alternate Phone"
-              value={details.alternatePhone}
+              value={
+                details.alternatePhone
+              }
             />
 
-            <Info
+            <InfoItem
               label="National ID"
-              value={details.nationalId}
+              value={
+                details.nationalId
+              }
             />
 
-            <Info
+            <InfoItem
               label="Passport"
-              value={details.passportNumber}
+              value={
+                details.passportNumber
+              }
             />
 
-            <Info
+            <InfoItem
               label="Date of Birth"
               value={
                 details.dateOfBirth
@@ -376,55 +509,69 @@ export default function BorrowerDetailsPage() {
               }
             />
 
-            <Info
+            <InfoItem
               label="Gender"
-              value={details.gender}
+              value={
+                details.gender
+              }
             />
 
-            <Info
+            <InfoItem
               label="Marital Status"
-              value={details.maritalStatus}
+              value={
+                details.maritalStatus
+              }
             />
 
-            <Info
+            <InfoItem
               label="Nationality"
-              value={details.nationality}
+              value={
+                details.nationality
+              }
             />
 
-            <Info
+            <InfoItem
               label="Country"
-              value={details.country}
+              value={
+                details.country
+              }
             />
 
-          </div>
-        </Card>
+          </InfoGrid>
+
+        </SectionCard>
 
         {/* EMPLOYMENT */}
 
-        <Card>
+        <SectionCard
+          title="Employment & Finance"
+          subtitle="Income and financial profile"
+        >
 
-          <div className="font-bold text-gray-900 mb-4">
-            Employment & Finance
-          </div>
+          <InfoGrid>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-            <Info
+            <InfoItem
               label="Employer"
-              value={details.employerName}
+              value={
+                details.employerName
+              }
             />
 
-            <Info
+            <InfoItem
               label="Employment Type"
-              value={details.employmentType}
+              value={
+                details.employmentType
+              }
             />
 
-            <Info
+            <InfoItem
               label="Job Title"
-              value={details.jobTitle}
+              value={
+                details.jobTitle
+              }
             />
 
-            <Info
+            <InfoItem
               label="Monthly Income"
               value={formatCurrency(
                 details.monthlyIncome,
@@ -433,7 +580,7 @@ export default function BorrowerDetailsPage() {
               )}
             />
 
-            <Info
+            <InfoItem
               label="Monthly Expenses"
               value={formatCurrency(
                 details.monthlyExpenses,
@@ -442,7 +589,7 @@ export default function BorrowerDetailsPage() {
               )}
             />
 
-            <Info
+            <InfoItem
               label="Net Worth"
               value={formatCurrency(
                 details.netWorth,
@@ -451,12 +598,14 @@ export default function BorrowerDetailsPage() {
               )}
             />
 
-            <Info
+            <InfoItem
               label="Credit Bureau"
-              value={details.creditBureau}
+              value={
+                details.creditBureau
+              }
             />
 
-            <Info
+            <InfoItem
               label="Credit Report Date"
               value={
                 details.creditReportDate
@@ -468,308 +617,84 @@ export default function BorrowerDetailsPage() {
               }
             />
 
-          </div>
-        </Card>
+          </InfoGrid>
+
+        </SectionCard>
 
       </div>
 
-      {/* ========================================================
+      {/* ======================================================
           ADDRESS
-      ======================================================== */}
+      ====================================================== */}
 
-      <Card>
+      <SectionCard
+        title="Address"
+        subtitle="Registered residential information"
+      >
 
-        <div className="font-bold text-gray-900 mb-4">
-          Address
-        </div>
-
-        <div className="text-sm text-gray-600">
+        <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 text-sm text-gray-700">
           {details.address ||
             'No address recorded.'}
         </div>
 
-      </Card>
+      </SectionCard>
 
-      {/* ========================================================
-          LOAN PORTFOLIO
-      ======================================================== */}
+      {/* ======================================================
+          PORTFOLIO
+      ====================================================== */}
 
-      <div>
-
-        <h2 className="text-lg font-bold text-gray-900 mb-3">
-          Loan Portfolio
-        </h2>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-
-          <StatCard
-            label="Total Loans"
-            value={formatNumber(
-              details.totalLoans,
-            )}
-          />
-
-          <StatCard
-            label="Active Loans"
-            value={formatNumber(
-              details.activeLoans,
-            )}
-          />
-
-          <StatCard
-            label="Completed"
-            value={formatNumber(
-              details.completedLoans,
-            )}
-          />
-
-          <StatCard
-            label="Overdue"
-            value={formatNumber(
-              details.overdueLoans,
-            )}
-          />
-
-          <StatCard
-            label="Defaulted"
-            value={formatNumber(
-              details.defaultedLoans,
-            )}
-          />
-
-          <StatCard
-            label="Written Off"
-            value={formatNumber(
-              details.writtenOffLoans,
-            )}
-          />
-
-          <StatCard
-            label="Total Borrowed"
-            value={formatCurrency(
-              details.totalBorrowed,
-              currency,
-              locale,
-            )}
-          />
-
-          <StatCard
-            label="Total Disbursed"
-            value={formatCurrency(
-              details.totalDisbursed,
-              currency,
-              locale,
-            )}
-          />
-
-          <StatCard
-            label="Outstanding"
-            value={formatCurrency(
-              details.totalOutstanding,
-              currency,
-              locale,
-            )}
-          />
-
-          <StatCard
-            label="Total Paid"
-            value={formatCurrency(
-              details.totalPaid,
-              currency,
-              locale,
-            )}
-          />
-
-        </div>
-      </div>
-
-      {/* ========================================================
-          REPAYMENT PERFORMANCE
-      ======================================================== */}
-
-      <Card>
-
-        <div className="font-bold text-gray-900 mb-4">
-          Repayment Performance
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-
-          <Performance
-            label="Total Payments"
-            value={formatNumber(
-              details.totalPayments,
-            )}
-          />
-
-          <Performance
-            label="Successful Payments"
-            value={formatNumber(
-              details.successfulPayments,
-            )}
-          />
-
-          <Performance
-            label="Missed Payments"
-            value={formatNumber(
-              details.missedPayments,
-            )}
-          />
-
-          <Performance
-            label="Overdue Payments"
-            value={formatNumber(
-              details.overduePayments,
-            )}
-          />
-
-          <Performance
-            label="Repayment Rate"
-            value={`${Number(
-              details.repaymentRate ?? 0,
-            ).toFixed(1)}%`}
-          />
-
-          <Performance
-            label="On-Time Rate"
-            value={`${Number(
-              details.onTimePaymentRate ?? 0,
-            ).toFixed(1)}%`}
-          />
-
-          <Performance
-            label="Current Days Past Due"
-            value={formatNumber(
-              details.currentDaysPastDue,
-            )}
-          />
-
-          <Performance
-            label="Maximum Days Past Due"
-            value={formatNumber(
-              details.maximumDaysPastDue,
-            )}
-          />
-
-        </div>
-      </Card>
-
-      {/* ========================================================
-          RISK
-      ======================================================== */}
-
-      <Card>
-
-        <div className="font-bold text-gray-900 mb-4">
-          Risk & Behaviour
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-
-          <Info
-            label="Risk Level"
-            value={details.riskLevel}
-          />
-
-          <Info
-            label="Repayment Behaviour"
-            value={details.repaymentBehaviour}
-          />
-
-          <Info
-            label="Good Payer"
-            value={
-              details.goodPayer
-                ? 'Yes'
-                : 'No'
-            }
-          />
-
-          <Info
-            label="Currently Overdue"
-            value={
-              details.currentlyOverdue
-                ? 'Yes'
-                : 'No'
-            }
-          />
-
-          <Info
-            label="Default History"
-            value={
-              details.hasDefaultHistory
-                ? 'Yes'
-                : 'No'
-            }
-          />
-
-          <Info
-            label="Multiple Active Loans"
-            value={
-              details.hasMultipleActiveLoans
-                ? 'Yes'
-                : 'No'
-            }
-          />
-
-        </div>
-      </Card>
-
-      {/* ========================================================
-          LOANS
-      ======================================================== */}
-
-      <Card>
-
-        <div className="flex items-center justify-between mb-4">
-
-          <div className="font-bold text-gray-900">
-            Loans
-          </div>
-
-          <span className="text-sm text-gray-500">
-            {loans.length} loans
+      <SectionCard
+        title="Loan Portfolio"
+        subtitle="Current and historical lending exposure"
+        right={
+          <span className="text-xs font-semibold text-gray-400">
+            {loans.length}{' '}
+            {loans.length === 1
+              ? 'loan'
+              : 'loans'}
           </span>
-
-        </div>
+        }
+      >
 
         {loans.length === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500">
-            No loans found for this borrower.
-          </div>
+          <EmptyState
+            icon="◆"
+            title="No loans"
+            message="This borrower has no loan records."
+          />
         ) : (
           <div className="overflow-x-auto">
 
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[850px]">
 
               <thead>
-                <tr className="border-b text-left">
+                <tr className="border-b border-gray-100">
 
-                  <th className="py-3 px-2">
-                    Reference
+                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
+                    Loan
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Type
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Status
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Amount
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Outstanding
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Rate
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Maturity
                   </th>
 
@@ -783,28 +708,44 @@ export default function BorrowerDetailsPage() {
                     loan: BorrowerLoanSummary,
                   ) => (
                     <tr
-                      key={loan.loanId}
-                      className="border-b hover:bg-gray-50"
+                      key={
+                        loan.loanId
+                      }
+                      className="border-b border-gray-50 hover:bg-gray-50 transition"
                     >
 
-                      <td className="py-3 px-2 font-semibold">
-                        {loan.referenceNumber ??
-                          `#${loan.loanId}`}
+                      <td className="py-4 px-3">
+
+                        <div className="font-bold text-sm text-gray-900">
+                          {loan.referenceNumber ??
+                            `#${loan.loanId}`}
+                        </div>
+
+                        <div className="text-xs text-gray-400 mt-1">
+                          Loan ID #
+                          {
+                            loan.loanId
+                          }
+                        </div>
+
                       </td>
 
-                      <td className="py-3 px-2">
-                        {loan.loanType ?? '—'}
+                      <td className="py-4 px-3 text-sm text-gray-600">
+                        {loan.loanType ??
+                          '—'}
                       </td>
 
-                      <td className="py-3 px-2">
+                      <td className="py-4 px-3">
 
-                        <span className="px-2 py-1 rounded-full bg-gray-100 text-xs font-semibold">
-                          {loan.status ?? '—'}
-                        </span>
+                        <StatusBadge
+                          status={
+                            loan.status
+                          }
+                        />
 
                       </td>
 
-                      <td className="py-3 px-2">
+                      <td className="py-4 px-3 text-right text-sm font-semibold text-gray-800">
                         {formatCurrency(
                           loan.loanAmount,
                           loan.currency ??
@@ -813,7 +754,7 @@ export default function BorrowerDetailsPage() {
                         )}
                       </td>
 
-                      <td className="py-3 px-2 font-semibold">
+                      <td className="py-4 px-3 text-right text-sm font-bold text-gray-900">
                         {formatCurrency(
                           loan.outstandingBalance,
                           loan.currency ??
@@ -822,13 +763,14 @@ export default function BorrowerDetailsPage() {
                         )}
                       </td>
 
-                      <td className="py-3 px-2">
-                        {loan.interestRate != null
+                      <td className="py-4 px-3 text-right text-sm text-gray-600">
+                        {loan.interestRate !=
+                        null
                           ? `${loan.interestRate}%`
                           : '—'}
                       </td>
 
-                      <td className="py-3 px-2">
+                      <td className="py-4 px-3 text-right text-sm text-gray-500">
                         {loan.maturityDate
                           ? formatDate(
                               loan.maturityDate,
@@ -842,72 +784,260 @@ export default function BorrowerDetailsPage() {
                 )}
 
               </tbody>
+
             </table>
 
           </div>
         )}
-      </Card>
 
-      {/* ========================================================
-          PAYMENT HISTORY
-      ======================================================== */}
+      </SectionCard>
 
-      <Card>
+      {/* ======================================================
+          REPAYMENT PERFORMANCE
+      ====================================================== */}
 
-        <div className="flex items-center justify-between mb-4">
+      <SectionCard
+        title="Repayment Performance"
+        subtitle="Borrower repayment behaviour"
+      >
 
-          <div className="font-bold text-gray-900">
-            Payment History
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
 
-          <span className="text-sm text-gray-500">
-            {payments.length} payments
-          </span>
+          <Metric
+            label="Total Payments"
+            value={formatNumber(
+              details.totalPayments,
+            )}
+          />
+
+          <Metric
+            label="Successful"
+            value={formatNumber(
+              details.successfulPayments,
+            )}
+            positive
+          />
+
+          <Metric
+            label="Missed"
+            value={formatNumber(
+              details.missedPayments,
+            )}
+            danger={
+              Number(
+                details.missedPayments ??
+                  0,
+              ) > 0
+            }
+          />
+
+          <Metric
+            label="Overdue"
+            value={formatNumber(
+              details.overduePayments,
+            )}
+            danger={
+              Number(
+                details.overduePayments ??
+                  0,
+              ) > 0
+            }
+          />
+
+          <Metric
+            label="Repayment Rate"
+            value={`${Number(
+              details.repaymentRate ??
+                0,
+            ).toFixed(1)}%`}
+          />
+
+          <Metric
+            label="On-Time Rate"
+            value={`${Number(
+              details.onTimePaymentRate ??
+                0,
+            ).toFixed(1)}%`}
+            positive
+          />
+
+          <Metric
+            label="Current DPD"
+            value={formatNumber(
+              details.currentDaysPastDue,
+            )}
+            danger={
+              Number(
+                details.currentDaysPastDue ??
+                  0,
+              ) > 0
+            }
+          />
+
+          <Metric
+            label="Maximum DPD"
+            value={formatNumber(
+              details.maximumDaysPastDue,
+            )}
+            danger={
+              Number(
+                details.maximumDaysPastDue ??
+                  0,
+              ) > 0
+            }
+          />
 
         </div>
 
+      </SectionCard>
+
+      {/* ======================================================
+          RISK
+      ====================================================== */}
+
+      <SectionCard
+        title="Risk & Behaviour"
+        subtitle="Credit and repayment risk indicators"
+      >
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+          <RiskCard
+            label="Risk Level"
+            value={
+              details.riskLevel
+            }
+          />
+
+          <RiskCard
+            label="Repayment Behaviour"
+            value={
+              details.repaymentBehaviour
+            }
+          />
+
+          <RiskCard
+            label="Good Payer"
+            value={
+              details.goodPayer
+                ? 'Yes'
+                : 'No'
+            }
+            positive={
+              details.goodPayer
+            }
+          />
+
+          <RiskCard
+            label="Currently Overdue"
+            value={
+              details.currentlyOverdue
+                ? 'Yes'
+                : 'No'
+            }
+            positive={
+              !details.currentlyOverdue
+            }
+            danger={
+              details.currentlyOverdue
+            }
+          />
+
+          <RiskCard
+            label="Default History"
+            value={
+              details.hasDefaultHistory
+                ? 'Yes'
+                : 'No'
+            }
+            positive={
+              !details.hasDefaultHistory
+            }
+            danger={
+              details.hasDefaultHistory
+            }
+          />
+
+          <RiskCard
+            label="Multiple Active Loans"
+            value={
+              details.hasMultipleActiveLoans
+                ? 'Yes'
+                : 'No'
+            }
+            danger={
+              details.hasMultipleActiveLoans
+            }
+            positive={
+              !details.hasMultipleActiveLoans
+            }
+          />
+
+        </div>
+
+      </SectionCard>
+
+      {/* ======================================================
+          PAYMENT HISTORY
+      ====================================================== */}
+
+      <SectionCard
+        title="Payment History"
+        subtitle="Recent borrower payment activity"
+        right={
+          <span className="text-xs font-semibold text-gray-400">
+            {payments.length}{' '}
+            {payments.length === 1
+              ? 'payment'
+              : 'payments'}
+          </span>
+        }
+      >
+
         {payments.length === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500">
-            No payments found for this borrower.
-          </div>
+          <EmptyState
+            icon="✓"
+            title="No payments"
+            message="No payment records have been recorded for this borrower."
+          />
         ) : (
           <div className="overflow-x-auto">
 
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[900px]">
 
               <thead>
-                <tr className="border-b text-left">
+                <tr className="border-b border-gray-100">
 
-                  <th className="py-3 px-2">
+                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Date
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Loan
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Amount
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Principal
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Interest
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Method
                   </th>
 
-                  <th className="py-3 px-2">
+                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
                     Status
                   </th>
 
-                  <th className="py-3 px-2">
-                    Late
+                  <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider text-gray-400 font-bold">
+                    Timing
                   </th>
 
                 </tr>
@@ -918,118 +1048,139 @@ export default function BorrowerDetailsPage() {
                 {payments.map(
                   (
                     payment: BorrowerPayment,
-                  ) => (
-                    <tr
-                      key={payment.paymentId}
-                      className="border-b hover:bg-gray-50"
-                    >
+                  ) => {
 
-                      <td className="py-3 px-2">
+                    const paymentDate =
+                      payment.paidDate ??
+                      payment.paymentDate ??
+                      payment.dueDate;
 
-                        {(
-                          payment.paidDate ??
-                          payment.paymentDate ??
-                          payment.dueDate
-                        )
-                          ? formatDate(
-                              payment.paidDate ??
-                                payment.paymentDate ??
-                                payment.dueDate ??
-                                undefined,
-                              locale,
-                            )
-                          : '—'}
+                    const late =
+                      payment.isLate ||
+                      payment.onTime ===
+                        false;
 
-                      </td>
+                    return (
+                      <tr
+                        key={
+                          payment.paymentId
+                        }
+                        className="border-b border-gray-50 hover:bg-gray-50 transition"
+                      >
 
-                      <td className="py-3 px-2 font-semibold">
-                        {payment.loanReference ??
-                          payment.loanNumber ??
-                          `#${payment.loanId}`}
-                      </td>
+                        <td className="py-4 px-3 text-sm text-gray-600">
+                          {paymentDate
+                            ? formatDate(
+                                paymentDate,
+                                locale,
+                              )
+                            : '—'}
+                        </td>
 
-                      <td className="py-3 px-2 font-semibold">
-                        {formatCurrency(
-                          payment.amountPaid ??
-                            payment.amount ??
-                            payment.totalPaid,
-                          payment.currency ??
-                            currency,
-                          locale,
-                        )}
-                      </td>
+                        <td className="py-4 px-3">
 
-                      <td className="py-3 px-2">
-                        {formatCurrency(
-                          payment.principalComponent ??
-                            payment.principal,
-                          payment.currency ??
-                            currency,
-                          locale,
-                        )}
-                      </td>
+                          <div className="font-bold text-sm text-gray-800">
+                            {payment.loanReference ??
+                              payment.loanNumber ??
+                              `#${payment.loanId}`}
+                          </div>
 
-                      <td className="py-3 px-2">
-                        {formatCurrency(
-                          payment.interestComponent ??
-                            payment.interest,
-                          payment.currency ??
-                            currency,
-                          locale,
-                        )}
-                      </td>
+                        </td>
 
-                      <td className="py-3 px-2">
-                        {payment.paymentMethod ??
-                          payment.method ??
-                          '—'}
-                      </td>
+                        <td className="py-4 px-3 text-right text-sm font-bold text-gray-900">
+                          {formatCurrency(
+                            payment.amountPaid ??
+                              payment.amount ??
+                              payment.totalPaid,
+                            payment.currency ??
+                              currency,
+                            locale,
+                          )}
+                        </td>
 
-                      <td className="py-3 px-2">
+                        <td className="py-4 px-3 text-right text-sm text-gray-600">
+                          {formatCurrency(
+                            payment.principalComponent ??
+                              payment.principal,
+                            payment.currency ??
+                              currency,
+                            locale,
+                          )}
+                        </td>
 
-                        <span className="px-2 py-1 rounded-full bg-gray-100 text-xs font-semibold">
-                          {payment.status ?? '—'}
-                        </span>
+                        <td className="py-4 px-3 text-right text-sm text-gray-600">
+                          {formatCurrency(
+                            payment.interestComponent ??
+                              payment.interest,
+                            payment.currency ??
+                              currency,
+                            locale,
+                          )}
+                        </td>
 
-                      </td>
+                        <td className="py-4 px-3 text-sm text-gray-600">
+                          {payment.paymentMethod ??
+                            payment.method ??
+                            '—'}
+                        </td>
 
-                      <td className="py-3 px-2">
+                        <td className="py-4 px-3">
 
-                        {payment.isLate ||
-                        payment.onTime === false ? (
-                          <span className="text-red-600 font-semibold">
-                            Yes
-                          </span>
-                        ) : (
-                          <span className="text-teal-600 font-semibold">
-                            No
-                          </span>
-                        )}
+                          <StatusBadge
+                            status={
+                              payment.status
+                            }
+                          />
 
-                      </td>
+                        </td>
 
-                    </tr>
-                  ),
+                        <td className="py-4 px-3">
+
+                          {late ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-50 text-red-600 text-xs font-bold">
+                              Late
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-bold">
+                              On time
+                            </span>
+                          )}
+
+                        </td>
+
+                      </tr>
+                    );
+                  },
                 )}
 
               </tbody>
+
             </table>
 
           </div>
         )}
-      </Card>
 
-      {/* ========================================================
-          CREATED
-      ======================================================== */}
+      </SectionCard>
+
+      {/* ======================================================
+          FOOTER
+      ====================================================== */}
 
       {details.createdAt && (
-        <div className="text-xs text-gray-400">
-          Borrower registered{' '}
-          {formatDate(
-            details.createdAt,
-            locale,
-          )}
+        <div className="flex items-center justify-between text-xs text-gray-400 pt-2">
+
+          <span>
+            Borrower registered{' '}
+            {formatDate(
+              details.createdAt,
+              locale,
+            )}
+          </span>
+
+          <span>
+            ID #{details.borrowerId}
+          </span>
+
         </div>
       )}
 
@@ -1037,30 +1188,95 @@ export default function BorrowerDetailsPage() {
   );
 }
 
-/*
+/**
  * ============================================================
- * INFO COMPONENT
+ * SECTION CARD
  * ============================================================
  */
 
-function Info({
+function SectionCard({
+  title,
+  subtitle,
+  right,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+
+      <div className="flex items-start justify-between gap-4 mb-5">
+
+        <div>
+          <h2 className="font-bold text-gray-900">
+            {title}
+          </h2>
+
+          {subtitle && (
+            <p className="text-xs text-gray-500 mt-1">
+              {subtitle}
+            </p>
+          )}
+        </div>
+
+        {right}
+
+      </div>
+
+      {children}
+
+    </Card>
+  );
+}
+
+/**
+ * ============================================================
+ * INFO GRID
+ * ============================================================
+ */
+
+function InfoGrid({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * ============================================================
+ * INFO ITEM
+ * ============================================================
+ */
+
+function InfoItem({
   label,
   value,
 }: {
   label: string;
   value?: string | number | null;
 }) {
+  const hasValue =
+    value !== undefined &&
+    value !== null &&
+    String(value).trim() !== '';
+
   return (
     <div>
 
-      <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-1">
+      <div className="text-[10px] uppercase tracking-[0.12em] text-gray-400 font-bold">
         {label}
       </div>
 
-      <div className="text-sm text-gray-800 font-medium break-words">
-        {value !== undefined &&
-        value !== null &&
-        String(value).trim() !== ''
+      <div className="mt-1 text-sm font-semibold text-gray-800 break-words">
+        {hasValue
           ? String(value)
           : '—'}
       </div>
@@ -1069,58 +1285,309 @@ function Info({
   );
 }
 
-/*
+/**
  * ============================================================
- * STAT CARD
+ * KPI CARD
  * ============================================================
  */
 
-function StatCard({
+function KpiCard({
   label,
   value,
+  icon,
 }: {
   label: string;
   value: string;
+  icon: string;
 }) {
   return (
     <Card>
 
-      <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold">
-        {label}
-      </div>
+      <div className="flex items-start justify-between gap-3">
 
-      <div className="text-xl font-extrabold text-gray-900 mt-2">
-        {value}
+        <div className="min-w-0">
+
+          <div className="text-[10px] uppercase tracking-[0.1em] text-gray-400 font-bold">
+            {label}
+          </div>
+
+          <div className="mt-2 text-lg font-extrabold text-gray-900 truncate">
+            {value}
+          </div>
+
+        </div>
+
+        <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center text-sm font-bold flex-shrink-0">
+          {icon}
+        </div>
+
       </div>
 
     </Card>
   );
 }
 
-/*
+/**
  * ============================================================
- * PERFORMANCE
+ * METRIC
  * ============================================================
  */
 
-function Performance({
+function Metric({
   label,
   value,
+  positive,
+  danger,
 }: {
   label: string;
   value: string;
+  positive?: boolean;
+  danger?: boolean;
 }) {
   return (
     <div>
 
-      <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold">
+      <div className="text-[10px] uppercase tracking-[0.1em] text-gray-400 font-bold">
         {label}
       </div>
 
-      <div className="text-lg font-bold text-gray-900 mt-1">
+      <div
+        className={`mt-1 text-lg font-extrabold ${
+          danger
+            ? 'text-red-600'
+            : positive
+            ? 'text-teal-600'
+            : 'text-gray-900'
+        }`}
+      >
         {value}
       </div>
 
     </div>
   );
+}
+
+/**
+ * ============================================================
+ * RISK CARD
+ * ============================================================
+ */
+
+function RiskCard({
+  label,
+  value,
+  positive,
+  danger,
+}: {
+  label: string;
+  value?: string | null;
+  positive?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+
+      <div className="text-[10px] uppercase tracking-[0.1em] text-gray-400 font-bold">
+        {label}
+      </div>
+
+      <div
+        className={`mt-2 text-sm font-bold ${
+          danger
+            ? 'text-red-600'
+            : positive
+            ? 'text-teal-600'
+            : 'text-gray-800'
+        }`}
+      >
+        {value || '—'}
+      </div>
+
+    </div>
+  );
+}
+
+/**
+ * ============================================================
+ * STATUS BADGE
+ * ============================================================
+ */
+
+function StatusBadge({
+  status,
+}: {
+  status?: string | null;
+}) {
+  const value =
+    status || 'Unknown';
+
+  const normalized =
+    value.toUpperCase();
+
+  let classes =
+    'bg-gray-100 text-gray-600';
+
+  if (
+    normalized.includes('PAID') ||
+    normalized.includes('COMPLETED') ||
+    normalized.includes('SUCCESS')
+  ) {
+    classes =
+      'bg-teal-50 text-teal-700';
+  } else if (
+    normalized.includes('ACTIVE') ||
+    normalized.includes('APPROVED')
+  ) {
+    classes =
+      'bg-blue-50 text-blue-700';
+  } else if (
+    normalized.includes('OVERDUE') ||
+    normalized.includes('DEFAULT') ||
+    normalized.includes('FAILED') ||
+    normalized.includes('REJECTED')
+  ) {
+    classes =
+      'bg-red-50 text-red-600';
+  } else if (
+    normalized.includes('PENDING')
+  ) {
+    classes =
+      'bg-yellow-50 text-yellow-700';
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold ${classes}`}
+    >
+      {value}
+    </span>
+  );
+}
+
+/**
+ * ============================================================
+ * GENERAL BADGE
+ * ============================================================
+ */
+
+function Badge({
+  label,
+  type = 'neutral',
+}: {
+  label: string;
+  type?: 'neutral' | 'danger';
+}) {
+  return (
+    <span
+      className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+        type === 'danger'
+          ? 'bg-red-50 text-red-600'
+          : 'bg-gray-100 text-gray-600'
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * ============================================================
+ * EMPTY STATE
+ * ============================================================
+ */
+
+function EmptyState({
+  icon,
+  title,
+  message,
+}: {
+  icon: string;
+  title: string;
+  message: string;
+}) {
+  return (
+    <div className="py-12 text-center">
+
+      <div className="mx-auto w-12 h-12 rounded-xl bg-gray-100 text-gray-400 flex items-center justify-center font-bold">
+        {icon}
+      </div>
+
+      <h3 className="mt-4 text-sm font-bold text-gray-800">
+        {title}
+      </h3>
+
+      <p className="mt-1 text-xs text-gray-500">
+        {message}
+      </p>
+
+    </div>
+  );
+}
+
+/**
+ * ============================================================
+ * CREDIT HELPERS
+ * ============================================================
+ */
+
+function getCreditColor(
+  score?: number | null,
+) {
+  if (
+    score == null
+  ) {
+    return 'text-gray-400';
+  }
+
+  if (score >= 700) {
+    return 'text-teal-600';
+  }
+
+  if (score >= 600) {
+    return 'text-yellow-600';
+  }
+
+  return 'text-red-500';
+}
+
+function getCreditBarColor(
+  score?: number | null,
+) {
+  if (
+    score == null
+  ) {
+    return 'bg-gray-300';
+  }
+
+  if (score >= 700) {
+    return 'bg-teal-500';
+  }
+
+  if (score >= 600) {
+    return 'bg-yellow-500';
+  }
+
+  return 'bg-red-500';
+}
+
+function getCreditLabel(
+  score: number,
+) {
+  if (score >= 750) {
+    return 'Excellent';
+  }
+
+  if (score >= 700) {
+    return 'Very Good';
+  }
+
+  if (score >= 650) {
+    return 'Good';
+  }
+
+  if (score >= 600) {
+    return 'Fair';
+  }
+
+  return 'High Risk';
 }
