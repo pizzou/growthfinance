@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.config;
 
 import com.patrick.fintech.loan_backend.security.JwtAuthFilter;
@@ -42,6 +43,7 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:https://growthfinance-six.vercel.app}")
     private String allowedOrigins;
 
+
     // ============================================================
     // SECURITY FILTER CHAIN
     // ============================================================
@@ -53,25 +55,25 @@ public class SecurityConfig {
 
         http
 
-            // ----------------------------------------------------
+            // ====================================================
             // CORS
-            // ----------------------------------------------------
+            // ====================================================
 
             .cors(cors ->
                 cors.configurationSource(corsSource())
             )
 
-            // ----------------------------------------------------
+            // ====================================================
             // CSRF
-            // ----------------------------------------------------
+            // ====================================================
 
             .csrf(csrf ->
                 csrf.disable()
             )
 
-            // ----------------------------------------------------
+            // ====================================================
             // SESSION
-            // ----------------------------------------------------
+            // ====================================================
 
             .sessionManagement(session ->
                 session.sessionCreationPolicy(
@@ -79,14 +81,17 @@ public class SecurityConfig {
                 )
             )
 
-            // ----------------------------------------------------
+            // ====================================================
             // EXCEPTION HANDLING
-            // ----------------------------------------------------
+            // ====================================================
 
             .exceptionHandling(exception ->
                 exception
 
-                    // Authentication failure = 401
+                    // ------------------------------------------------
+                    // 401 - NOT AUTHENTICATED
+                    // ------------------------------------------------
+
                     .authenticationEntryPoint(
                         (request, response, authException) -> {
 
@@ -95,6 +100,8 @@ public class SecurityConfig {
                                     .SC_UNAUTHORIZED
                             );
 
+                            response.setCharacterEncoding("UTF-8");
+
                             response.setContentType(
                                 "application/json"
                             );
@@ -103,14 +110,19 @@ public class SecurityConfig {
                                 """
                                 {
                                   "success": false,
-                                  "error": "Your session has expired or is no longer valid. Please log in again."
+                                  "status": 401,
+                                  "error": "UNAUTHORIZED",
+                                  "message": "Your session has expired or is no longer valid. Please log in again."
                                 }
                                 """
                             );
                         }
                     )
 
-                    // Authorization failure = 403
+                    // ------------------------------------------------
+                    // 403 - AUTHENTICATED BUT NOT AUTHORIZED
+                    // ------------------------------------------------
+
                     .accessDeniedHandler(
                         (request, response, accessDeniedException) -> {
 
@@ -119,6 +131,8 @@ public class SecurityConfig {
                                     .SC_FORBIDDEN
                             );
 
+                            response.setCharacterEncoding("UTF-8");
+
                             response.setContentType(
                                 "application/json"
                             );
@@ -127,7 +141,9 @@ public class SecurityConfig {
                                 """
                                 {
                                   "success": false,
-                                  "error": "You do not have permission to perform this action."
+                                  "status": 403,
+                                  "error": "FORBIDDEN",
+                                  "message": "You are authenticated but do not have permission to perform this action."
                                 }
                                 """
                             );
@@ -135,12 +151,16 @@ public class SecurityConfig {
                     )
             )
 
-            // ----------------------------------------------------
+            // ====================================================
             // AUTHORIZATION
-            // ----------------------------------------------------
+            // ====================================================
 
             .authorizeHttpRequests(authorize ->
                 authorize
+
+                    // ------------------------------------------------
+                    // PUBLIC ENDPOINTS
+                    // ------------------------------------------------
 
                     .requestMatchers(
                         "/api/auth/**",
@@ -154,13 +174,17 @@ public class SecurityConfig {
                     )
                     .permitAll()
 
+                    // ------------------------------------------------
+                    // EVERYTHING ELSE REQUIRES AUTHENTICATION
+                    // ------------------------------------------------
+
                     .anyRequest()
                     .authenticated()
             )
 
-            // ----------------------------------------------------
-            // H2
-            // ----------------------------------------------------
+            // ====================================================
+            // H2 CONSOLE
+            // ====================================================
 
             .headers(headers ->
                 headers.frameOptions(
@@ -168,27 +192,27 @@ public class SecurityConfig {
                 )
             )
 
-            // ----------------------------------------------------
-            // RATE LIMIT
-            // ----------------------------------------------------
+            // ====================================================
+            // RATE LIMIT FILTER
+            // ====================================================
 
             .addFilterBefore(
                 rateLimitFilter,
                 UsernamePasswordAuthenticationFilter.class
             )
 
-            // ----------------------------------------------------
-            // JWT
-            // ----------------------------------------------------
+            // ====================================================
+            // JWT FILTER
+            // ====================================================
 
             .addFilterBefore(
                 jwtFilter,
                 UsernamePasswordAuthenticationFilter.class
             )
 
-            // ----------------------------------------------------
-            // REGULATORY API KEY
-            // ----------------------------------------------------
+            // ====================================================
+            // REGULATORY API KEY FILTER
+            // ====================================================
 
             .addFilterBefore(
                 regulatoryApiKeyAuthFilter,
@@ -198,8 +222,9 @@ public class SecurityConfig {
         return http.build();
     }
 
+
     // ============================================================
-    // CORS
+    // CORS CONFIGURATION
     // ============================================================
 
     @Bean
@@ -235,6 +260,14 @@ public class SecurityConfig {
                 List.of("*")
         );
 
+        configuration.setExposedHeaders(
+                List.of(
+                    "Content-Disposition",
+                    "Content-Type",
+                    "X-Request-ID"
+                )
+        );
+
         configuration.setAllowCredentials(
                 true
         );
@@ -249,6 +282,7 @@ public class SecurityConfig {
 
         return source;
     }
+
 
     // ============================================================
     // AUTHENTICATION MANAGER
