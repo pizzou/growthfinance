@@ -1,7 +1,8 @@
+
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 import { borrowerApi } from '@/services/api';
 import { Borrower } from '@/types';
@@ -41,8 +42,6 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 
 export default function BorrowersPage() {
-  const router = useRouter();
-
   const [borrowers, setBorrowers] = useState<Borrower[]>([]);
   const [total, setTotal] = useState(0);
 
@@ -204,31 +203,6 @@ export default function BorrowersPage() {
       }));
     };
 
-  /**
-   * ============================================================
-   * OPEN BORROWER DETAILS
-   * ============================================================
-   *
-   * IMPORTANT:
-   *
-   * The correct route is:
-   *
-   * /dashboard/borrowers/{id}
-   *
-   * NOT:
-   *
-   * /dashboard/{id}
-   *
-   */
-
-  const openBorrower = (
-    borrowerId: number,
-  ) => {
-    router.push(
-      `/dashboard/borrowers/${borrowerId}`,
-    );
-  };
-
   return (
     <div>
       {/* ======================================================
@@ -315,36 +289,36 @@ export default function BorrowersPage() {
                   (borrower: Borrower) => (
                     <Tr
                       key={borrower.id}
-                      className="cursor-pointer hover:bg-gray-50"
-                      onClick={() =>
-                        openBorrower(
-                          borrower.id,
-                        )
-                      }
+                      className="hover:bg-gray-50"
                     >
                       {/* ==================================================
                           NAME
                       ================================================== */}
 
                       <Td>
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-sm font-bold text-teal-700 flex-shrink-0">
-                            {borrower.firstName?.[0] ?? ''}
-                            {borrower.lastName?.[0] ?? ''}
-                          </div>
-
-                          <div>
-                            <div className="font-semibold text-sm text-gray-900">
-                              {borrower.firstName}{' '}
-                              {borrower.lastName}
+                        <Link
+                          href={`/dashboard/borrowers/${borrower.id}`}
+                          className="block"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-sm font-bold text-teal-700 flex-shrink-0">
+                              {borrower.firstName?.[0] ?? ''}
+                              {borrower.lastName?.[0] ?? ''}
                             </div>
 
-                            <div className="text-xs text-gray-400">
-                              {borrower.employmentType ??
-                                '—'}
+                            <div>
+                              <div className="font-semibold text-sm text-gray-900 hover:text-teal-600">
+                                {borrower.firstName}{' '}
+                                {borrower.lastName}
+                              </div>
+
+                              <div className="text-xs text-gray-400">
+                                {borrower.employmentType ??
+                                  '—'}
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        </Link>
                       </Td>
 
                       {/* ==================================================
