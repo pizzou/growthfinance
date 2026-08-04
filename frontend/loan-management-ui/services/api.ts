@@ -1,10 +1,10 @@
+
 import axios, {
   AxiosError,
+  AxiosHeaders,
   AxiosInstance,
   AxiosRequestConfig,
 } from 'axios';
-
-import type { BorrowerDetails } from '@/types';
 
 /**
  * ============================================================
@@ -28,6 +28,22 @@ const API: AxiosInstance = axios.create({
  * ============================================================
  * REQUEST INTERCEPTOR
  * ============================================================
+ *
+ * Every authenticated request receives:
+ *
+ * Authorization: Bearer <JWT>
+ *
+ * This includes:
+ *
+ * - BNR
+ * - Credit Bureau
+ * - Loans
+ * - Borrowers
+ * - Accounting
+ * - Compliance
+ * - etc.
+ *
+ * ============================================================
  */
 
 API.interceptors.request.use(
@@ -36,8 +52,27 @@ API.interceptors.request.use(
       const token = localStorage.getItem('token');
 
       if (token) {
-        config.headers = config.headers || {};
-        config.headers.Authorization = `Bearer ${token}`;
+        /**
+         * Axios 1.x expects AxiosHeaders here.
+         *
+         * Using AxiosHeaders.set() avoids:
+         *
+         * Type 'string | number | true | AxiosHeaders | string[]'
+         * is not assignable to type 'string'
+         *
+         * errors.
+         */
+        const headers =
+          config.headers instanceof AxiosHeaders
+            ? config.headers
+            : new AxiosHeaders(config.headers);
+
+        headers.set(
+          'Authorization',
+          `Bearer ${token}`,
+        );
+
+        config.headers = headers;
       }
     }
 
@@ -59,6 +94,16 @@ API.interceptors.response.use(
     const status = error.response?.status;
     const responseData = error.response?.data;
 
+    /**
+     * --------------------------------------------------------
+     * 401 = AUTHENTICATION FAILURE
+     * --------------------------------------------------------
+     *
+     * Only remove the token for 401.
+     *
+     * A 403 means the user is authenticated but does not have
+     * permission, so we must NOT log them out automatically.
+     */
     if (
       status === 401 &&
       typeof window !== 'undefined'
@@ -91,9 +136,21 @@ API.interceptors.response.use(
  * ============================================================
  * RESPONSE UNWRAPPER
  * ============================================================
+ *
+ * Supports backend responses such as:
+ *
+ * {
+ *   success: true,
+ *   data: {...}
+ * }
+ *
+ * and also plain responses.
+ * ============================================================
  */
 
-const unwrap = (body: unknown): unknown => {
+const unwrap = (
+  body: unknown,
+): unknown => {
   if (
     body &&
     typeof body === 'object' &&
@@ -149,25 +206,6 @@ export const del = (
 
 /**
  * ============================================================
- * BORROWER DETAILS TYPE EXPORT
- *
- * This allows existing code such as:
- *
- * import {
- *   borrowerApi,
- *   BorrowerDetails
- * } from '@/services/api';
- *
- * The actual interface remains defined in:
- *
- * types/index.ts
- * ============================================================
- */
-
-export type { BorrowerDetails };
-
-/**
- * ============================================================
  * AUTH API
  * ============================================================
  */
@@ -186,8 +224,13 @@ export const authApi = {
       otp,
     }),
 
-  register: (data: unknown) =>
-    post('/auth/register', data),
+  register: (
+    data: unknown,
+  ) =>
+    post(
+      '/auth/register',
+      data,
+    ),
 
   me: () =>
     get('/auth/me'),
@@ -208,99 +251,156 @@ export const loanApi = {
   ) =>
     get(
       `/loans?page=${page}&size=${size}` +
-        `${status ? `&status=${encodeURIComponent(status)}` : ''}` +
-        `${type ? `&type=${encodeURIComponent(type)}` : ''}`,
+        `${
+          status
+            ? `&status=${encodeURIComponent(status)}`
+            : ''
+        }` +
+        `${
+          type
+            ? `&type=${encodeURIComponent(type)}`
+            : ''
+        }`,
     ),
 
-  get: (id: number) =>
-    get(`/loans/${id}`),
+  get: (
+    id: number,
+  ) =>
+    get(
+      `/loans/${id}`,
+    ),
 
-  create: (data: unknown) =>
-    post('/loans', data),
+  create: (
+    data: unknown,
+  ) =>
+    post(
+      '/loans',
+      data,
+    ),
 
   approve: (
     id: number,
     notes = '',
     interestRate?: number,
   ) =>
-    post(`/loans/${id}/approve`, {
-      notes,
-      interestRate:
-        interestRate != null
-          ? String(interestRate)
-          : undefined,
-    }),
+    post(
+      `/loans/${id}/approve`,
+      {
+        notes,
+        interestRate:
+          interestRate != null
+            ? String(interestRate)
+            : undefined,
+      },
+    ),
 
   reject: (
     id: number,
     reason: string,
   ) =>
-    post(`/loans/${id}/reject`, {
-      reason,
-    }),
+    post(
+      `/loans/${id}/reject`,
+      {
+        reason,
+      },
+    ),
 
   disburse: (
     id: number,
     method: string,
   ) =>
-    post(`/loans/${id}/disburse`, {
-      disbursementMethod: method,
-    }),
+    post(
+      `/loans/${id}/disburse`,
+      {
+        disbursementMethod: method,
+      },
+    ),
 
   updateStatus: (
     id: number,
     status: string,
     notes?: string,
   ) =>
-    post(`/loans/${id}/status`, {
-      status,
-      notes,
-    }),
+    post(
+      `/loans/${id}/status`,
+      {
+        status,
+        notes,
+      },
+    ),
 
   dashboard: () =>
     get('/loans/dashboard'),
 
-  schedule: (id: number) =>
-    get(`/loans/${id}/schedule`),
+  schedule: (
+    id: number,
+  ) =>
+    get(
+      `/loans/${id}/schedule`,
+    ),
 
-  risk: (id: number) =>
-    get(`/loans/${id}/risk`),
+  risk: (
+    id: number,
+  ) =>
+    get(
+      `/loans/${id}/risk`,
+    ),
 
-  documentRequirements: (id: number) =>
-    get(`/loans/${id}/document-requirements`),
+  documentRequirements: (
+    id: number,
+  ) =>
+    get(
+      `/loans/${id}/document-requirements`,
+    ),
 
   restructure: (
     id: number,
     data: unknown,
   ) =>
-    post(`/loans/${id}/restructure`, data),
+    post(
+      `/loans/${id}/restructure`,
+      data,
+    ),
 
   writeOff: (
     id: number,
     reason: string,
   ) =>
-    post(`/loans/${id}/write-off`, {
-      reason,
-    }),
+    post(
+      `/loans/${id}/write-off`,
+      {
+        reason,
+      },
+    ),
 
   moratorium: (
     id: number,
     data: unknown,
   ) =>
-    post(`/loans/${id}/moratorium`, data),
+    post(
+      `/loans/${id}/moratorium`,
+      data,
+    ),
 
-  getComments: (id: number) =>
-    get(`/loans/${id}/comments`),
+  getComments: (
+    id: number,
+  ) =>
+    get(
+      `/loans/${id}/comments`,
+    ),
 
   addComment: (
     id: number,
     message: string,
     visibleToApplicant = true,
   ) =>
-    post(`/loans/${id}/comments`, {
-      message,
-      visibleToApplicant,
-    }),
+    post(
+      `/loans/${id}/comments`,
+      {
+        message,
+        visibleToApplicant,
+      },
+    ),
 };
 
 /**
@@ -331,7 +431,8 @@ export const expenseApi = {
       to?: string;
     } = {},
   ) => {
-    const query = new URLSearchParams();
+    const query =
+      new URLSearchParams();
 
     query.set(
       'page',
@@ -350,7 +451,9 @@ export const expenseApi = {
       );
     }
 
-    if (params.branchId) {
+    if (
+      params.branchId != null
+    ) {
       query.set(
         'branchId',
         String(params.branchId),
@@ -358,18 +461,30 @@ export const expenseApi = {
     }
 
     if (params.from) {
-      query.set('from', params.from);
+      query.set(
+        'from',
+        params.from,
+      );
     }
 
     if (params.to) {
-      query.set('to', params.to);
+      query.set(
+        'to',
+        params.to,
+      );
     }
 
-    return get(`/expenses?${query.toString()}`);
+    return get(
+      `/expenses?${query.toString()}`,
+    );
   },
 
-  get: (id: number) =>
-    get(`/expenses/${id}`),
+  get: (
+    id: number,
+  ) =>
+    get(
+      `/expenses/${id}`,
+    ),
 
   summary: (
     from?: string,
@@ -387,11 +502,16 @@ export const expenseApi = {
     id: number,
     reason?: string,
   ) =>
-    post(`/expenses/${id}/void`, {
-      reason,
-    }),
+    post(
+      `/expenses/${id}/void`,
+      {
+        reason,
+      },
+    ),
 
-  receiptUrl: (id: number) =>
+  receiptUrl: (
+    id: number,
+  ) =>
     `${API_BASE_URL}/expenses/${id}/receipt`,
 
   create: (data: {
@@ -413,7 +533,8 @@ export const expenseApi = {
     paymentNotes?: string;
     receipt?: File | null;
   }) => {
-    const form = new FormData();
+    const form =
+      new FormData();
 
     form.append(
       'expenseDate',
@@ -435,7 +556,9 @@ export const expenseApi = {
       String(data.paymentAccountId),
     );
 
-    if (data.branchId) {
+    if (
+      data.branchId != null
+    ) {
       form.append(
         'branchId',
         String(data.branchId),
@@ -468,7 +591,9 @@ export const expenseApi = {
       );
     }
 
-    if (data.paymentTransactionReference) {
+    if (
+      data.paymentTransactionReference
+    ) {
       form.append(
         'paymentTransactionReference',
         data.paymentTransactionReference,
@@ -496,7 +621,9 @@ export const expenseApi = {
       );
     }
 
-    if (data.cardAuthorizationCode) {
+    if (
+      data.cardAuthorizationCode
+    ) {
       form.append(
         'cardAuthorizationCode',
         data.cardAuthorizationCode,
@@ -566,8 +693,12 @@ export const paymentApi = {
       unwrap(response.data),
     ),
 
-  schedule: (loanId: number) =>
-    get(`/loans/${loanId}/payments`),
+  schedule: (
+    loanId: number,
+  ) =>
+    get(
+      `/loans/${loanId}/payments`,
+    ),
 };
 
 /**
@@ -577,15 +708,6 @@ export const paymentApi = {
  */
 
 export const borrowerApi = {
-  /**
-   * ----------------------------------------------------------
-   * LIST BORROWERS
-   *
-   * Backend:
-   * GET /api/borrowers
-   * ----------------------------------------------------------
-   */
-
   list: (
     page = 0,
     size = 20,
@@ -600,47 +722,19 @@ export const borrowerApi = {
         }`,
     ),
 
-  /**
-   * ----------------------------------------------------------
-   * GET BASIC BORROWER
-   *
-   * Backend:
-   * GET /api/borrowers/{id}
-   * ----------------------------------------------------------
-   */
-
-  get: (id: number) =>
-    get(`/borrowers/${id}`),
-
-  /**
-   * ----------------------------------------------------------
-   * GET COMPLETE BORROWER DETAILS
-   *
-   * Backend:
-   * GET /api/borrowers/{id}/details
-   *
-   * This is the endpoint used by:
-   *
-   * app/dashboard/borrowers/[id]/page.tsx
-   *
-   * ----------------------------------------------------------
-   */
+  get: (
+    id: number,
+  ) =>
+    get(
+      `/borrowers/${id}`,
+    ),
 
   getDetails: (
     id: number,
-  ): Promise<BorrowerDetails> =>
+  ) =>
     get(
       `/borrowers/${id}/details`,
-    ) as Promise<BorrowerDetails>,
-
-  /**
-   * ----------------------------------------------------------
-   * CREATE BORROWER
-   *
-   * Backend:
-   * POST /api/borrowers
-   * ----------------------------------------------------------
-   */
+    ),
 
   create: (
     data: unknown,
@@ -649,15 +743,6 @@ export const borrowerApi = {
       '/borrowers',
       data,
     ),
-
-  /**
-   * ----------------------------------------------------------
-   * UPDATE BORROWER
-   *
-   * Backend:
-   * PUT /api/borrowers/{id}
-   * ----------------------------------------------------------
-   */
 
   update: (
     id: number,
@@ -1245,7 +1330,8 @@ export const publicApi = {
     file: File | Blob,
     fileName?: string,
   ) => {
-    const form = new FormData();
+    const form =
+      new FormData();
 
     form.append(
       'phone',
@@ -1257,14 +1343,31 @@ export const publicApi = {
       documentType,
     );
 
+    /**
+     * --------------------------------------------------------
+     * FIX:
+     *
+     * File has .name
+     * Blob does not have .name
+     *
+     * Therefore we explicitly check whether the object has
+     * a name property before accessing it.
+     * --------------------------------------------------------
+     */
+
+    const resolvedFileName =
+      fileName ||
+      (
+        'name' in file &&
+        typeof file.name === 'string'
+          ? file.name
+          : 'upload.jpg'
+      );
+
     form.append(
       'file',
       file,
-      fileName ||
-        (typeof File !== 'undefined' &&
-        file instanceof File
-          ? file.name
-          : 'upload.jpg'),
+      resolvedFileName,
     );
 
     return API.post(
@@ -1300,7 +1403,8 @@ export const importApi = {
   preview: (
     file: File,
   ) => {
-    const form = new FormData();
+    const form =
+      new FormData();
 
     form.append(
       'file',
@@ -1324,7 +1428,8 @@ export const importApi = {
   commit: (
     file: File,
   ) => {
-    const form = new FormData();
+    const form =
+      new FormData();
 
     form.append(
       'file',
@@ -1355,15 +1460,56 @@ export const importApi = {
  * ============================================================
  * REGULATORY / BNR API
  * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * This is ONLY the frontend API client.
+ *
+ * It is NOT RegulatoryService.java.
+ *
+ * Frontend:
+ *
+ * regulatoryApi.summary()
+ *       |
+ *       v
+ * GET /api/regulatory/bnr/summary
+ *       |
+ *       v
+ * Backend RegulatoryController
+ *       |
+ *       v
+ * Backend RegulatoryService
+ *
+ * Therefore:
+ *
+ * regulatoryApi.ts
+ *     = frontend HTTP client
+ *
+ * RegulatoryService.java
+ *     = backend business/service layer
+ *
+ * ============================================================
  */
 
 export const regulatoryApi = {
+  /**
+   * ----------------------------------------------------------
+   * BNR SUMMARY
+   * ----------------------------------------------------------
+   */
+
   summary: (
     period = 'MONTHLY',
   ) =>
     get(
       `/regulatory/bnr/summary?period=${encodeURIComponent(period)}`,
     ),
+
+  /**
+   * ----------------------------------------------------------
+   * BNR BY LOAN TYPE
+   * ----------------------------------------------------------
+   */
 
   byLoanType: (
     period = 'MONTHLY',
@@ -1372,12 +1518,24 @@ export const regulatoryApi = {
       `/regulatory/bnr/by-loan-type?period=${encodeURIComponent(period)}`,
     ),
 
+  /**
+   * ----------------------------------------------------------
+   * BNR BY GENDER
+   * ----------------------------------------------------------
+   */
+
   byGender: (
     period = 'MONTHLY',
   ) =>
     get(
       `/regulatory/bnr/by-gender?period=${encodeURIComponent(period)}`,
     ),
+
+  /**
+   * ----------------------------------------------------------
+   * BNR BY BRANCH
+   * ----------------------------------------------------------
+   */
 
   byBranch: (
     period = 'MONTHLY',
@@ -1386,12 +1544,24 @@ export const regulatoryApi = {
       `/regulatory/bnr/by-branch?period=${encodeURIComponent(period)}`,
     ),
 
+  /**
+   * ----------------------------------------------------------
+   * LOAN TYPE BREAKDOWN
+   * ----------------------------------------------------------
+   */
+
   loanTypeBreakdown: (
     period = 'MONTHLY',
   ) =>
     get(
       `/regulatory/bnr/breakdown/loan-type?period=${encodeURIComponent(period)}`,
     ),
+
+  /**
+   * ----------------------------------------------------------
+   * GENDER BREAKDOWN
+   * ----------------------------------------------------------
+   */
 
   genderBreakdown: (
     period = 'MONTHLY',
@@ -1400,12 +1570,24 @@ export const regulatoryApi = {
       `/regulatory/bnr/breakdown/gender?period=${encodeURIComponent(period)}`,
     ),
 
+  /**
+   * ----------------------------------------------------------
+   * BRANCH BREAKDOWN
+   * ----------------------------------------------------------
+   */
+
   branchBreakdown: (
     period = 'MONTHLY',
   ) =>
     get(
       `/regulatory/bnr/breakdown/branch?period=${encodeURIComponent(period)}`,
     ),
+
+  /**
+   * ----------------------------------------------------------
+   * FINANCIAL STATEMENT
+   * ----------------------------------------------------------
+   */
 
   financialStatement: (
     organizationId: number,
@@ -1426,6 +1608,118 @@ export const regulatoryApi = {
         `&startDate=${encodeURIComponent(startDate)}` +
         `&endDate=${encodeURIComponent(endDate)}`,
     ),
+
+  /**
+   * ----------------------------------------------------------
+   * CREDIT BUREAU PREVIEW
+   * ----------------------------------------------------------
+   *
+   * Backend endpoint from your error:
+   *
+   * GET /api/regulatory/credit-bureau/preview
+   *
+   * The JWT interceptor automatically adds:
+   *
+   * Authorization: Bearer <token>
+   *
+   * ----------------------------------------------------------
+   */
+
+  creditBureauPreview: (
+    queryParams?: Record<
+      string,
+      string | number | boolean | null | undefined
+    >,
+  ) => {
+    const query =
+      new URLSearchParams();
+
+    if (queryParams) {
+      Object.entries(
+        queryParams,
+      ).forEach(
+        ([key, value]) => {
+          if (
+            value !== null &&
+            value !== undefined
+          ) {
+            query.set(
+              key,
+              String(value),
+            );
+          }
+        },
+      );
+    }
+
+    const queryString =
+      query.toString();
+
+    return get(
+      `/regulatory/credit-bureau/preview${
+        queryString
+          ? `?${queryString}`
+          : ''
+      }`,
+    );
+  },
+
+  /**
+   * ----------------------------------------------------------
+   * CREDIT BUREAU EXPORT
+   * ----------------------------------------------------------
+   *
+   * Backend endpoint:
+   *
+   * GET /api/regulatory/credit-bureau/export
+   *
+   * Example:
+   *
+   * /api/regulatory/credit-bureau/export?format=pdf
+   *
+   * ----------------------------------------------------------
+   */
+
+  creditBureauExport: (
+    format = 'pdf',
+    queryParams?: Record<
+      string,
+      string | number | boolean | null | undefined
+    >,
+  ) => {
+    const query =
+      new URLSearchParams();
+
+    query.set(
+      'format',
+      format,
+    );
+
+    if (queryParams) {
+      Object.entries(
+        queryParams,
+      ).forEach(
+        ([key, value]) => {
+          if (
+            value !== null &&
+            value !== undefined
+          ) {
+            query.set(
+              key,
+              String(value),
+            );
+          }
+        },
+      );
+    }
+
+    return API.get(
+      `/regulatory/credit-bureau/export?${query.toString()}`,
+      {
+        responseType: 'blob',
+      },
+    );
+  },
 };
 
 /**

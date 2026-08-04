@@ -3,11 +3,7 @@ import { get, post } from './api';
 import { Payment } from '../types/index';
 
 
-/**
- * ============================================================
- * BORROWER PAYMENT
- * ============================================================
- */
+ggg
 export interface BorrowerPayment {
 
   id?: number;
