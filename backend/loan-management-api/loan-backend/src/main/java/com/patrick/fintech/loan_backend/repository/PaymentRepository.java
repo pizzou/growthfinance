@@ -41,7 +41,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
      *
      * Payment -> Loan -> Borrower
      *
-     * The organization condition is important for multi-tenancy.
+     * Organization restriction preserves tenant isolation.
      */
     @Query("""
         SELECT p
@@ -59,7 +59,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 
     /**
-     * Only successful/recorded payments for a borrower.
+     * Only completed/paid payments for a borrower.
      */
     @Query("""
         SELECT p
@@ -78,8 +78,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 
     /**
-     * Payment history for one borrower with the newest
-     * payment first.
+     * Full borrower payment history.
      */
     @Query("""
         SELECT p
@@ -101,7 +100,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // ============================================================
 
     /**
-     * Number of payments made/recorded by borrower.
+     * Number of payment records belonging to borrower.
      */
     @Query("""
         SELECT COUNT(p)
@@ -118,7 +117,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 
     /**
-     * Number of successful/paid payments.
+     * Number of paid payment records.
      */
     @Query("""
         SELECT COUNT(p)
@@ -136,7 +135,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 
     /**
-     * Number of late payments.
+     * Number of late payment records.
      */
     @Query("""
         SELECT COUNT(p)
@@ -154,7 +153,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 
     /**
-     * Number of unpaid/overdue scheduled payments.
+     * Number of unpaid and overdue payment records.
      */
     @Query("""
         SELECT COUNT(p)
@@ -178,10 +177,13 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // ============================================================
 
     /**
-     * Total amount paid by borrower.
+     * Total amount actually paid by borrower.
+     *
+     * Payment entity field:
+     * amountPaid
      */
     @Query("""
-        SELECT COALESCE(SUM(p.amountPaid), 0)
+        SELECT COALESCE(SUM(p.amountPaid), 0.0)
         FROM Payment p
         JOIN p.loan l
         JOIN l.borrower b
@@ -198,12 +200,11 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     /**
      * Total principal paid by borrower.
      *
-     * This assumes Payment has a principalPaid field.
-     * If your Payment entity uses another name, change only
-     * p.principalPaid to the actual field.
+     * IMPORTANT:
+     * Payment has principalComponent, NOT principalPaid.
      */
     @Query("""
-        SELECT COALESCE(SUM(p.principalPaid), 0)
+        SELECT COALESCE(SUM(p.principalComponent), 0.0)
         FROM Payment p
         JOIN p.loan l
         JOIN l.borrower b
@@ -220,10 +221,11 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     /**
      * Total interest paid by borrower.
      *
-     * This assumes Payment has an interestPaid field.
+     * IMPORTANT:
+     * Payment has interestComponent, NOT interestPaid.
      */
     @Query("""
-        SELECT COALESCE(SUM(p.interestPaid), 0)
+        SELECT COALESCE(SUM(p.interestComponent), 0.0)
         FROM Payment p
         JOIN p.loan l
         JOIN l.borrower b
@@ -241,7 +243,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
      * Total penalties paid by borrower.
      */
     @Query("""
-        SELECT COALESCE(SUM(p.penalty), 0)
+        SELECT COALESCE(SUM(p.penalty), 0.0)
         FROM Payment p
         JOIN p.loan l
         JOIN l.borrower b
@@ -259,8 +261,11 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // COLLECTIONS
     // ============================================================
 
+    /**
+     * Total collections for an organization since a given date.
+     */
     @Query("""
-        SELECT COALESCE(SUM(p.amountPaid), 0)
+        SELECT COALESCE(SUM(p.amountPaid), 0.0)
         FROM Payment p
         WHERE p.organization = :org
           AND p.paid = true
@@ -306,7 +311,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 
     // ============================================================
-    // REGULATORY
+    // REGULATORY REPORTING
     // ============================================================
 
     @Query("""
