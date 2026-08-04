@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -137,37 +138,21 @@ function Field({
 
 type CreditBureauCheck = {
   id?: number;
-
   reference?: string;
-
   provider?: string;
-
   status?: string;
-
   creditScore?: number;
-
   riskGrade?: string;
-
   activeFacilities?: number;
-
   delinquentAccounts?: number;
-
   totalOutstandingDebt?: number;
-
   totalMonthlyObligations?: number;
-
   hasDefaultHistory?: boolean;
-
   hasActiveListing?: boolean;
-
   listingReason?: string;
-
   failureReason?: string;
-
   requestedBy?: string;
-
   createdAt?: string;
-
   checkedAt?: string;
 };
 
@@ -177,7 +162,6 @@ type CreditBureauCheck = {
 // ============================================================
 
 function creditScoreColor(score?: number) {
-
   if (score == null) {
     return 'text-gray-500';
   }
@@ -207,7 +191,6 @@ function creditScoreColor(score?: number) {
 // ============================================================
 
 function creditScoreLabel(score?: number) {
-
   if (score == null) {
     return 'Unknown';
   }
@@ -241,38 +224,27 @@ function CreditBureauReport({
   history,
   currency,
   locale,
-  onRefresh,
   loading
 }: {
   report: CreditBureauCheck | null;
   history: CreditBureauCheck[];
   currency: string;
   locale: string;
-  onRefresh: () => void;
   loading: boolean;
 }) {
-
   const fc = (n?: number) =>
     formatCurrency(n, currency, locale);
 
-
   if (!report) {
-
     return (
       <Card className="mt-5">
-
-        <CardHeader
-          title="Credit Bureau Report"
-        />
+        <CardHeader title="Credit Bureau Report" />
 
         <CardBody>
-
           <div className="text-center py-8">
 
             <div className="w-14 h-14 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-3">
-
               <IconBank className="w-7 h-7 text-gray-400" />
-
             </div>
 
             <div className="font-semibold text-gray-700">
@@ -280,21 +252,17 @@ function CreditBureauReport({
             </div>
 
             <p className="text-sm text-gray-400 mt-1">
-              Run a Credit Bureau Check to retrieve the borrower's credit information.
+              Use the Credit Bureau Check button above to retrieve the borrower's credit information.
             </p>
 
           </div>
-
         </CardBody>
-
       </Card>
     );
   }
 
-
   const simulated =
     report.provider === 'INTERNAL_SIMULATED';
-
 
   return (
     <Card className="mt-5">
@@ -305,21 +273,7 @@ function CreditBureauReport({
 
       <CardHeader
         title="Credit Bureau Report"
-        action={
-          <Button
-            variant="outline"
-            onClick={onRefresh}
-            disabled={loading}
-          >
-            <IconSearch className="w-4 h-4" />
-
-            {loading
-              ? 'Checking…'
-              : 'Run New Check'}
-          </Button>
-        }
       />
-
 
       <CardBody>
 
@@ -328,7 +282,6 @@ function CreditBureauReport({
         ==================================================== */}
 
         {simulated && (
-
           <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-4">
 
             <div className="flex gap-3">
@@ -352,7 +305,6 @@ function CreditBureauReport({
             </div>
 
           </div>
-
         )}
 
 
@@ -580,12 +532,10 @@ function CreditBureauReport({
             </div>
 
             {report.listingReason && (
-
               <div className="text-sm mt-2">
                 <strong>Reason:</strong>{' '}
                 {report.listingReason}
               </div>
-
             )}
 
           </div>
@@ -598,7 +548,6 @@ function CreditBureauReport({
         ==================================================== */}
 
         {report.failureReason && (
-
           <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-4">
 
             <div className="font-bold text-orange-800">
@@ -610,7 +559,6 @@ function CreditBureauReport({
             </div>
 
           </div>
-
         )}
 
 
@@ -790,10 +738,8 @@ export default function LoanDetailPage() {
   const [loading, setLoading] =
     useState(true);
 
-
   const [tab, setTab] =
     useState<Tab>('Overview');
-
 
   const [msg, setMsg] =
     useState<{
@@ -904,7 +850,6 @@ export default function LoanDetailPage() {
             loan: Loan;
             schedule: Payment[];
           }>(`/loans/${id}`);
-
 
         if (cached) {
 
@@ -1072,9 +1017,18 @@ export default function LoanDetailPage() {
   const handleCreditBureauCheck =
     async () => {
 
-      if (!loan?.borrower) {
+      if (!loan?.borrower?.id) {
+
+        setMsg({
+          type: 'error',
+          text: 'No borrower is linked to this loan.'
+        });
+
         return;
       }
+
+      const borrowerId =
+        loan.borrower.id;
 
       setCbBusy(true);
 
@@ -1082,30 +1036,49 @@ export default function LoanDetailPage() {
 
       try {
 
+        // ------------------------------------------------------
+        // 1. PERFORM THE ACTUAL CREDIT BUREAU CHECK
+        // ------------------------------------------------------
+
         const result =
           await creditBureauApi.check(
-            loan.borrower.id
+            borrowerId
           );
-
 
         const report =
           result as CreditBureauCheck;
 
+        // ------------------------------------------------------
+        // 2. IMMEDIATELY SHOW THE RESULT
+        // ------------------------------------------------------
 
         setCreditReport(
           report
         );
 
+        // ------------------------------------------------------
+        // 3. REFRESH LATEST REPORT
+        // ------------------------------------------------------
 
-        await loadCreditHistory(
-          loan.borrower.id
+        await loadLatestCreditReport(
+          borrowerId
         );
 
+        // ------------------------------------------------------
+        // 4. REFRESH CREDIT BUREAU HISTORY
+        // ------------------------------------------------------
+
+        await loadCreditHistory(
+          borrowerId
+        );
+
+        // ------------------------------------------------------
+        // 5. SHOW RESULT MESSAGE
+        // ------------------------------------------------------
 
         const simulated =
           report?.provider ===
           'INTERNAL_SIMULATED';
-
 
         setMsg({
 
@@ -1119,7 +1092,9 @@ export default function LoanDetailPage() {
 
               ? `⚠️ Internal credit estimate generated. Score ${
                   report?.creditScore ?? 'N/A'
-                } (${report?.riskGrade ?? 'N/A'}).`
+                } (${
+                  report?.riskGrade ?? 'N/A'
+                }).`
 
               : `Credit Bureau check completed via ${
                   report?.provider ?? 'provider'
@@ -1131,12 +1106,13 @@ export default function LoanDetailPage() {
 
         });
 
-
       } catch (err: any) {
 
         setMsg({
           type: 'error',
-          text: err.message
+          text:
+            err?.message ??
+            'Credit Bureau check failed.'
         });
 
       } finally {
@@ -1275,7 +1251,6 @@ export default function LoanDetailPage() {
 
       setMsg(null);
 
-
       if (!online) {
 
         try {
@@ -1364,7 +1339,6 @@ export default function LoanDetailPage() {
         });
 
       }
-
 
       setPaying(false);
 
@@ -1457,7 +1431,6 @@ export default function LoanDetailPage() {
 
       }
 
-
       setStSaving(false);
 
     };
@@ -1508,13 +1481,11 @@ export default function LoanDetailPage() {
   if (loading) {
 
     return (
-
       <div className="flex items-center justify-center h-64">
 
         <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
 
       </div>
-
     );
 
   }
@@ -1523,13 +1494,9 @@ export default function LoanDetailPage() {
   if (!loan) {
 
     return (
-
       <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-700">
-
         Loan not found
-
       </div>
-
     );
 
   }
@@ -1683,6 +1650,10 @@ export default function LoanDetailPage() {
 
         <div className="flex gap-2 flex-wrap">
 
+          {/* ==================================================
+              SINGLE CREDIT BUREAU ACTION
+          ================================================== */}
+
           {isOfficer &&
             loan.borrower && (
 
@@ -1829,10 +1800,6 @@ export default function LoanDetailPage() {
 
           locale={
             locale
-          }
-
-          onRefresh={
-            handleCreditBureauCheck
           }
 
           loading={
@@ -3789,6 +3756,5 @@ export default function LoanDetailPage() {
       </Modal>
 
     </div>
-
   );
 }
