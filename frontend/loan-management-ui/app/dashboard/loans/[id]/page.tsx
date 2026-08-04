@@ -158,7 +158,7 @@ type CreditBureauCheck = {
 
 
 // ============================================================
-// CREDIT SCORE COLOR
+// CREDIT SCORE HELPERS
 // ============================================================
 
 function creditScoreColor(score?: number) {
@@ -186,10 +186,6 @@ function creditScoreColor(score?: number) {
 }
 
 
-// ============================================================
-// CREDIT SCORE LABEL
-// ============================================================
-
 function creditScoreLabel(score?: number) {
   if (score == null) {
     return 'Unknown';
@@ -215,8 +211,51 @@ function creditScoreLabel(score?: number) {
 }
 
 
+function creditScoreBarColor(score?: number) {
+  if (score == null) {
+    return 'bg-gray-300';
+  }
+
+  if (score >= 750) {
+    return 'bg-teal-500';
+  }
+
+  if (score >= 680) {
+    return 'bg-blue-500';
+  }
+
+  if (score >= 600) {
+    return 'bg-yellow-500';
+  }
+
+  if (score >= 500) {
+    return 'bg-orange-500';
+  }
+
+  return 'bg-red-500';
+}
+
+
+function creditScorePercentage(score?: number) {
+  if (score == null) {
+    return 0;
+  }
+
+  const min = 300;
+  const max = 850;
+
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      ((score - min) / (max - min)) * 100
+    )
+  );
+}
+
+
 // ============================================================
-// CREDIT BUREAU REPORT CARD
+// CREDIT BUREAU REPORT
 // ============================================================
 
 function CreditBureauReport({
@@ -232,69 +271,201 @@ function CreditBureauReport({
   locale: string;
   loading: boolean;
 }) {
+
   const fc = (n?: number) =>
     formatCurrency(n, currency, locale);
 
+
+  // ==========================================================
+  // EMPTY STATE
+  // ==========================================================
+
   if (!report) {
+
     return (
-      <Card className="mt-5">
-        <CardHeader title="Credit Bureau Report" />
+      <Card className="mt-5 overflow-hidden">
+
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-teal-900 px-6 py-5">
+
+          <div className="flex items-center gap-3">
+
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+
+              <IconBank className="w-5 h-5 text-white" />
+
+            </div>
+
+            <div>
+
+              <div className="text-white font-bold text-lg">
+                Credit Bureau Report
+              </div>
+
+              <div className="text-slate-300 text-xs mt-0.5">
+                External credit profile and risk information
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
 
         <CardBody>
-          <div className="text-center py-8">
 
-            <div className="w-14 h-14 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-3">
-              <IconBank className="w-7 h-7 text-gray-400" />
+          <div className="py-10 text-center">
+
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+
+              <IconBank className="w-8 h-8 text-slate-400" />
+
             </div>
 
-            <div className="font-semibold text-gray-700">
-              No Credit Bureau Check Available
+            <div className="font-bold text-gray-800">
+              No Credit Bureau Report
             </div>
 
-            <p className="text-sm text-gray-400 mt-1">
-              Use the Credit Bureau Check button above to retrieve the borrower's credit information.
+            <p className="text-sm text-gray-500 max-w-md mx-auto mt-2">
+              No credit bureau information has been retrieved for this borrower yet.
+              Run a Credit Bureau Check to retrieve the latest available credit information.
             </p>
 
           </div>
+
         </CardBody>
+
       </Card>
     );
   }
 
+
   const simulated =
     report.provider === 'INTERNAL_SIMULATED';
 
+  const score =
+    report.creditScore;
+
+  const scorePercent =
+    creditScorePercentage(score);
+
+  const scoreLabel =
+    creditScoreLabel(score);
+
+  const delinquent =
+    (report.delinquentAccounts ?? 0) > 0;
+
+  const defaultHistory =
+    !!report.hasDefaultHistory;
+
+  const activeListing =
+    !!report.hasActiveListing;
+
+  const bureauCompleted =
+    report.status === 'COMPLETED';
+
+
+  // ==========================================================
+  // REPORT
+  // ==========================================================
+
   return (
-    <Card className="mt-5">
+    <Card className="mt-5 overflow-hidden">
 
       {/* ======================================================
-          HEADER
+          REPORT HEADER
       ====================================================== */}
 
-      <CardHeader
-        title="Credit Bureau Report"
-      />
+      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-teal-950 px-5 sm:px-6 py-5">
 
-      <CardBody>
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+
+          <div className="flex items-center gap-3">
+
+            <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
+
+              <IconBank className="w-5 h-5 text-white" />
+
+            </div>
+
+            <div>
+
+              <div className="text-white font-bold text-lg">
+                Credit Bureau Report
+              </div>
+
+              <div className="text-slate-300 text-xs mt-0.5">
+                Borrower credit profile &amp; bureau assessment
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <div className="flex items-center gap-2 flex-wrap">
+
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
+                bureauCompleted
+                  ? 'bg-teal-500/20 text-teal-200 border border-teal-400/20'
+                  : 'bg-white/10 text-slate-200 border border-white/10'
+              }`}
+            >
+
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  bureauCompleted
+                    ? 'bg-teal-400'
+                    : 'bg-slate-400'
+                }`}
+              />
+
+              {report.status ?? 'UNKNOWN'}
+
+            </span>
+
+
+            {simulated && (
+
+              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-amber-400/15 text-amber-200 border border-amber-300/20">
+                Internal Estimate
+              </span>
+
+            )}
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <CardBody className="!p-0">
 
         {/* ====================================================
-            SIMULATION WARNING
+            SIMULATION NOTICE
         ==================================================== */}
 
         {simulated && (
-          <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-4">
+
+          <div className="mx-5 sm:mx-6 mt-5 bg-amber-50 border border-amber-200 rounded-xl p-4">
 
             <div className="flex gap-3">
 
-              <IconAlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+              <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+
+                <IconAlertTriangle className="w-5 h-5 text-amber-600" />
+
+              </div>
 
               <div>
 
-                <div className="font-bold text-amber-800">
+                <div className="font-bold text-amber-900 text-sm">
                   Internal Credit Estimate
                 </div>
 
-                <div className="text-sm text-amber-700 mt-1">
+                <div className="text-xs sm:text-sm text-amber-800 mt-1 leading-relaxed">
                   No live licensed Credit Bureau is currently connected.
                   This result was generated by the internal simulation and
                   must not be treated as an official Credit Bureau report.
@@ -305,191 +476,386 @@ function CreditBureauReport({
             </div>
 
           </div>
+
         )}
 
 
         {/* ====================================================
-            SCORE HERO
+            SCORE + RISK HERO
         ==================================================== */}
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-5">
+        <div className="p-5 sm:p-6">
 
-          <div className="lg:col-span-1 bg-gray-50 rounded-xl p-5 text-center">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-              Credit Score
+            {/* ==================================================
+                CREDIT SCORE
+            ================================================== */}
+
+            <div className="lg:col-span-1 rounded-2xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-5">
+
+              <div className="flex items-start justify-between">
+
+                <div>
+
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    Credit Score
+                  </div>
+
+                  <div className="text-xs text-gray-400 mt-1">
+                    Bureau assessment
+                  </div>
+
+                </div>
+
+
+                <div
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                    score == null
+                      ? 'bg-gray-100 text-gray-500'
+                      : score >= 750
+                        ? 'bg-teal-50 text-teal-700'
+                        : score >= 680
+                          ? 'bg-blue-50 text-blue-700'
+                          : score >= 600
+                            ? 'bg-yellow-50 text-yellow-700'
+                            : score >= 500
+                              ? 'bg-orange-50 text-orange-700'
+                              : 'bg-red-50 text-red-700'
+                  }`}
+                >
+                  {scoreLabel}
+                </div>
+
+              </div>
+
+
+              <div className="flex items-end gap-3 mt-5">
+
+                <div
+                  className={`text-5xl font-black tracking-tight ${creditScoreColor(
+                    score
+                  )}`}
+                >
+                  {score ?? '—'}
+                </div>
+
+                {score != null && (
+
+                  <div className="text-xs text-gray-400 pb-2">
+                    / 850
+                  </div>
+
+                )}
+
+              </div>
+
+
+              <div className="mt-5">
+
+                <div className="flex justify-between text-[10px] text-gray-400 mb-1.5">
+
+                  <span>
+                    300
+                  </span>
+
+                  <span>
+                    850
+                  </span>
+
+                </div>
+
+
+                <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${creditScoreBarColor(
+                      score
+                    )}`}
+                    style={{
+                      width: `${scorePercent}%`
+                    }}
+                  />
+
+                </div>
+
+
+                <div className="flex justify-between mt-2 text-[10px] font-medium text-gray-400">
+
+                  <span>
+                    High Risk
+                  </span>
+
+                  <span>
+                    Low Risk
+                  </span>
+
+                </div>
+
+              </div>
+
             </div>
 
-            <div
-              className={`text-5xl font-extrabold mt-2 ${creditScoreColor(
-                report.creditScore
-              )}`}
-            >
-              {report.creditScore ?? '—'}
+
+            {/* ==================================================
+                RISK ASSESSMENT
+            ================================================== */}
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-5">
+
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                Risk Assessment
+              </div>
+
+              <div className="text-xs text-gray-400 mt-1">
+                Bureau risk classification
+              </div>
+
+
+              <div className="mt-5 flex items-center gap-4">
+
+                <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+
+                  <span className="text-xl font-black text-slate-800">
+                    {report.riskGrade ?? '—'}
+                  </span>
+
+                </div>
+
+
+                <div>
+
+                  <div className="text-lg font-extrabold text-gray-900">
+                    {report.riskGrade ?? 'Not Rated'}
+                  </div>
+
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Bureau risk grade
+                  </div>
+
+                </div>
+
+              </div>
+
+
+              <div className="mt-5 pt-4 border-t border-gray-100">
+
+                <div className="flex items-center justify-between text-xs">
+
+                  <span className="text-gray-500">
+                    Overall bureau status
+                  </span>
+
+                  <span
+                    className={`font-bold ${
+                      activeListing || defaultHistory || delinquent
+                        ? 'text-red-600'
+                        : 'text-teal-600'
+                    }`}
+                  >
+                    {activeListing || defaultHistory || delinquent
+                      ? 'Attention Required'
+                      : 'No Major Alerts'}
+                  </span>
+
+                </div>
+
+              </div>
+
             </div>
 
-            <div
-              className={`text-sm font-bold mt-1 ${creditScoreColor(
-                report.creditScore
-              )}`}
-            >
-              {creditScoreLabel(report.creditScore)}
+
+            {/* ==================================================
+                BUREAU SOURCE
+            ================================================== */}
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-5">
+
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                Bureau Source
+              </div>
+
+              <div className="text-xs text-gray-400 mt-1">
+                Provider and verification reference
+              </div>
+
+
+              <div className="mt-5">
+
+                <div className="text-base font-extrabold text-gray-900 break-words">
+                  {report.provider ?? 'Unknown Provider'}
+                </div>
+
+                <div className="text-xs text-gray-500 mt-1">
+                  {simulated
+                    ? 'Internal simulation'
+                    : 'External bureau provider'}
+                </div>
+
+              </div>
+
+
+              <div className="mt-5 pt-4 border-t border-gray-100">
+
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Reference
+                </div>
+
+                <div className="text-xs font-mono font-semibold text-gray-700 mt-1 break-all">
+                  {report.reference ?? '—'}
+                </div>
+
+              </div>
+
             </div>
 
           </div>
 
 
-          <div className="bg-gray-50 rounded-xl p-5">
+          {/* ==================================================
+              FINANCIAL EXPOSURE
+          ================================================== */}
 
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-              Risk Grade
-            </div>
+          <div className="mt-5">
 
-            <div className="text-2xl font-extrabold text-gray-900 mt-2">
-              {report.riskGrade ?? '—'}
-            </div>
-
-            <div className="text-xs text-gray-400 mt-1">
-              Bureau risk classification
-            </div>
-
-          </div>
-
-
-          <div className="bg-gray-50 rounded-xl p-5">
-
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-              Provider
-            </div>
-
-            <div className="text-lg font-extrabold text-gray-900 mt-2 break-words">
-              {report.provider ?? '—'}
-            </div>
-
-            <div className="text-xs text-gray-400 mt-1">
-              {report.status ?? 'Unknown status'}
-            </div>
-
-          </div>
-
-
-          <div className="bg-gray-50 rounded-xl p-5">
-
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-              Reference
-            </div>
-
-            <div className="text-sm font-bold text-gray-900 mt-2 break-all">
-              {report.reference ?? '—'}
-            </div>
-
-            <div className="text-xs text-gray-400 mt-1">
-              Bureau check reference
-            </div>
-
-          </div>
-
-        </div>
-
-
-        {/* ====================================================
-            CREDIT FACILITIES
-        ==================================================== */}
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-
-          <div className="border border-gray-200 rounded-xl p-4">
-
-            <div className="text-xs text-gray-400">
-              Active Facilities
-            </div>
-
-            <div className="text-xl font-extrabold text-gray-900 mt-1">
-              {report.activeFacilities ?? 0}
-            </div>
-
-          </div>
-
-
-          <div className="border border-gray-200 rounded-xl p-4">
-
-            <div className="text-xs text-gray-400">
-              Delinquent Accounts
-            </div>
-
-            <div
-              className={`text-xl font-extrabold mt-1 ${
-                (report.delinquentAccounts ?? 0) > 0
-                  ? 'text-red-600'
-                  : 'text-teal-600'
-              }`}
-            >
-              {report.delinquentAccounts ?? 0}
-            </div>
-
-          </div>
-
-
-          <div className="border border-gray-200 rounded-xl p-4">
-
-            <div className="text-xs text-gray-400">
-              Outstanding Debt
-            </div>
-
-            <div className="text-xl font-extrabold text-gray-900 mt-1">
-              {fc(report.totalOutstandingDebt)}
-            </div>
-
-          </div>
-
-
-          <div className="border border-gray-200 rounded-xl p-4">
-
-            <div className="text-xs text-gray-400">
-              Monthly Obligations
-            </div>
-
-            <div className="text-xl font-extrabold text-gray-900 mt-1">
-              {fc(report.totalMonthlyObligations)}
-            </div>
-
-          </div>
-
-        </div>
-
-
-        {/* ====================================================
-            DEFAULT / LISTING
-        ==================================================== */}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-
-          <div
-            className={`rounded-xl border p-4 ${
-              report.hasDefaultHistory
-                ? 'bg-red-50 border-red-200'
-                : 'bg-teal-50 border-teal-200'
-            }`}
-          >
-
-            <div className="flex items-center gap-2">
-
-              {report.hasDefaultHistory ? (
-                <IconAlertTriangle className="w-5 h-5 text-red-600" />
-              ) : (
-                <IconCheckCircle className="w-5 h-5 text-teal-600" />
-              )}
+            <div className="flex items-center justify-between mb-3">
 
               <div>
 
-                <div className="text-xs font-bold uppercase tracking-wider">
-                  Default History
+                <div className="font-bold text-gray-900">
+                  Credit Exposure
                 </div>
 
-                <div className="font-bold mt-1">
-                  {report.hasDefaultHistory
-                    ? 'Default history detected'
-                    : 'No default history detected'}
+                <div className="text-xs text-gray-400 mt-0.5">
+                  Current obligations reported by the bureau
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-4">
+
+                <div className="flex items-center justify-between">
+
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    Active Facilities
+                  </div>
+
+                  <IconFileText className="w-4 h-4 text-gray-400" />
+
+                </div>
+
+                <div className="text-2xl font-black text-gray-900 mt-2">
+                  {report.activeFacilities ?? 0}
+                </div>
+
+                <div className="text-[11px] text-gray-400 mt-1">
+                  Open credit facilities
+                </div>
+
+              </div>
+
+
+              <div
+                className={`rounded-xl border p-4 ${
+                  delinquent
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-teal-50 border-teal-200'
+                }`}
+              >
+
+                <div className="flex items-center justify-between">
+
+                  <div
+                    className={`text-[10px] font-bold uppercase tracking-wider ${
+                      delinquent
+                        ? 'text-red-500'
+                        : 'text-teal-600'
+                    }`}
+                  >
+                    Delinquent
+                  </div>
+
+                  {delinquent
+                    ? (
+                      <IconAlertTriangle className="w-4 h-4 text-red-500" />
+                    )
+                    : (
+                      <IconCheckCircle className="w-4 h-4 text-teal-500" />
+                    )}
+
+                </div>
+
+                <div
+                  className={`text-2xl font-black mt-2 ${
+                    delinquent
+                      ? 'text-red-700'
+                      : 'text-teal-700'
+                  }`}
+                >
+                  {report.delinquentAccounts ?? 0}
+                </div>
+
+                <div
+                  className={`text-[11px] mt-1 ${
+                    delinquent
+                      ? 'text-red-600'
+                      : 'text-teal-600'
+                  }`}
+                >
+                  {delinquent
+                    ? 'Accounts require attention'
+                    : 'No delinquent accounts'}
+                </div>
+
+              </div>
+
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-4">
+
+                <div className="flex items-center justify-between">
+
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    Outstanding Debt
+                  </div>
+
+                  <IconCoins className="w-4 h-4 text-gray-400" />
+
+                </div>
+
+                <div className="text-lg sm:text-xl font-black text-gray-900 mt-2 break-words">
+                  {fc(report.totalOutstandingDebt)}
+                </div>
+
+                <div className="text-[11px] text-gray-400 mt-1">
+                  Total reported balance
+                </div>
+
+              </div>
+
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-4">
+
+                <div className="flex items-center justify-between">
+
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    Monthly Obligations
+                  </div>
+
+                  <IconCalendar className="w-4 h-4 text-gray-400" />
+
+                </div>
+
+                <div className="text-lg sm:text-xl font-black text-gray-900 mt-2 break-words">
+                  {fc(report.totalMonthlyObligations)}
+                </div>
+
+                <div className="text-[11px] text-gray-400 mt-1">
+                  Reported monthly commitments
                 </div>
 
               </div>
@@ -499,204 +865,430 @@ function CreditBureauReport({
           </div>
 
 
-          <div
-            className={`rounded-xl border p-4 ${
-              report.hasActiveListing
-                ? 'bg-red-50 border-red-200'
-                : 'bg-teal-50 border-teal-200'
-            }`}
-          >
+          {/* ==================================================
+              CREDIT ALERTS
+          ================================================== */}
 
-            <div className="flex items-center gap-2">
+          <div className="mt-5">
 
-              {report.hasActiveListing ? (
-                <IconAlertTriangle className="w-5 h-5 text-red-600" />
-              ) : (
-                <IconCheckCircle className="w-5 h-5 text-teal-600" />
-              )}
+            <div className="font-bold text-gray-900 mb-3">
+              Credit Alerts
+            </div>
 
-              <div>
 
-                <div className="text-xs font-bold uppercase tracking-wider">
-                  Active Listing
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+
+              {/* DEFAULT HISTORY */}
+
+              <div
+                className={`rounded-xl border p-4 ${
+                  defaultHistory
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-teal-50 border-teal-200'
+                }`}
+              >
+
+                <div className="flex gap-3">
+
+                  <div
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                      defaultHistory
+                        ? 'bg-red-100'
+                        : 'bg-teal-100'
+                    }`}
+                  >
+
+                    {defaultHistory
+                      ? (
+                        <IconAlertTriangle className="w-5 h-5 text-red-600" />
+                      )
+                      : (
+                        <IconCheckCircle className="w-5 h-5 text-teal-600" />
+                      )}
+
+                  </div>
+
+
+                  <div className="min-w-0">
+
+                    <div
+                      className={`text-[10px] font-bold uppercase tracking-wider ${
+                        defaultHistory
+                          ? 'text-red-600'
+                          : 'text-teal-600'
+                      }`}
+                    >
+                      Default History
+                    </div>
+
+                    <div
+                      className={`font-bold text-sm mt-1 ${
+                        defaultHistory
+                          ? 'text-red-800'
+                          : 'text-teal-800'
+                      }`}
+                    >
+                      {defaultHistory
+                        ? 'Default history detected'
+                        : 'No default history detected'}
+                    </div>
+
+                    <div
+                      className={`text-xs mt-1 ${
+                        defaultHistory
+                          ? 'text-red-700'
+                          : 'text-teal-700'
+                      }`}
+                    >
+                      {defaultHistory
+                        ? 'Review historical repayment performance before making a lending decision.'
+                        : 'No previous default indicator was reported.'}
+                    </div>
+
+                  </div>
+
                 </div>
 
-                <div className="font-bold mt-1">
-                  {report.hasActiveListing
-                    ? 'Active listing detected'
-                    : 'No active listing'}
+              </div>
+
+
+              {/* ACTIVE LISTING */}
+
+              <div
+                className={`rounded-xl border p-4 ${
+                  activeListing
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-teal-50 border-teal-200'
+                }`}
+              >
+
+                <div className="flex gap-3">
+
+                  <div
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                      activeListing
+                        ? 'bg-red-100'
+                        : 'bg-teal-100'
+                    }`}
+                  >
+
+                    {activeListing
+                      ? (
+                        <IconAlertTriangle className="w-5 h-5 text-red-600" />
+                      )
+                      : (
+                        <IconCheckCircle className="w-5 h-5 text-teal-600" />
+                      )}
+
+                  </div>
+
+
+                  <div className="min-w-0">
+
+                    <div
+                      className={`text-[10px] font-bold uppercase tracking-wider ${
+                        activeListing
+                          ? 'text-red-600'
+                          : 'text-teal-600'
+                      }`}
+                    >
+                      Active Listing
+                    </div>
+
+                    <div
+                      className={`font-bold text-sm mt-1 ${
+                        activeListing
+                          ? 'text-red-800'
+                          : 'text-teal-800'
+                      }`}
+                    >
+                      {activeListing
+                        ? 'Active listing detected'
+                        : 'No active listing'}
+                    </div>
+
+                    <div
+                      className={`text-xs mt-1 ${
+                        activeListing
+                          ? 'text-red-700'
+                          : 'text-teal-700'
+                      }`}
+                    >
+                      {activeListing
+                        ? (
+                          report.listingReason ??
+                          'The bureau has reported an active listing.'
+                        )
+                        : 'No current adverse listing was reported.'}
+                    </div>
+
+                  </div>
+
                 </div>
 
               </div>
 
             </div>
 
-            {report.listingReason && (
-              <div className="text-sm mt-2">
-                <strong>Reason:</strong>{' '}
-                {report.listingReason}
+          </div>
+
+
+          {/* ==================================================
+              PROVIDER NOTICE
+          ================================================== */}
+
+          {report.failureReason && (
+
+            <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
+
+              <div className="flex gap-3">
+
+                <IconAlertTriangle className="w-5 h-5 text-orange-600 shrink-0" />
+
+                <div>
+
+                  <div className="font-bold text-orange-900 text-sm">
+                    Provider Notice
+                  </div>
+
+                  <div className="text-xs sm:text-sm text-orange-800 mt-1">
+                    {report.failureReason}
+                  </div>
+
+                </div>
+
               </div>
-            )}
+
+            </div>
+
+          )}
+
+
+          {/* ==================================================
+              REPORT INFORMATION
+          ================================================== */}
+
+          <div className="mt-6 pt-5 border-t border-gray-100">
+
+            <div className="font-bold text-gray-900 mb-4">
+              Report Information
+            </div>
+
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+
+              <Field
+                label="Requested By"
+                value={report.requestedBy}
+              />
+
+              <Field
+                label="Check Date"
+                value={formatDate(
+                  report.createdAt ?? report.checkedAt,
+                  locale
+                )}
+              />
+
+              <Field
+                label="Status"
+                value={
+                  <Pill
+                    label={report.status ?? 'UNKNOWN'}
+                    color={
+                      report.status === 'COMPLETED'
+                        ? 'teal'
+                        : 'gray'
+                    }
+                  />
+                }
+              />
+
+              <Field
+                label="Report Type"
+                value={
+                  simulated
+                    ? 'Internal Simulation'
+                    : 'Live Bureau'
+                }
+              />
+
+            </div>
 
           </div>
 
-        </div>
+
+          {/* ==================================================
+              HISTORY
+          ================================================== */}
+
+          {history.length > 0 && (
+
+            <div className="mt-6 pt-5 border-t border-gray-100">
+
+              <div className="flex items-center justify-between mb-4">
+
+                <div>
+
+                  <div className="font-bold text-gray-900">
+                    Previous Credit Checks
+                  </div>
+
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    Historical bureau checks for this borrower
+                  </div>
+
+                </div>
+
+                <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
+                  {history.length} check{history.length === 1 ? '' : 's'}
+                </span>
+
+              </div>
 
 
-        {/* ====================================================
-            FAILURE REASON
-        ==================================================== */}
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
 
-        {report.failureReason && (
-          <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-4">
+                <Table>
 
-            <div className="font-bold text-orange-800">
-              Provider Notice
-            </div>
+                  <Thead>
 
-            <div className="text-sm text-orange-700 mt-1">
-              {report.failureReason}
-            </div>
+                    <tr>
 
-          </div>
-        )}
+                      <Th>Date</Th>
 
+                      <Th>Provider</Th>
 
-        {/* ====================================================
-            CHECK INFORMATION
-        ==================================================== */}
+                      <Th>Score</Th>
 
-        <div className="border-t border-gray-100 pt-4">
+                      <Th>Risk</Th>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <Th>Facilities</Th>
 
-            <Field
-              label="Requested By"
-              value={report.requestedBy}
-            />
+                      <Th>Delinquent</Th>
 
-            <Field
-              label="Check Date"
-              value={formatDate(
-                report.createdAt ?? report.checkedAt,
-                locale
-              )}
-            />
+                      <Th>Status</Th>
 
-            <Field
-              label="Status"
-              value={
-                <Pill
-                  label={report.status ?? 'UNKNOWN'}
-                  color={
-                    report.status === 'COMPLETED'
-                      ? 'teal'
-                      : 'gray'
-                  }
-                />
-              }
-            />
+                      <Th>Requested By</Th>
 
-            <Field
-              label="Report Type"
-              value={
-                simulated
-                  ? 'Internal Simulation'
-                  : 'Live Bureau'
-              }
-            />
+                    </tr>
 
-          </div>
-
-        </div>
+                  </Thead>
 
 
-        {/* ====================================================
-            HISTORY
-        ==================================================== */}
+                  <Tbody>
 
-        {history.length > 0 && (
+                    {history.map(
+                      (item, index) => (
 
-          <div className="mt-6 border-t border-gray-100 pt-5">
-
-            <div className="font-bold text-gray-800 mb-3">
-              Previous Credit Bureau Checks
-            </div>
-
-            <div className="overflow-x-auto">
-
-              <Table>
-
-                <Thead>
-
-                  <tr>
-                    <Th>Date</Th>
-                    <Th>Provider</Th>
-                    <Th>Score</Th>
-                    <Th>Risk</Th>
-                    <Th>Delinquent</Th>
-                    <Th>Status</Th>
-                    <Th>Requested By</Th>
-                  </tr>
-
-                </Thead>
-
-                <Tbody>
-
-                  {history.map((item, index) => (
-
-                    <Tr key={item.id ?? index}>
-
-                      <Td>
-                        {formatDate(
-                          item.createdAt ?? item.checkedAt,
-                          locale
-                        )}
-                      </Td>
-
-                      <Td>
-                        {item.provider ?? '—'}
-                      </Td>
-
-                      <Td>
-                        <span
-                          className={`font-bold ${creditScoreColor(
-                            item.creditScore
-                          )}`}
+                        <Tr
+                          key={
+                            item.id ??
+                            index
+                          }
                         >
-                          {item.creditScore ?? '—'}
-                        </span>
-                      </Td>
 
-                      <Td>
-                        {item.riskGrade ?? '—'}
-                      </Td>
+                          <Td className="whitespace-nowrap">
 
-                      <Td>
-                        {item.delinquentAccounts ?? 0}
-                      </Td>
+                            {formatDate(
+                              item.createdAt ??
+                              item.checkedAt,
+                              locale
+                            )}
 
-                      <Td>
-                        {item.status ?? '—'}
-                      </Td>
+                          </Td>
 
-                      <Td>
-                        {item.requestedBy ?? '—'}
-                      </Td>
 
-                    </Tr>
+                          <Td>
 
-                  ))}
+                            <span className="font-medium text-gray-700">
+                              {item.provider ?? '—'}
+                            </span>
 
-                </Tbody>
+                          </Td>
 
-              </Table>
+
+                          <Td>
+
+                            <span
+                              className={`font-black ${creditScoreColor(
+                                item.creditScore
+                              )}`}
+                            >
+                              {item.creditScore ?? '—'}
+                            </span>
+
+                          </Td>
+
+
+                          <Td>
+
+                            <span className="font-semibold text-gray-700">
+                              {item.riskGrade ?? '—'}
+                            </span>
+
+                          </Td>
+
+
+                          <Td>
+
+                            {item.activeFacilities ?? 0}
+
+                          </Td>
+
+
+                          <Td>
+
+                            <span
+                              className={
+                                (item.delinquentAccounts ?? 0) > 0
+                                  ? 'font-bold text-red-600'
+                                  : 'font-medium text-teal-600'
+                              }
+                            >
+                              {item.delinquentAccounts ?? 0}
+                            </span>
+
+                          </Td>
+
+
+                          <Td>
+
+                            <span
+                              className={`inline-flex px-2 py-1 rounded-full text-[10px] font-bold ${
+                                item.status === 'COMPLETED'
+                                  ? 'bg-teal-50 text-teal-700'
+                                  : 'bg-gray-100 text-gray-600'
+                              }`}
+                            >
+                              {item.status ?? '—'}
+                            </span>
+
+                          </Td>
+
+
+                          <Td>
+
+                            {item.requestedBy ?? '—'}
+
+                          </Td>
+
+                        </Tr>
+
+                      )
+                    )}
+
+                  </Tbody>
+
+                </Table>
+
+              </div>
 
             </div>
 
-          </div>
+          )}
 
-        )}
+        </div>
 
       </CardBody>
 
@@ -711,9 +1303,12 @@ function CreditBureauReport({
 
 export default function LoanDetailPage() {
 
-  const { id } = useParams<{ id: string }>();
+  const { id } =
+    useParams<{ id: string }>();
 
-  const router = useRouter();
+  const router =
+    useRouter();
+
 
   const {
     currency,
@@ -721,8 +1316,13 @@ export default function LoanDetailPage() {
     isOfficer
   } = useAuth();
 
+
   const fc = (n?: number) =>
-    formatCurrency(n, currency, locale);
+    formatCurrency(
+      n,
+      currency,
+      locale
+    );
 
 
   // ==========================================================
@@ -740,6 +1340,7 @@ export default function LoanDetailPage() {
 
   const [tab, setTab] =
     useState<Tab>('Overview');
+
 
   const [msg, setMsg] =
     useState<{
@@ -833,6 +1434,7 @@ export default function LoanDetailPage() {
             : []
         );
 
+
         cacheSet(
           `/loans/${id}`,
           {
@@ -851,13 +1453,17 @@ export default function LoanDetailPage() {
             schedule: Payment[];
           }>(`/loans/${id}`);
 
+
         if (cached) {
 
-          setLoan(cached.loan);
+          setLoan(
+            cached.loan
+          );
 
           setSchedule(
             cached.schedule
           );
+
 
           setMsg({
             type: 'error',
@@ -869,7 +1475,8 @@ export default function LoanDetailPage() {
 
           setMsg({
             type: 'error',
-            text: e.message
+            text:
+              e.message
           });
 
         }
@@ -896,91 +1503,106 @@ export default function LoanDetailPage() {
   // LOAD CREDIT HISTORY
   // ==========================================================
 
-  const loadCreditHistory = async (
-    borrowerId?: number
-  ) => {
+  const loadCreditHistory =
+    async (
+      borrowerId?: number
+    ) => {
 
-    if (!borrowerId) {
-      return;
-    }
+      if (!borrowerId) {
+        return;
+      }
 
-    setCbHistoryLoading(true);
 
-    try {
+      setCbHistoryLoading(
+        true
+      );
 
-      const history =
-        await creditBureauApi.history(
-          borrowerId
+
+      try {
+
+        const history =
+          await creditBureauApi.history(
+            borrowerId
+          );
+
+
+        const list =
+          Array.isArray(history)
+            ? history
+            : [];
+
+
+        setCreditHistory(
+          list
         );
 
-      const list =
-        Array.isArray(history)
-          ? history
-          : [];
 
-      setCreditHistory(list);
+        if (list.length > 0) {
 
-      if (list.length > 0) {
+          setCreditReport(
+            list[0]
+          );
 
-        setCreditReport(
-          list[0]
+        }
+
+      } catch (error) {
+
+        console.error(
+          'Failed to load credit bureau history',
+          error
+        );
+
+      } finally {
+
+        setCbHistoryLoading(
+          false
         );
 
       }
 
-    } catch (error) {
-
-      console.error(
-        'Failed to load credit bureau history',
-        error
-      );
-
-    } finally {
-
-      setCbHistoryLoading(false);
-
-    }
-
-  };
+    };
 
 
   // ==========================================================
   // LOAD LATEST CREDIT REPORT
   // ==========================================================
 
-  const loadLatestCreditReport = async (
-    borrowerId?: number
-  ) => {
+  const loadLatestCreditReport =
+    async (
+      borrowerId?: number
+    ) => {
 
-    if (!borrowerId) {
-      return;
-    }
+      if (!borrowerId) {
+        return;
+      }
 
-    try {
 
-      const latest =
-        await creditBureauApi.latest(
-          borrowerId
-        );
+      try {
 
-      if (latest) {
+        const latest =
+          await creditBureauApi.latest(
+            borrowerId
+          );
 
-        setCreditReport(
-          latest
+
+        if (latest) {
+
+          setCreditReport(
+            latest
+          );
+
+        }
+
+      } catch (error) {
+
+        console.error(
+          'Failed to load latest credit bureau report',
+          error
         );
 
       }
 
-    } catch (error) {
-
-      console.error(
-        'Failed to load latest credit bureau report',
-        error
-      );
-
-    }
-
-  };
+    };
 
 
   // ==========================================================
@@ -997,6 +1619,7 @@ export default function LoanDetailPage() {
       loadLatestCreditReport(
         loan.borrower.id
       );
+
 
       loadCreditHistory(
         loan.borrower.id
@@ -1021,64 +1644,59 @@ export default function LoanDetailPage() {
 
         setMsg({
           type: 'error',
-          text: 'No borrower is linked to this loan.'
+          text:
+            'No borrower is linked to this loan.'
         });
 
         return;
+
       }
+
 
       const borrowerId =
         loan.borrower.id;
 
-      setCbBusy(true);
 
-      setMsg(null);
+      setCbBusy(
+        true
+      );
+
+      setMsg(
+        null
+      );
+
 
       try {
-
-        // ------------------------------------------------------
-        // 1. PERFORM THE ACTUAL CREDIT BUREAU CHECK
-        // ------------------------------------------------------
 
         const result =
           await creditBureauApi.check(
             borrowerId
           );
 
+
         const report =
           result as CreditBureauCheck;
 
-        // ------------------------------------------------------
-        // 2. IMMEDIATELY SHOW THE RESULT
-        // ------------------------------------------------------
 
         setCreditReport(
           report
         );
 
-        // ------------------------------------------------------
-        // 3. REFRESH LATEST REPORT
-        // ------------------------------------------------------
 
         await loadLatestCreditReport(
           borrowerId
         );
 
-        // ------------------------------------------------------
-        // 4. REFRESH CREDIT BUREAU HISTORY
-        // ------------------------------------------------------
 
         await loadCreditHistory(
           borrowerId
         );
 
-        // ------------------------------------------------------
-        // 5. SHOW RESULT MESSAGE
-        // ------------------------------------------------------
 
         const simulated =
           report?.provider ===
           'INTERNAL_SIMULATED';
+
 
         setMsg({
 
@@ -1117,7 +1735,9 @@ export default function LoanDetailPage() {
 
       } finally {
 
-        setCbBusy(false);
+        setCbBusy(
+          false
+        );
 
       }
 
@@ -1143,7 +1763,9 @@ export default function LoanDetailPage() {
 
   const loadComments = () =>
     loanApi
-      .getComments(Number(id))
+      .getComments(
+        Number(id)
+      )
       .then((c) =>
         setComments(
           Array.isArray(c)
@@ -1168,7 +1790,11 @@ export default function LoanDetailPage() {
         return;
       }
 
-      setCommentSaving(true);
+
+      setCommentSaving(
+        true
+      );
+
 
       try {
 
@@ -1178,7 +1804,11 @@ export default function LoanDetailPage() {
           commentVisible
         );
 
-        setCommentText('');
+
+        setCommentText(
+          ''
+        );
+
 
         loadComments();
 
@@ -1186,12 +1816,15 @@ export default function LoanDetailPage() {
 
         setMsg({
           type: 'error',
-          text: e.message
+          text:
+            e.message
         });
 
       } finally {
 
-        setCommentSaving(false);
+        setCommentSaving(
+          false
+        );
 
       }
 
@@ -1214,7 +1847,9 @@ export default function LoanDetailPage() {
 
   const loadDocReq = () =>
     loanApi
-      .documentRequirements(Number(id))
+      .documentRequirements(
+        Number(id)
+      )
       .then((r: any) =>
         setDocReq(r)
       )
@@ -1243,13 +1878,20 @@ export default function LoanDetailPage() {
   // ==========================================================
 
   const handlePay =
-    async (e: React.FormEvent) => {
+    async (
+      e: React.FormEvent
+    ) => {
 
       e.preventDefault();
 
-      setPaying(true);
+      setPaying(
+        true
+      );
 
-      setMsg(null);
+      setMsg(
+        null
+      );
+
 
       if (!online) {
 
@@ -1266,14 +1908,18 @@ export default function LoanDetailPage() {
             body: {
               ...payForm,
               amount:
-                Number(payForm.amount)
+                Number(
+                  payForm.amount
+                )
             },
 
             label:
               `Payment — ${
-                loan?.borrower?.firstName ?? 'Loan'
+                loan?.borrower?.firstName ??
+                'Loan'
               } ${
-                loan?.referenceNumber ?? ''
+                loan?.referenceNumber ??
+                ''
               } (${
                 payForm.amount
               })`
@@ -1288,20 +1934,25 @@ export default function LoanDetailPage() {
           });
 
 
-          setPayOpen(false);
+          setPayOpen(
+            false
+          );
 
         } catch (err: any) {
 
           setMsg({
             type: 'error',
             text:
-              'Could not save offline: '
-              + err.message
+              'Could not save offline: ' +
+              err.message
           });
 
         }
 
-        setPaying(false);
+
+        setPaying(
+          false
+        );
 
         return;
 
@@ -1315,7 +1966,9 @@ export default function LoanDetailPage() {
           {
             ...payForm,
             amount:
-              Number(payForm.amount)
+              Number(
+                payForm.amount
+              )
           }
         );
 
@@ -1327,7 +1980,10 @@ export default function LoanDetailPage() {
         });
 
 
-        setPayOpen(false);
+        setPayOpen(
+          false
+        );
+
 
         load();
 
@@ -1335,12 +1991,16 @@ export default function LoanDetailPage() {
 
         setMsg({
           type: 'error',
-          text: err.message
+          text:
+            err.message
         });
 
       }
 
-      setPaying(false);
+
+      setPaying(
+        false
+      );
 
     };
 
@@ -1350,30 +2010,41 @@ export default function LoanDetailPage() {
   // ==========================================================
 
   const handleStatus =
-    async (e: React.FormEvent) => {
+    async (
+      e: React.FormEvent
+    ) => {
 
       e.preventDefault();
 
-      setStSaving(true);
+      setStSaving(
+        true
+      );
 
-      setMsg(null);
+      setMsg(
+        null
+      );
+
 
       try {
 
         if (
-          stForm.status === 'APPROVED'
+          stForm.status ===
+          'APPROVED'
         ) {
 
           await loanApi.approve(
             Number(id),
             stForm.internalNotes,
             stForm.interestRate
-              ? Number(stForm.interestRate)
+              ? Number(
+                  stForm.interestRate
+                )
               : undefined
           );
 
         } else if (
-          stForm.status === 'REJECTED'
+          stForm.status ===
+          'REJECTED'
         ) {
 
           await loanApi.reject(
@@ -1382,7 +2053,8 @@ export default function LoanDetailPage() {
           );
 
         } else if (
-          stForm.status === 'DISBURSED'
+          stForm.status ===
+          'DISBURSED'
         ) {
 
           await loanApi.disburse(
@@ -1416,7 +2088,10 @@ export default function LoanDetailPage() {
         });
 
 
-        setStOpen(false);
+        setStOpen(
+          false
+        );
+
 
         load();
 
@@ -1426,12 +2101,16 @@ export default function LoanDetailPage() {
 
         setMsg({
           type: 'error',
-          text: err.message
+          text:
+            err.message
         });
 
       }
 
-      setStSaving(false);
+
+      setStSaving(
+        false
+      );
 
     };
 
@@ -1443,9 +2122,14 @@ export default function LoanDetailPage() {
   const handleSendForSignature =
     async () => {
 
-      setEsignBusy(true);
+      setEsignBusy(
+        true
+      );
 
-      setMsg(null);
+      setMsg(
+        null
+      );
+
 
       try {
 
@@ -1464,12 +2148,16 @@ export default function LoanDetailPage() {
 
         setMsg({
           type: 'error',
-          text: err.message
+          text:
+            err.message
         });
 
       }
 
-      setEsignBusy(false);
+
+      setEsignBusy(
+        false
+      );
 
     };
 
@@ -1513,9 +2201,11 @@ export default function LoanDetailPage() {
       ? Math.min(
           100,
           Math.round(
-            (loan.totalPaid /
-              loan.totalRepayable) *
-              100
+            (
+              loan.totalPaid /
+              loan.totalRepayable
+            ) *
+            100
           )
         )
 
@@ -1528,26 +2218,29 @@ export default function LoanDetailPage() {
         p => p.paid
       )
       .slice(-12)
-      .map((p) => ({
-        n:
-          `#${p.installmentNumber}`,
+      .map(
+        p => ({
+          n:
+            `#${p.installmentNumber}`,
 
-        balance:
-          p.outstandingAfter ?? 0,
+          balance:
+            p.outstandingAfter ?? 0,
 
-        principal:
-          p.principalComponent,
+          principal:
+            p.principalComponent,
 
-        interest:
-          p.interestComponent
+          interest:
+            p.interestComponent
 
-      }));
+        })
+      );
 
 
   const totalPenalty =
     schedule.reduce(
       (sum, p) =>
-        sum + (p.penalty ?? 0),
+        sum +
+        (p.penalty ?? 0),
       0
     );
 
@@ -1564,7 +2257,7 @@ export default function LoanDetailPage() {
           HEADER
       ====================================================== */}
 
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between mb-6 gap-4">
 
         <div>
 
@@ -1586,15 +2279,21 @@ export default function LoanDetailPage() {
           <div className="flex items-center gap-2 mt-1 flex-wrap">
 
             <StatusBadge
-              status={loan.status}
+              status={
+                loan.status
+              }
             />
 
 
             {loan.riskCategory && (
 
               <RiskBadge
-                category={loan.riskCategory}
-                score={loan.riskScore}
+                category={
+                  loan.riskCategory
+                }
+                score={
+                  loan.riskScore
+                }
               />
 
             )}
@@ -1616,7 +2315,9 @@ export default function LoanDetailPage() {
 
 
             <Pill
-              label={loan.currency}
+              label={
+                loan.currency
+              }
               color="teal"
             />
 
@@ -1648,11 +2349,7 @@ export default function LoanDetailPage() {
             ACTIONS
         ==================================================== */}
 
-        <div className="flex gap-2 flex-wrap">
-
-          {/* ==================================================
-              SINGLE CREDIT BUREAU ACTION
-          ================================================== */}
+        <div className="flex gap-2 flex-wrap justify-end">
 
           {isOfficer &&
             loan.borrower && (
@@ -1662,7 +2359,9 @@ export default function LoanDetailPage() {
               onClick={
                 handleCreditBureauCheck
               }
-              disabled={cbBusy}
+              disabled={
+                cbBusy
+              }
             >
 
               <IconBank className="w-4 h-4" />
@@ -1688,7 +2387,9 @@ export default function LoanDetailPage() {
               onClick={
                 handleSendForSignature
               }
-              disabled={esignBusy}
+              disabled={
+                esignBusy
+              }
             >
 
               <IconSignature className="w-4 h-4" />
@@ -1716,7 +2417,8 @@ export default function LoanDetailPage() {
           )}
 
 
-          {loan.status === 'ACTIVE' && (
+          {loan.status ===
+            'ACTIVE' && (
 
             <Button
               onClick={() => {
@@ -1734,7 +2436,8 @@ export default function LoanDetailPage() {
                                 loan.durationMonths!
                               ) *
                               100
-                            ) / 100
+                            ) /
+                            100
 
                           : ''
                       )
@@ -1742,7 +2445,10 @@ export default function LoanDetailPage() {
                   })
                 );
 
-                setPayOpen(true);
+
+                setPayOpen(
+                  true
+                );
 
               }}
             >
@@ -1768,7 +2474,11 @@ export default function LoanDetailPage() {
 
         <div className="mb-5">
 
-          <Alert type={msg.type}>
+          <Alert
+            type={
+              msg.type
+            }
+          >
             {msg.text}
           </Alert>
 
@@ -1821,35 +2531,50 @@ export default function LoanDetailPage() {
         {[
           {
             label: 'Principal',
-            value: fc(loan.amount),
+            value:
+              fc(
+                loan.amount
+              ),
             Icon: IconCoins,
             color: '#3B82F6'
           },
 
           {
             label: 'Disbursed',
-            value: fc(loan.disbursedAmount),
+            value:
+              fc(
+                loan.disbursedAmount
+              ),
             Icon: IconSend,
             color: '#8B5CF6'
           },
 
           {
             label: 'Total Paid',
-            value: fc(loan.totalPaid),
+            value:
+              fc(
+                loan.totalPaid
+              ),
             Icon: IconCheckCircle,
             color: '#0D9488'
           },
 
           {
             label: 'Outstanding',
-            value: fc(loan.outstandingBalance),
+            value:
+              fc(
+                loan.outstandingBalance
+              ),
             Icon: IconClock,
             color: '#F59E0B'
           },
 
           {
             label: 'Penalty',
-            value: fc(totalPenalty),
+            value:
+              fc(
+                totalPenalty
+              ),
             Icon: IconFileText,
             color: '#6B7280'
           }
@@ -1863,13 +2588,17 @@ export default function LoanDetailPage() {
           }) => (
 
           <div
-            key={label}
+            key={
+              label
+            }
             className="bg-white rounded-xl border border-gray-200 p-4"
           >
 
             <Icon
               className="w-5 h-5 mb-1.5"
-              style={{ color }}
+              style={{
+                color
+              }}
             />
 
             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -1913,7 +2642,9 @@ export default function LoanDetailPage() {
             <div
               className="h-3 rounded-full transition-all duration-500"
               style={{
-                width: `${prog}%`,
+                width:
+                  `${prog}%`,
+
                 background:
                   prog >= 100
                     ? '#0D9488'
@@ -1929,21 +2660,28 @@ export default function LoanDetailPage() {
           <div className="flex justify-between text-xs text-gray-400 mt-1.5">
 
             <span>
-              {fc(loan.totalPaid)} paid
+              {fc(
+                loan.totalPaid
+              )} paid
             </span>
 
             <span>
-              {fc(loan.outstandingBalance)} remaining
+              {fc(
+                loan.outstandingBalance
+              )} remaining
             </span>
 
             <span>
-              {fc(loan.totalRepayable)} total
+              {fc(
+                loan.totalRepayable
+              )} total
             </span>
 
           </div>
 
 
-          {loan.status === 'PAID' && (
+          {loan.status ===
+            'PAID' && (
 
             <div className="mt-2 bg-teal-50 border border-teal-200 text-teal-700 text-xs rounded-lg px-3 py-2 flex items-center gap-1.5">
 
@@ -1993,7 +2731,9 @@ export default function LoanDetailPage() {
               {docReq.missing
                 .map(
                   t =>
-                    DOCUMENT_TYPE_LABELS[t] ??
+                    DOCUMENT_TYPE_LABELS[
+                      t
+                    ] ??
                     t
                 )
                 .join(', ')}
@@ -2016,7 +2756,9 @@ export default function LoanDetailPage() {
               {docReq.unverified
                 .map(
                   t =>
-                    DOCUMENT_TYPE_LABELS[t] ??
+                    DOCUMENT_TYPE_LABELS[
+                      t
+                    ] ??
                     t
                 )
                 .join(', ')}
@@ -2028,7 +2770,9 @@ export default function LoanDetailPage() {
 
           <button
             onClick={() =>
-              setTab('Documents')
+              setTab(
+                'Documents'
+              )
             }
             className="text-xs font-bold text-amber-800 underline mt-1"
           >
@@ -2046,19 +2790,21 @@ export default function LoanDetailPage() {
 
       <div className="flex border-b border-gray-200 mb-5 gap-0 overflow-x-auto">
 
-        {TABS.map(t => (
+        {TABS.map(
+          t => (
 
           <button
-            key={t}
+            key={
+              t
+            }
             onClick={() =>
               setTab(t)
             }
-            className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap
-              ${
-                tab === t
-                  ? 'border-teal-500 text-teal-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+            className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
+              tab === t
+                ? 'border-teal-500 text-teal-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
           >
             {t}
           </button>
@@ -2072,7 +2818,8 @@ export default function LoanDetailPage() {
           OVERVIEW
       ====================================================== */}
 
-      {tab === 'Overview' && (
+      {tab ===
+        'Overview' && (
 
         <Card>
 
@@ -2109,12 +2856,18 @@ export default function LoanDetailPage() {
 
               <Field
                 label="Schedule"
-                value={loan.repaymentFrequency}
+                value={
+                  loan.repaymentFrequency
+                }
               />
 
               <Field
                 label="Processing Fee"
-                value={fc(loan.processingFee)}
+                value={
+                  fc(
+                    loan.processingFee
+                  )
+                }
               />
 
               <Field
@@ -2128,44 +2881,56 @@ export default function LoanDetailPage() {
 
               <Field
                 label="Credit Score"
-                value={loan.creditScoreSnapshot}
+                value={
+                  loan.creditScoreSnapshot
+                }
               />
 
               <Field
                 label="Risk Category"
-                value={loan.riskCategory}
+                value={
+                  loan.riskCategory
+                }
               />
 
               <Field
                 label="Start Date"
-                value={formatDate(
-                  loan.startDate,
-                  locale
-                )}
+                value={
+                  formatDate(
+                    loan.startDate,
+                    locale
+                  )
+                }
               />
 
               <Field
                 label="Approved"
-                value={formatDate(
-                  loan.approvedAt,
-                  locale
-                )}
+                value={
+                  formatDate(
+                    loan.approvedAt,
+                    locale
+                  )
+                }
               />
 
               <Field
                 label="Disbursed"
-                value={formatDate(
-                  loan.disbursedAt,
-                  locale
-                )}
+                value={
+                  formatDate(
+                    loan.disbursedAt,
+                    locale
+                  )
+                }
               />
 
               <Field
                 label="Maturity"
-                value={formatDate(
-                  loan.maturityDate,
-                  locale
-                )}
+                value={
+                  formatDate(
+                    loan.maturityDate,
+                    locale
+                  )
+                }
               />
 
               <Field
@@ -2195,7 +2960,9 @@ export default function LoanDetailPage() {
 
               <Field
                 label="Currency"
-                value={loan.currency}
+                value={
+                  loan.currency
+                }
               />
 
             </div>
@@ -2207,6 +2974,7 @@ export default function LoanDetailPage() {
               <>
 
                 <hr className="my-4 border-gray-100" />
+
 
                 {loan.rejectionReason && (
 
@@ -2220,6 +2988,7 @@ export default function LoanDetailPage() {
                   />
 
                 )}
+
 
                 {loan.internalNotes && (
 
@@ -2294,7 +3063,8 @@ export default function LoanDetailPage() {
           BORROWER
       ====================================================== */}
 
-      {tab === 'Borrower' &&
+      {tab ===
+        'Borrower' &&
         loan.borrower && (
 
         <Card>
@@ -2356,9 +3126,7 @@ export default function LoanDetailPage() {
                         : 'text-orange-500'
                     }`}
                   >
-
                     {loan.borrower.creditScore ?? '—'}
-
                   </div>
 
                 </div>
@@ -2366,7 +3134,9 @@ export default function LoanDetailPage() {
 
                 <button
                   onClick={() =>
-                    setTab('Documents')
+                    setTab(
+                      'Documents'
+                    )
                   }
                   className="text-xs font-bold px-3 py-2 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 transition whitespace-nowrap"
                 >
@@ -2396,10 +3166,12 @@ export default function LoanDetailPage() {
 
               <Field
                 label="Date of Birth"
-                value={formatDate(
-                  loan.borrower.dateOfBirth,
-                  locale
-                )}
+                value={
+                  formatDate(
+                    loan.borrower.dateOfBirth,
+                    locale
+                  )
+                }
               />
 
               <Field
@@ -2498,11 +3270,13 @@ export default function LoanDetailPage() {
           DOCUMENTS
       ====================================================== */}
 
-      {tab === 'Documents' && (
+      {tab ===
+        'Documents' && (
 
         loan.borrower?.id
 
           ? (
+
             <DocumentsPanel
               borrowerId={
                 loan.borrower.id
@@ -2511,6 +3285,7 @@ export default function LoanDetailPage() {
                 loan.borrower.id
               }
             />
+
           )
 
           : (
@@ -2531,7 +3306,8 @@ export default function LoanDetailPage() {
           SCHEDULE
       ====================================================== */}
 
-      {tab === 'Schedule' && (
+      {tab ===
+        'Schedule' && (
 
         <>
 
@@ -2551,7 +3327,9 @@ export default function LoanDetailPage() {
                 >
 
                   <AreaChart
-                    data={chartData}
+                    data={
+                      chartData
+                    }
                   >
 
                     <defs>
@@ -2603,7 +3381,8 @@ export default function LoanDetailPage() {
                         fill: '#9CA3AF'
                       }}
                       tickFormatter={
-                        v => fc(v)
+                        v =>
+                          fc(v)
                       }
                     />
 
@@ -2650,14 +3429,23 @@ export default function LoanDetailPage() {
                 <tr>
 
                   <Th>#</Th>
+
                   <Th>Due Date</Th>
+
                   <Th>Amount</Th>
+
                   <Th>Principal</Th>
+
                   <Th>Interest</Th>
+
                   <Th>Penalty</Th>
+
                   <Th>Balance After</Th>
+
                   <Th>Status</Th>
+
                   <Th>Paid Date</Th>
+
                   <Th>Method</Th>
 
                 </tr>
@@ -2667,7 +3455,8 @@ export default function LoanDetailPage() {
 
               <Tbody>
 
-                {schedule.length === 0
+                {schedule.length ===
+                0
 
                   ? (
 
@@ -2687,7 +3476,9 @@ export default function LoanDetailPage() {
                       p => (
 
                         <Tr
-                          key={p.id}
+                          key={
+                            p.id
+                          }
                           className={
                             p.isLate
                               ? 'bg-orange-50'
@@ -2699,6 +3490,7 @@ export default function LoanDetailPage() {
                             {p.installmentNumber}
                           </Td>
 
+
                           <Td>
                             {formatDate(
                               p.dueDate,
@@ -2706,9 +3498,13 @@ export default function LoanDetailPage() {
                             )}
                           </Td>
 
+
                           <Td className="font-semibold">
-                            {fc(p.amount)}
+                            {fc(
+                              p.amount
+                            )}
                           </Td>
+
 
                           <Td className="text-blue-600">
                             {fc(
@@ -2716,26 +3512,32 @@ export default function LoanDetailPage() {
                             )}
                           </Td>
 
+
                           <Td className="text-purple-600">
                             {fc(
                               p.interestComponent
                             )}
                           </Td>
 
+
                           <Td className="text-red-500">
 
                             {p.penalty &&
                             p.penalty > 0
-                              ? fc(p.penalty)
+                              ? fc(
+                                  p.penalty
+                                )
                               : '—'}
 
                           </Td>
+
 
                           <Td>
                             {fc(
                               p.outstandingAfter
                             )}
                           </Td>
+
 
                           <Td>
 
@@ -2775,6 +3577,7 @@ export default function LoanDetailPage() {
 
                           </Td>
 
+
                           <Td className="text-gray-400 text-xs">
 
                             {formatDate(
@@ -2783,6 +3586,7 @@ export default function LoanDetailPage() {
                             )}
 
                           </Td>
+
 
                           <Td className="text-xs">
 
@@ -2839,7 +3643,8 @@ export default function LoanDetailPage() {
           TIMELINE
       ====================================================== */}
 
-      {tab === 'Timeline' && (
+      {tab ===
+        'Timeline' && (
 
         <Card>
 
@@ -2864,7 +3669,8 @@ export default function LoanDetailPage() {
                   label: 'Under Review',
                   date: loan.startDate,
                   done:
-                    loan.status !== 'PENDING'
+                    loan.status !==
+                    'PENDING'
                 },
 
                 {
@@ -2895,7 +3701,8 @@ export default function LoanDetailPage() {
                   label: 'Maturity Date',
                   date: loan.maturityDate,
                   done:
-                    loan.status === 'PAID'
+                    loan.status ===
+                    'PAID'
                 }
 
               ].map(
@@ -2906,7 +3713,9 @@ export default function LoanDetailPage() {
                 ) => (
 
                   <div
-                    key={i}
+                    key={
+                      i
+                    }
                     className="flex gap-4 pb-6 relative"
                   >
 
@@ -2925,7 +3734,9 @@ export default function LoanDetailPage() {
                       </div>
 
 
-                      {i < arr.length - 1 && (
+                      {i <
+                        arr.length -
+                          1 && (
 
                         <div
                           className={`w-0.5 flex-1 mt-1 ${
@@ -2984,7 +3795,8 @@ export default function LoanDetailPage() {
           COMMENTS
       ====================================================== */}
 
-      {tab === 'Comments' && (
+      {tab ===
+        'Comments' && (
 
         <Card>
 
@@ -2998,7 +3810,9 @@ export default function LoanDetailPage() {
 
               <Textarea
                 placeholder="e.g. Please upload your land title document, or a recent utility bill as proof of address."
-                value={commentText}
+                value={
+                  commentText
+                }
                 onChange={e =>
                   setCommentText(
                     e.target.value
@@ -3061,7 +3875,8 @@ export default function LoanDetailPage() {
             </div>
 
 
-            {comments.length === 0 && (
+            {comments.length ===
+              0 && (
 
               <p className="text-sm text-gray-400 text-center py-6">
 
@@ -3078,17 +3893,23 @@ export default function LoanDetailPage() {
                 .slice()
                 .reverse()
                 .map(
-                  (c: any) => (
+                  (
+                    c: any
+                  ) => (
 
                     <div
-                      key={c.id}
+                      key={
+                        c.id
+                      }
                       className="flex gap-3"
                     >
 
                       <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold shrink-0">
 
-                        {(c.author?.name ||
-                          'S')[0]}
+                        {(
+                          c.author?.name ||
+                          'S'
+                        )[0]}
 
                       </div>
 
@@ -3165,9 +3986,13 @@ export default function LoanDetailPage() {
       ====================================================== */}
 
       <Modal
-        open={payOpen}
+        open={
+          payOpen
+        }
         onClose={() =>
-          setPayOpen(false)
+          setPayOpen(
+            false
+          )
         }
         title="Record Payment"
 
@@ -3178,14 +4003,19 @@ export default function LoanDetailPage() {
             <Button
               variant="secondary"
               onClick={() =>
-                setPayOpen(false)
+                setPayOpen(
+                  false
+                )
               }
             >
               Cancel
             </Button>
 
+
             <Button
-              loading={paying}
+              loading={
+                paying
+              }
               onClick={
                 handlePay as any
               }
@@ -3199,7 +4029,9 @@ export default function LoanDetailPage() {
       >
 
         <form
-          onSubmit={handlePay}
+          onSubmit={
+            handlePay
+          }
         >
 
           <div className="bg-gray-50 rounded-xl p-4 mb-4 grid grid-cols-2 gap-3 text-sm">
@@ -3233,7 +4065,11 @@ export default function LoanDetailPage() {
             ].map(
               ([l, v]) => (
 
-                <div key={l}>
+                <div
+                  key={
+                    l
+                  }
+                >
 
                   <div className="text-xs text-gray-400">
                     {l}
@@ -3310,7 +4146,12 @@ export default function LoanDetailPage() {
                   m => (
 
                     <option
-                      key={m}
+                      key={
+                        m
+                      }
+                      value={
+                        m
+                      }
                     >
                       {m.replace(
                         /_/g,
@@ -3405,9 +4246,13 @@ export default function LoanDetailPage() {
       ====================================================== */}
 
       <Modal
-        open={stOpen}
+        open={
+          stOpen
+        }
         onClose={() =>
-          setStOpen(false)
+          setStOpen(
+            false
+          )
         }
         title="Update Loan Status"
 
@@ -3418,14 +4263,19 @@ export default function LoanDetailPage() {
             <Button
               variant="secondary"
               onClick={() =>
-                setStOpen(false)
+                setStOpen(
+                  false
+                )
               }
             >
               Cancel
             </Button>
 
+
             <Button
-              loading={stSaving}
+              loading={
+                stSaving
+              }
               onClick={
                 handleStatus as any
               }
@@ -3439,7 +4289,9 @@ export default function LoanDetailPage() {
       >
 
         <form
-          onSubmit={handleStatus}
+          onSubmit={
+            handleStatus
+          }
         >
 
           <div className="bg-gray-50 rounded-xl p-3 mb-4 text-sm flex items-center gap-2">
@@ -3447,7 +4299,9 @@ export default function LoanDetailPage() {
             Current:
 
             <StatusBadge
-              status={loan.status}
+              status={
+                loan.status
+              }
             />
 
           </div>
@@ -3524,11 +4378,13 @@ export default function LoanDetailPage() {
                 const options =
                   VALID_FROM[
                     loan.status
-                  ] ?? [];
+                  ] ??
+                  [];
 
 
                 if (
-                  options.length === 0
+                  options.length ===
+                  0
                 ) {
 
                   return (
@@ -3554,8 +4410,12 @@ export default function LoanDetailPage() {
                   s => (
 
                     <option
-                      key={s}
-                      value={s}
+                      key={
+                        s
+                      }
+                      value={
+                        s
+                      }
                     >
 
                       {s.replace(
@@ -3614,7 +4474,9 @@ export default function LoanDetailPage() {
                   r => (
 
                     <button
-                      key={r}
+                      key={
+                        r
+                      }
                       type="button"
                       onClick={() =>
                         setStForm(
@@ -3758,3 +4620,4 @@ export default function LoanDetailPage() {
     </div>
   );
 }
+
