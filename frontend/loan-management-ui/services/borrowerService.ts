@@ -1,103 +1,109 @@
-
 import { get, post, put } from './api';
 import { Borrower } from '../types';
 
-export interface BorrowerDetails {
-  borrower: Borrower;
+/**
+ * ============================================================
+ * BORROWER SERVICE
+ * ============================================================
+ *
+ * This service is kept for pages/components that import:
+ *
+ *   createBorrower
+ *   getBorrowers
+ *   getBorrowerById
+ *   updateBorrower
+ *
+ * The actual HTTP configuration remains centralized in api.ts.
+ * ============================================================
+ */
 
-  loans?: any[];
-  payments?: any[];
-
-  totalLoans?: number;
-  activeLoans?: number;
-  completedLoans?: number;
-  overdueLoans?: number;
-
-  totalBorrowed?: number;
-  totalPaid?: number;
-  totalPrincipalPaid?: number;
-  totalInterestPaid?: number;
-  totalPenaltiesPaid?: number;
-
-  outstandingBalance?: number;
-
-  paymentCount?: number;
-  paidPaymentCount?: number;
-  latePaymentCount?: number;
-  overduePaymentCount?: number;
-
-  repaymentRate?: number;
-  riskScore?: number;
-  riskCategory?: string;
-
-  [key: string]: any;
-}
-
-export const borrowerApi = {
-
-  // ============================================================
-  // LIST
-  // ============================================================
-
-  list: (
-    page = 0,
-    size = 20,
-    search = ''
-  ): Promise<any> => {
-
-    const query =
-      `/borrowers?page=${page}&size=${size}` +
-      (search
+export const getBorrowers = (
+  search?: string,
+): Promise<Borrower[]> =>
+  get(
+    `/borrowers?page=0&size=5000${
+      search
         ? `&q=${encodeURIComponent(search)}`
-        : '');
+        : ''
+    }`,
+  ).then((response: any) => {
+    /*
+     * Backend may return either:
+     *
+     * [
+     *   borrower,
+     *   borrower
+     * ]
+     *
+     * or:
+     *
+     * {
+     *   content: [...]
+     * }
+     */
 
-    return get(query);
-  },
+    if (Array.isArray(response)) {
+      return response as Borrower[];
+    }
 
+    if (
+      response &&
+      Array.isArray(response.content)
+    ) {
+      return response.content as Borrower[];
+    }
 
-  // ============================================================
-  // BASIC BORROWER
-  // ============================================================
-
-  getById: (
-    id: number
-  ): Promise<any> =>
-    get(`/borrowers/${id}`),
-
-
-  // ============================================================
-  // COMPLETE BORROWER 360 PROFILE
-  // ============================================================
-
-  getDetails: (
-    id: number
-  ): Promise<BorrowerDetails> =>
-    get(`/borrowers/${id}/details`) as Promise<BorrowerDetails>,
-
-
-  // ============================================================
-  // CREATE
-  // ============================================================
-
-  create: (
-    payload: Partial<Borrower>
-  ): Promise<Borrower> =>
-    post(
-      '/borrowers',
-      payload
-    ) as Promise<Borrower>,
+    return [];
+  });
 
 
-  // ============================================================
-  // UPDATE
-  // ============================================================
+/**
+ * ============================================================
+ * GET BORROWER BY ID
+ * ============================================================
+ */
 
-  update: (
-    id: number,
-    payload: Partial<Borrower>
-  ): Promise<Borrower> =>
-    put(
-      `/borrowers/${id}`,
-      payload
-    ) as Promise<Borrower>
-};
+export const getBorrowerById = (
+  id: number,
+): Promise<Borrower> =>
+  get(`/borrowers/${id}`) as Promise<Borrower>;
+
+
+/**
+ * ============================================================
+ * CREATE BORROWER
+ * ============================================================
+ *
+ * This is the function currently required by:
+ *
+ * app/dashboard/borrowers/new/page.tsx
+ *
+ * The backend endpoint is:
+ *
+ * POST /api/borrowers
+ * ============================================================
+ */
+
+export const createBorrower = (
+  payload: Partial<Borrower>,
+): Promise<Borrower> =>
+  post(
+    '/borrowers',
+    payload,
+  ) as Promise<Borrower>;
+
+
+/**
+ * ============================================================
+ * UPDATE BORROWER
+ * ============================================================
+ */
+
+export const updateBorrower = (
+  id: number,
+  payload: Partial<Borrower>,
+): Promise<Borrower> =>
+  put(
+    `/borrowers/${id}`,
+    payload,
+  ) as Promise<Borrower>;
