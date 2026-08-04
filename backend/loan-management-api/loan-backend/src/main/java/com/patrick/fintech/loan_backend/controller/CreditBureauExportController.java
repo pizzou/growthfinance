@@ -34,7 +34,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/regulatory/credit-bureau")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('ADMIN','MANAGER','AUDITOR')")
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
 public class CreditBureauExportController {
 
 
