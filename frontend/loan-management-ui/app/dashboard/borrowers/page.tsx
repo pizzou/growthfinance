@@ -203,22 +203,26 @@ export default function BorrowersPage() {
    *
    * IMPORTANT:
    *
-   * The borrower details page is:
-   *
-   * /dashboard/borrowers/[id]
-   *
-   * Therefore every borrower link MUST use:
+   * Every borrower MUST use:
    *
    * /dashboard/borrowers/{id}
    *
-   * Never:
+   * NEVER:
    *
    * /dashboard/{id}
    */
 
   const borrowerDetailsUrl = (
-    borrowerId: number,
-  ) => `/dashboard/borrowers/${borrowerId}`;
+    borrowerId: number | string,
+  ) => {
+    const id = Number(borrowerId);
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return '/dashboard/borrowers';
+    }
+
+    return `/dashboard/borrowers/${id}`;
+  };
 
   return (
     <div>
@@ -304,13 +308,9 @@ export default function BorrowersPage() {
               ) : (
                 borrowers.map(
                   (borrower: Borrower) => {
-                    const borrowerId = Number(
-                      borrower.id,
-                    );
-
                     const detailsUrl =
                       borrowerDetailsUrl(
-                        borrowerId,
+                        borrower.id,
                       );
 
                     return (
@@ -325,24 +325,26 @@ export default function BorrowersPage() {
                         <Td>
                           <Link
                             href={detailsUrl}
-                            className="flex items-center gap-2 group"
+                            className="block"
                           >
-                            <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-sm font-bold text-teal-700 flex-shrink-0">
-                              {borrower.firstName?.[0] ??
-                                ''}
-                              {borrower.lastName?.[0] ??
-                                ''}
-                            </div>
-
-                            <div>
-                              <div className="font-semibold text-sm text-gray-900 group-hover:text-teal-600 transition-colors">
-                                {borrower.firstName}{' '}
-                                {borrower.lastName}
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-sm font-bold text-teal-700 flex-shrink-0">
+                                {borrower.firstName?.[0] ??
+                                  ''}
+                                {borrower.lastName?.[0] ??
+                                  ''}
                               </div>
 
-                              <div className="text-xs text-gray-400">
-                                {borrower.employmentType ??
-                                  '—'}
+                              <div>
+                                <div className="font-semibold text-sm text-gray-900 hover:text-teal-600">
+                                  {borrower.firstName}{' '}
+                                  {borrower.lastName}
+                                </div>
+
+                                <div className="text-xs text-gray-400">
+                                  {borrower.employmentType ??
+                                    '—'}
+                                </div>
                               </div>
                             </div>
                           </Link>
@@ -353,7 +355,12 @@ export default function BorrowersPage() {
                         ================================================== */}
 
                         <Td className="text-sm text-gray-600">
-                          {borrower.email ?? '—'}
+                          <Link
+                            href={detailsUrl}
+                            className="block"
+                          >
+                            {borrower.email ?? '—'}
+                          </Link>
                         </Td>
 
                         {/* ==================================================
@@ -361,7 +368,12 @@ export default function BorrowersPage() {
                         ================================================== */}
 
                         <Td className="text-sm text-gray-600">
-                          {borrower.phone ?? '—'}
+                          <Link
+                            href={detailsUrl}
+                            className="block"
+                          >
+                            {borrower.phone ?? '—'}
+                          </Link>
                         </Td>
 
                         {/* ==================================================
@@ -369,9 +381,15 @@ export default function BorrowersPage() {
                         ================================================== */}
 
                         <Td>
-                          <code className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                            {borrower.nationalId ?? '—'}
-                          </code>
+                          <Link
+                            href={detailsUrl}
+                            className="block"
+                          >
+                            <code className="text-xs bg-gray-100 px-2 py-0.5 rounded">
+                              {borrower.nationalId ??
+                                '—'}
+                            </code>
+                          </Link>
                         </Td>
 
                         {/* ==================================================
@@ -379,7 +397,13 @@ export default function BorrowersPage() {
                         ================================================== */}
 
                         <Td className="text-sm text-gray-600">
-                          {borrower.employerName ?? '—'}
+                          <Link
+                            href={detailsUrl}
+                            className="block"
+                          >
+                            {borrower.employerName ??
+                              '—'}
+                          </Link>
                         </Td>
 
                         {/* ==================================================
@@ -387,11 +411,16 @@ export default function BorrowersPage() {
                         ================================================== */}
 
                         <Td className="font-semibold text-sm">
-                          {formatCurrency(
-                            borrower.monthlyIncome,
-                            currency,
-                            locale,
-                          )}
+                          <Link
+                            href={detailsUrl}
+                            className="block"
+                          >
+                            {formatCurrency(
+                              borrower.monthlyIncome,
+                              currency,
+                              locale,
+                            )}
+                          </Link>
                         </Td>
 
                         {/* ==================================================
@@ -399,20 +428,26 @@ export default function BorrowersPage() {
                         ================================================== */}
 
                         <Td>
-                          <span
-                            className={`font-bold text-sm ${
-                              (borrower.creditScore ?? 0) >=
-                              700
-                                ? 'text-teal-600'
-                                : (borrower.creditScore ?? 0) >=
-                                  600
-                                ? 'text-yellow-600'
-                                : 'text-red-500'
-                            }`}
+                          <Link
+                            href={detailsUrl}
+                            className="block"
                           >
-                            {borrower.creditScore ??
-                              '—'}
-                          </span>
+                            <span
+                              className={`font-bold text-sm ${
+                                (borrower.creditScore ??
+                                  0) >= 700
+                                  ? 'text-teal-600'
+                                  : (borrower.creditScore ??
+                                        0) >=
+                                      600
+                                    ? 'text-yellow-600'
+                                    : 'text-red-500'
+                              }`}
+                            >
+                              {borrower.creditScore ??
+                                '—'}
+                            </span>
+                          </Link>
                         </Td>
 
                         {/* ==================================================
@@ -420,7 +455,12 @@ export default function BorrowersPage() {
                         ================================================== */}
 
                         <Td className="text-xs text-gray-500">
-                          {borrower.country ?? '—'}
+                          <Link
+                            href={detailsUrl}
+                            className="block"
+                          >
+                            {borrower.country ?? '—'}
+                          </Link>
                         </Td>
 
                         {/* ==================================================
@@ -428,10 +468,15 @@ export default function BorrowersPage() {
                         ================================================== */}
 
                         <Td className="text-xs text-gray-400">
-                          {formatDate(
-                            borrower.createdAt,
-                            locale,
-                          )}
+                          <Link
+                            href={detailsUrl}
+                            className="block"
+                          >
+                            {formatDate(
+                              borrower.createdAt,
+                              locale,
+                            )}
+                          </Link>
                         </Td>
                       </Tr>
                     );
@@ -503,7 +548,9 @@ export default function BorrowersPage() {
 
             <Button
               loading={saving}
-              onClick={handleAdd as any}
+              onClick={
+                handleAdd as any
+              }
             >
               Save Borrower
             </Button>
@@ -627,7 +674,9 @@ export default function BorrowersPage() {
                 {COUNTRIES.map(
                   (country) => (
                     <option
-                      key={country.code}
+                      key={
+                        country.code
+                      }
                       value={
                         country.code
                       }
@@ -737,7 +786,9 @@ export default function BorrowersPage() {
                 {COUNTRIES.map(
                   (country) => (
                     <option
-                      key={country.code}
+                      key={
+                        country.code
+                      }
                       value={
                         country.code
                       }

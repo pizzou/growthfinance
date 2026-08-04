@@ -1,7 +1,7 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
 import { borrowerApi } from '@/services/api';
@@ -29,14 +29,30 @@ export default function BorrowerDetailsPage() {
 
   const { currency, locale } = useAuth();
 
-  const borrowerId = Number(
-    params?.id,
-  );
+  /*
+   * ============================================================
+   * BORROWER ID
+   * ============================================================
+   *
+   * This page is:
+   *
+   * app/dashboard/borrowers/[id]/page.tsx
+   *
+   * Therefore the URL is:
+   *
+   * /dashboard/borrowers/1
+   * /dashboard/borrowers/2
+   * /dashboard/borrowers/25
+   *
+   * NOT:
+   *
+   * /dashboard/1
+   */
+
+  const borrowerId = Number(params?.id);
 
   const [details, setDetails] =
-    useState<BorrowerDetails | null>(
-      null,
-    );
+    useState<BorrowerDetails | null>(null);
 
   const [loading, setLoading] =
     useState(true);
@@ -44,9 +60,9 @@ export default function BorrowerDetailsPage() {
   const [error, setError] =
     useState('');
 
-  /**
+  /*
    * ============================================================
-   * LOAD BORROWER DETAILS
+   * LOAD BORROWER
    * ============================================================
    */
 
@@ -55,32 +71,30 @@ export default function BorrowerDetailsPage() {
       !borrowerId ||
       Number.isNaN(borrowerId)
     ) {
-      setError(
-        'Invalid borrower ID.',
-      );
-
+      setError('Invalid borrower ID.');
       setLoading(false);
-
       return;
     }
 
     let cancelled = false;
 
-    const load = async () => {
-      setLoading(true);
-      setError('');
-
+    const loadBorrower = async () => {
       try {
+        setLoading(true);
+        setError('');
+
         const response =
           await borrowerApi.getDetails(
             borrowerId,
           );
 
-        if (!cancelled) {
-          setDetails(
-            response as BorrowerDetails,
-          );
+        if (cancelled) {
+          return;
         }
+
+        setDetails(
+          response as BorrowerDetails,
+        );
       } catch (err: any) {
         console.error(
           'Failed to load borrower details:',
@@ -100,14 +114,26 @@ export default function BorrowerDetailsPage() {
       }
     };
 
-    load();
+    loadBorrower();
 
     return () => {
       cancelled = true;
     };
   }, [borrowerId]);
 
-  /**
+  /*
+   * ============================================================
+   * BACK TO BORROWERS
+   * ============================================================
+   */
+
+  const goBack = () => {
+    router.push(
+      '/dashboard/borrowers',
+    );
+  };
+
+  /*
    * ============================================================
    * LOADING
    * ============================================================
@@ -121,7 +147,7 @@ export default function BorrowerDetailsPage() {
     );
   }
 
-  /**
+  /*
    * ============================================================
    * ERROR
    * ============================================================
@@ -130,19 +156,17 @@ export default function BorrowerDetailsPage() {
   if (error || !details) {
     return (
       <div className="space-y-4">
+
         <Button
           variant="secondary"
-          onClick={() =>
-            router.push(
-              '/dashboard/borrowers',
-            )
-          }
+          onClick={goBack}
         >
           ← Back to Borrowers
         </Button>
 
         <Card>
           <div className="py-12 text-center">
+
             <div className="text-red-500 text-4xl mb-3">
               !
             </div>
@@ -165,11 +189,18 @@ export default function BorrowerDetailsPage() {
                 Try Again
               </Button>
             </div>
+
           </div>
         </Card>
       </div>
     );
   }
+
+  /*
+   * ============================================================
+   * DATA
+   * ============================================================
+   */
 
   const loans =
     details.loans ?? [];
@@ -177,9 +208,9 @@ export default function BorrowerDetailsPage() {
   const payments =
     details.payments ?? [];
 
-  /**
+  /*
    * ============================================================
-   * BORROWER INITIALS
+   * INITIALS
    * ============================================================
    */
 
@@ -187,8 +218,15 @@ export default function BorrowerDetailsPage() {
     `${details.firstName?.[0] ?? ''}${details.lastName?.[0] ?? ''}`
       .toUpperCase();
 
+  /*
+   * ============================================================
+   * PAGE
+   * ============================================================
+   */
+
   return (
     <div className="space-y-6">
+
       {/* ========================================================
           BACK
       ======================================================== */}
@@ -196,23 +234,21 @@ export default function BorrowerDetailsPage() {
       <div>
         <Button
           variant="secondary"
-          onClick={() =>
-            router.push(
-              '/dashboard/borrowers',
-            )
-          }
+          onClick={goBack}
         >
           ← Back to Borrowers
         </Button>
       </div>
 
       {/* ========================================================
-          HEADER
+          BORROWER HEADER
       ======================================================== */}
 
       <Card>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+
           <div className="flex items-center gap-4">
+
             <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center text-xl font-bold text-teal-700">
               {initials ||
                 details.fullName?.[0] ||
@@ -220,6 +256,7 @@ export default function BorrowerDetailsPage() {
             </div>
 
             <div>
+
               <h1 className="text-2xl font-extrabold text-gray-900">
                 {details.fullName ||
                   `${details.firstName ?? ''} ${details.lastName ?? ''}`}
@@ -230,6 +267,7 @@ export default function BorrowerDetailsPage() {
               </p>
 
               <div className="flex flex-wrap gap-2 mt-2">
+
                 {details.status && (
                   <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
                     {details.status}
@@ -247,91 +285,83 @@ export default function BorrowerDetailsPage() {
                     Currently Overdue
                   </span>
                 )}
+
               </div>
             </div>
           </div>
 
           <div className="text-left md:text-right">
+
             <div className="text-xs uppercase tracking-wider text-gray-400 font-bold">
               Credit Score
             </div>
 
             <div
               className={`text-3xl font-extrabold ${
-                (details.creditScore ?? 0) >=
-                700
+                (details.creditScore ?? 0) >= 700
                   ? 'text-teal-600'
-                  : (details.creditScore ?? 0) >=
-                    600
+                  : (details.creditScore ?? 0) >= 600
                   ? 'text-yellow-600'
                   : 'text-red-500'
               }`}
             >
-              {details.creditScore ??
-                '—'}
+              {details.creditScore ?? '—'}
             </div>
+
           </div>
+
         </div>
       </Card>
 
       {/* ========================================================
-          PROFILE INFORMATION
+          PROFILE
       ======================================================== */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* PERSONAL */}
+
         <Card>
+
           <div className="font-bold text-gray-900 mb-4">
             Personal Information
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
             <Info
               label="First Name"
-              value={
-                details.firstName
-              }
+              value={details.firstName}
             />
 
             <Info
               label="Last Name"
-              value={
-                details.lastName
-              }
+              value={details.lastName}
             />
 
             <Info
               label="Email"
-              value={
-                details.email
-              }
+              value={details.email}
             />
 
             <Info
               label="Phone"
-              value={
-                details.phone
-              }
+              value={details.phone}
             />
 
             <Info
               label="Alternate Phone"
-              value={
-                details.alternatePhone
-              }
+              value={details.alternatePhone}
             />
 
             <Info
               label="National ID"
-              value={
-                details.nationalId
-              }
+              value={details.nationalId}
             />
 
             <Info
               label="Passport"
-              value={
-                details.passportNumber
-              }
+              value={details.passportNumber}
             />
 
             <Info
@@ -348,59 +378,50 @@ export default function BorrowerDetailsPage() {
 
             <Info
               label="Gender"
-              value={
-                details.gender
-              }
+              value={details.gender}
             />
 
             <Info
               label="Marital Status"
-              value={
-                details.maritalStatus
-              }
+              value={details.maritalStatus}
             />
 
             <Info
               label="Nationality"
-              value={
-                details.nationality
-              }
+              value={details.nationality}
             />
 
             <Info
               label="Country"
-              value={
-                details.country
-              }
+              value={details.country}
             />
+
           </div>
         </Card>
 
+        {/* EMPLOYMENT */}
+
         <Card>
+
           <div className="font-bold text-gray-900 mb-4">
             Employment & Finance
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
             <Info
               label="Employer"
-              value={
-                details.employerName
-              }
+              value={details.employerName}
             />
 
             <Info
               label="Employment Type"
-              value={
-                details.employmentType
-              }
+              value={details.employmentType}
             />
 
             <Info
               label="Job Title"
-              value={
-                details.jobTitle
-              }
+              value={details.jobTitle}
             />
 
             <Info
@@ -432,9 +453,7 @@ export default function BorrowerDetailsPage() {
 
             <Info
               label="Credit Bureau"
-              value={
-                details.creditBureau
-              }
+              value={details.creditBureau}
             />
 
             <Info
@@ -448,8 +467,10 @@ export default function BorrowerDetailsPage() {
                   : undefined
               }
             />
+
           </div>
         </Card>
+
       </div>
 
       {/* ========================================================
@@ -457,6 +478,7 @@ export default function BorrowerDetailsPage() {
       ======================================================== */}
 
       <Card>
+
         <div className="font-bold text-gray-900 mb-4">
           Address
         </div>
@@ -465,18 +487,21 @@ export default function BorrowerDetailsPage() {
           {details.address ||
             'No address recorded.'}
         </div>
+
       </Card>
 
       {/* ========================================================
-          PORTFOLIO SUMMARY
+          LOAN PORTFOLIO
       ======================================================== */}
 
       <div>
+
         <h2 className="text-lg font-bold text-gray-900 mb-3">
           Loan Portfolio
         </h2>
 
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+
           <StatCard
             label="Total Loans"
             value={formatNumber(
@@ -554,6 +579,7 @@ export default function BorrowerDetailsPage() {
               locale,
             )}
           />
+
         </div>
       </div>
 
@@ -562,11 +588,13 @@ export default function BorrowerDetailsPage() {
       ======================================================== */}
 
       <Card>
+
         <div className="font-bold text-gray-900 mb-4">
           Repayment Performance
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+
           <Performance
             label="Total Payments"
             value={formatNumber(
@@ -622,6 +650,7 @@ export default function BorrowerDetailsPage() {
               details.maximumDaysPastDue,
             )}
           />
+
         </div>
       </Card>
 
@@ -630,23 +659,21 @@ export default function BorrowerDetailsPage() {
       ======================================================== */}
 
       <Card>
+
         <div className="font-bold text-gray-900 mb-4">
           Risk & Behaviour
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+
           <Info
             label="Risk Level"
-            value={
-              details.riskLevel
-            }
+            value={details.riskLevel}
           />
 
           <Info
             label="Repayment Behaviour"
-            value={
-              details.repaymentBehaviour
-            }
+            value={details.repaymentBehaviour}
           />
 
           <Info
@@ -684,6 +711,7 @@ export default function BorrowerDetailsPage() {
                 : 'No'
             }
           />
+
         </div>
       </Card>
 
@@ -692,7 +720,9 @@ export default function BorrowerDetailsPage() {
       ======================================================== */}
 
       <Card>
+
         <div className="flex items-center justify-between mb-4">
+
           <div className="font-bold text-gray-900">
             Loans
           </div>
@@ -700,6 +730,7 @@ export default function BorrowerDetailsPage() {
           <span className="text-sm text-gray-500">
             {loans.length} loans
           </span>
+
         </div>
 
         {loans.length === 0 ? (
@@ -708,9 +739,12 @@ export default function BorrowerDetailsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
+
             <table className="w-full text-sm">
+
               <thead>
                 <tr className="border-b text-left">
+
                   <th className="py-3 px-2">
                     Reference
                   </th>
@@ -738,35 +772,36 @@ export default function BorrowerDetailsPage() {
                   <th className="py-3 px-2">
                     Maturity
                   </th>
+
                 </tr>
               </thead>
 
               <tbody>
+
                 {loans.map(
                   (
                     loan: BorrowerLoanSummary,
                   ) => (
                     <tr
-                      key={
-                        loan.loanId
-                      }
+                      key={loan.loanId}
                       className="border-b hover:bg-gray-50"
                     >
+
                       <td className="py-3 px-2 font-semibold">
                         {loan.referenceNumber ??
                           `#${loan.loanId}`}
                       </td>
 
                       <td className="py-3 px-2">
-                        {loan.loanType ??
-                          '—'}
+                        {loan.loanType ?? '—'}
                       </td>
 
                       <td className="py-3 px-2">
+
                         <span className="px-2 py-1 rounded-full bg-gray-100 text-xs font-semibold">
-                          {loan.status ??
-                            '—'}
+                          {loan.status ?? '—'}
                         </span>
+
                       </td>
 
                       <td className="py-3 px-2">
@@ -788,8 +823,7 @@ export default function BorrowerDetailsPage() {
                       </td>
 
                       <td className="py-3 px-2">
-                        {loan.interestRate !=
-                        null
+                        {loan.interestRate != null
                           ? `${loan.interestRate}%`
                           : '—'}
                       </td>
@@ -802,21 +836,26 @@ export default function BorrowerDetailsPage() {
                             )
                           : '—'}
                       </td>
+
                     </tr>
                   ),
                 )}
+
               </tbody>
             </table>
+
           </div>
         )}
       </Card>
 
       {/* ========================================================
-          PAYMENTS
+          PAYMENT HISTORY
       ======================================================== */}
 
       <Card>
+
         <div className="flex items-center justify-between mb-4">
+
           <div className="font-bold text-gray-900">
             Payment History
           </div>
@@ -824,6 +863,7 @@ export default function BorrowerDetailsPage() {
           <span className="text-sm text-gray-500">
             {payments.length} payments
           </span>
+
         </div>
 
         {payments.length === 0 ? (
@@ -832,9 +872,12 @@ export default function BorrowerDetailsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
+
             <table className="w-full text-sm">
+
               <thead>
                 <tr className="border-b text-left">
+
                   <th className="py-3 px-2">
                     Date
                   </th>
@@ -866,21 +909,23 @@ export default function BorrowerDetailsPage() {
                   <th className="py-3 px-2">
                     Late
                   </th>
+
                 </tr>
               </thead>
 
               <tbody>
+
                 {payments.map(
                   (
                     payment: BorrowerPayment,
                   ) => (
                     <tr
-                      key={
-                        payment.paymentId
-                      }
+                      key={payment.paymentId}
                       className="border-b hover:bg-gray-50"
                     >
+
                       <td className="py-3 px-2">
+
                         {(
                           payment.paidDate ??
                           payment.paymentDate ??
@@ -894,6 +939,7 @@ export default function BorrowerDetailsPage() {
                               locale,
                             )
                           : '—'}
+
                       </td>
 
                       <td className="py-3 px-2 font-semibold">
@@ -940,32 +986,35 @@ export default function BorrowerDetailsPage() {
                       </td>
 
                       <td className="py-3 px-2">
+
                         <span className="px-2 py-1 rounded-full bg-gray-100 text-xs font-semibold">
-                          {payment.status ??
-                            '—'}
+                          {payment.status ?? '—'}
                         </span>
+
                       </td>
 
                       <td className="py-3 px-2">
+
                         {payment.isLate ||
-                        payment.onTime ===
-                          false
-                          ? (
-                            <span className="text-red-600 font-semibold">
-                              Yes
-                            </span>
-                          )
-                          : (
-                            <span className="text-teal-600 font-semibold">
-                              No
-                            </span>
-                          )}
+                        payment.onTime === false ? (
+                          <span className="text-red-600 font-semibold">
+                            Yes
+                          </span>
+                        ) : (
+                          <span className="text-teal-600 font-semibold">
+                            No
+                          </span>
+                        )}
+
                       </td>
+
                     </tr>
                   ),
                 )}
+
               </tbody>
             </table>
+
           </div>
         )}
       </Card>
@@ -983,11 +1032,12 @@ export default function BorrowerDetailsPage() {
           )}
         </div>
       )}
+
     </div>
   );
 }
 
-/**
+/*
  * ============================================================
  * INFO COMPONENT
  * ============================================================
@@ -1002,6 +1052,7 @@ function Info({
 }) {
   return (
     <div>
+
       <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-1">
         {label}
       </div>
@@ -1013,11 +1064,12 @@ function Info({
           ? String(value)
           : '—'}
       </div>
+
     </div>
   );
 }
 
-/**
+/*
  * ============================================================
  * STAT CARD
  * ============================================================
@@ -1032,6 +1084,7 @@ function StatCard({
 }) {
   return (
     <Card>
+
       <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold">
         {label}
       </div>
@@ -1039,11 +1092,12 @@ function StatCard({
       <div className="text-xl font-extrabold text-gray-900 mt-2">
         {value}
       </div>
+
     </Card>
   );
 }
 
-/**
+/*
  * ============================================================
  * PERFORMANCE
  * ============================================================
@@ -1058,6 +1112,7 @@ function Performance({
 }) {
   return (
     <div>
+
       <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold">
         {label}
       </div>
@@ -1065,6 +1120,7 @@ function Performance({
       <div className="text-lg font-bold text-gray-900 mt-1">
         {value}
       </div>
+
     </div>
   );
 }
