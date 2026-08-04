@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.lowagie.text.Document;
@@ -7,7 +6,7 @@ import com.lowagie.text.PageSize;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.Phrase;
 import com.lowagie.text.Rectangle;
-
+import com.lowagie.text.pdf.ColumnText;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfPageEventHelper;
@@ -24,7 +23,6 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
-
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import org.springframework.stereotype.Service;
@@ -33,6 +31,8 @@ import java.awt.Color;
 
 import java.io.ByteArrayOutputStream;
 
+import java.math.BigDecimal;
+
 import java.text.DecimalFormat;
 
 import java.time.LocalDate;
@@ -40,14 +40,23 @@ import java.time.LocalDateTime;
 
 import java.time.format.DateTimeFormatter;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Shared export service for Excel, PDF and CSV-compatible report data.
+ * Shared export service for Excel and PDF reports.
  *
- * The service is intentionally generic so the same exporter can be reused
- * by BNR, CRB, accounting and other regulatory reports.
+ * This service is intentionally generic so it can be reused by:
+ *
+ * - BNR reports
+ * - CRB reports
+ * - Accounting reports
+ * - Loan reports
+ * - Borrower reports
+ * - Payment reports
+ * - Regulatory reports
+ * - Other reporting modules
  */
 @Service
 public class ReportExportService {
@@ -58,22 +67,41 @@ public class ReportExportService {
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-    private static final DecimalFormat MONEY_FORMAT =
-            new DecimalFormat("#,##0.00");
-
-    private static final DecimalFormat INTEGER_FORMAT =
-            new DecimalFormat("#,##0");
+    private static final String DEFAULT_REPORT_TITLE =
+            "Report";
 
 
     // ============================================================
     // EXCEL
     // ============================================================
 
+    /**
+     * Generate an Excel XLSX report.
+     *
+     * @param title   report title
+     * @param columns column names
+     * @param rows    report data
+     * @return XLSX file as byte array
+     */
     public byte[] toExcel(
             String title,
             List<String> columns,
             List<Map<String, Object>> rows
     ) {
+
+        String reportTitle =
+                normalizeTitle(title);
+
+        List<String> safeColumns =
+                columns == null
+                        ? Collections.emptyList()
+                        : columns;
+
+        List<Map<String, Object>> safeRows =
+                rows == null
+                        ? Collections.emptyList()
+                        : rows;
+
 
         try (
                 Workbook workbook = new XSSFWorkbook();
@@ -81,19 +109,18 @@ public class ReportExportService {
                         new ByteArrayOutputStream()
         ) {
 
-            String safeSheetName =
-                    title == null || title.isBlank()
-                            ? "Report"
-                            : title;
+            // ====================================================
+            // SHEET NAME
+            // ====================================================
 
-            if (safeSheetName.length() > 31) {
-                safeSheetName =
-                        safeSheetName.substring(0, 31);
-            }
+            String sheetName =
+                    createSafeExcelSheetName(
+                            reportTitle
+                    );
 
             Sheet sheet =
                     workbook.createSheet(
-                            safeSheetName
+                            sheetName
                     );
 
 
@@ -102,121 +129,37 @@ public class ReportExportService {
             // ====================================================
 
             CellStyle titleStyle =
-                    workbook.createCellStyle();
-
-            org.apache.poi.ss.usermodel.Font titleFont =
-                    workbook.createFont();
-
-            titleFont.setBold(true);
-            titleFont.setFontHeightInPoints((short) 16);
-
-            titleStyle.setFont(titleFont);
-
-            titleStyle.setAlignment(
-                    HorizontalAlignment.LEFT
-            );
-
+                    createExcelTitleStyle(
+                            workbook
+                    );
 
             CellStyle headerStyle =
-                    workbook.createCellStyle();
-
-            org.apache.poi.ss.usermodel.Font headerFont =
-                    workbook.createFont();
-
-            headerFont.setBold(true);
-            headerFont.setColor(
-                    IndexedColors.WHITE.getIndex()
-            );
-            headerFont.setFontHeightInPoints(
-                    (short) 10
-            );
-
-            headerStyle.setFont(headerFont);
-
-            headerStyle.setFillForegroundColor(
-                    IndexedColors.DARK_BLUE.getIndex()
-            );
-
-            headerStyle.setFillPattern(
-                    FillPatternType.SOLID_FOREGROUND
-            );
-
-            headerStyle.setAlignment(
-                    HorizontalAlignment.CENTER
-            );
-
-            headerStyle.setVerticalAlignment(
-                    VerticalAlignment.CENTER
-            );
-
-            headerStyle.setWrapText(true);
-
-            headerStyle.setBorderBottom(
-                    BorderStyle.THIN
-            );
-
+                    createExcelHeaderStyle(
+                            workbook
+                    );
 
             CellStyle bodyStyle =
-                    workbook.createCellStyle();
-
-            bodyStyle.setVerticalAlignment(
-                    VerticalAlignment.CENTER
-            );
-
-            bodyStyle.setWrapText(true);
-
+                    createExcelBodyStyle(
+                            workbook
+                    );
 
             CellStyle numberStyle =
-                    workbook.createCellStyle();
-
-            numberStyle.cloneStyleFrom(
-                    bodyStyle
-            );
-
-            numberStyle.setAlignment(
-                    HorizontalAlignment.RIGHT
-            );
-
-            DataFormat dataFormat =
-                    workbook.createDataFormat();
-
-            numberStyle.setDataFormat(
-                    dataFormat.getFormat(
-                            "#,##0.00"
-                    )
-            );
-
+                    createExcelNumberStyle(
+                            workbook,
+                            bodyStyle
+                    );
 
             CellStyle integerStyle =
-                    workbook.createCellStyle();
-
-            integerStyle.cloneStyleFrom(
-                    bodyStyle
-            );
-
-            integerStyle.setAlignment(
-                    HorizontalAlignment.RIGHT
-            );
-
-            integerStyle.setDataFormat(
-                    dataFormat.getFormat(
-                            "#,##0"
-                    )
-            );
-
+                    createExcelIntegerStyle(
+                            workbook,
+                            bodyStyle
+                    );
 
             CellStyle dateStyle =
-                    workbook.createCellStyle();
-
-            dateStyle.cloneStyleFrom(
-                    bodyStyle
-            );
-
-            dateStyle.setDataFormat(
-                    dataFormat.getFormat(
-                            "yyyy-mm-dd"
-                    )
-            );
+                    createExcelDateStyle(
+                            workbook,
+                            bodyStyle
+                    );
 
 
             // ====================================================
@@ -226,17 +169,13 @@ public class ReportExportService {
             Row titleRow =
                     sheet.createRow(0);
 
-            titleRow.setHeightInPoints(
-                    24
-            );
+            titleRow.setHeightInPoints(24);
 
             Cell titleCell =
                     titleRow.createCell(0);
 
             titleCell.setCellValue(
-                    title == null
-                            ? "Report"
-                            : title
+                    reportTitle
             );
 
             titleCell.setCellStyle(
@@ -251,21 +190,24 @@ public class ReportExportService {
             Row headerRow =
                     sheet.createRow(2);
 
-            headerRow.setHeightInPoints(
-                    35
-            );
+            headerRow.setHeightInPoints(35);
 
             for (
                     int index = 0;
-                    index < columns.size();
+                    index < safeColumns.size();
                     index++
             ) {
 
                 Cell cell =
                         headerRow.createCell(index);
 
+                String column =
+                        safeColumns.get(index);
+
                 cell.setCellValue(
-                        columns.get(index)
+                        column == null
+                                ? ""
+                                : column
                 );
 
                 cell.setCellStyle(
@@ -282,26 +224,30 @@ public class ReportExportService {
 
             for (
                     Map<String, Object> rowData :
-                            rows
+                            safeRows
             ) {
+
+                if (rowData == null) {
+                    rowData =
+                            Collections.emptyMap();
+                }
 
                 Row row =
                         sheet.createRow(
                                 rowNumber++
                         );
 
-                row.setHeightInPoints(
-                        24
-                );
+                row.setHeightInPoints(24);
+
 
                 for (
                         int columnIndex = 0;
-                        columnIndex < columns.size();
+                        columnIndex < safeColumns.size();
                         columnIndex++
                 ) {
 
                     String column =
-                            columns.get(
+                            safeColumns.get(
                                     columnIndex
                             );
 
@@ -341,17 +287,20 @@ public class ReportExportService {
             // FILTER
             // ====================================================
 
-            if (!columns.isEmpty()) {
+            if (!safeColumns.isEmpty()) {
+
+                int lastDataRow =
+                        Math.max(
+                                2,
+                                rowNumber - 1
+                        );
 
                 sheet.setAutoFilter(
                         new org.apache.poi.ss.util.CellRangeAddress(
                                 2,
-                                Math.max(
-                                        2,
-                                        rowNumber - 1
-                                ),
+                                lastDataRow,
                                 0,
-                                columns.size() - 1
+                                safeColumns.size() - 1
                         )
                 );
             }
@@ -363,7 +312,7 @@ public class ReportExportService {
 
             for (
                     int i = 0;
-                    i < columns.size();
+                    i < safeColumns.size();
                     i++
             ) {
 
@@ -373,7 +322,7 @@ public class ReportExportService {
                         sheet.getColumnWidth(i);
 
                 int minimumWidth =
-                        3500;
+                        3000;
 
                 int maximumWidth =
                         12000;
@@ -394,16 +343,23 @@ public class ReportExportService {
             }
 
 
-            // Specific wider columns
+            // ====================================================
+            // SPECIFIC COLUMN WIDTHS
+            // ====================================================
 
             for (
                     int i = 0;
-                    i < columns.size();
+                    i < safeColumns.size();
                     i++
             ) {
 
                 String column =
-                        columns.get(i);
+                        safeColumns.get(i);
+
+                if (column == null) {
+                    continue;
+                }
+
 
                 if (
                         "Full Name".equals(column)
@@ -421,6 +377,7 @@ public class ReportExportService {
                     );
                 }
 
+
                 if (
                         "Loan Amount".equals(column)
                                 ||
@@ -432,11 +389,39 @@ public class ReportExportService {
                             5000
                     );
                 }
+
+
+                if (
+                        "Borrower ID".equals(column)
+                                ||
+                        "Days Past Due".equals(column)
+                                ||
+                        "Credit Score".equals(column)
+                ) {
+
+                    sheet.setColumnWidth(
+                            i,
+                            4000
+                    );
+                }
+
+
+                if (
+                        "Phone".equals(column)
+                                ||
+                        "Branch".equals(column)
+                ) {
+
+                    sheet.setColumnWidth(
+                            i,
+                            5000
+                    );
+                }
             }
 
 
             // ====================================================
-            // WRITE
+            // WRITE WORKBOOK
             // ====================================================
 
             workbook.write(
@@ -448,11 +433,208 @@ public class ReportExportService {
         } catch (Exception exception) {
 
             throw new RuntimeException(
-                    "Failed to generate Excel export: "
-                            + exception.getMessage(),
+                    "Failed to generate Excel export",
                     exception
             );
         }
+    }
+
+
+    // ============================================================
+    // EXCEL TITLE STYLE
+    // ============================================================
+
+    private CellStyle createExcelTitleStyle(
+            Workbook workbook
+    ) {
+
+        CellStyle style =
+                workbook.createCellStyle();
+
+        org.apache.poi.ss.usermodel.Font font =
+                workbook.createFont();
+
+        font.setBold(true);
+
+        font.setFontHeightInPoints(
+                (short) 16
+        );
+
+        style.setFont(font);
+
+        style.setAlignment(
+                HorizontalAlignment.LEFT
+        );
+
+        return style;
+    }
+
+
+    // ============================================================
+    // EXCEL HEADER STYLE
+    // ============================================================
+
+    private CellStyle createExcelHeaderStyle(
+            Workbook workbook
+    ) {
+
+        CellStyle style =
+                workbook.createCellStyle();
+
+        org.apache.poi.ss.usermodel.Font font =
+                workbook.createFont();
+
+        font.setBold(true);
+
+        font.setColor(
+                IndexedColors.WHITE.getIndex()
+        );
+
+        font.setFontHeightInPoints(
+                (short) 10
+        );
+
+        style.setFont(font);
+
+        style.setFillForegroundColor(
+                IndexedColors.DARK_BLUE.getIndex()
+        );
+
+        style.setFillPattern(
+                FillPatternType.SOLID_FOREGROUND
+        );
+
+        style.setAlignment(
+                HorizontalAlignment.CENTER
+        );
+
+        style.setVerticalAlignment(
+                VerticalAlignment.CENTER
+        );
+
+        style.setWrapText(true);
+
+        style.setBorderBottom(
+                BorderStyle.THIN
+        );
+
+        return style;
+    }
+
+
+    // ============================================================
+    // EXCEL BODY STYLE
+    // ============================================================
+
+    private CellStyle createExcelBodyStyle(
+            Workbook workbook
+    ) {
+
+        CellStyle style =
+                workbook.createCellStyle();
+
+        style.setVerticalAlignment(
+                VerticalAlignment.CENTER
+        );
+
+        style.setWrapText(true);
+
+        return style;
+    }
+
+
+    // ============================================================
+    // EXCEL NUMBER STYLE
+    // ============================================================
+
+    private CellStyle createExcelNumberStyle(
+            Workbook workbook,
+            CellStyle bodyStyle
+    ) {
+
+        CellStyle style =
+                workbook.createCellStyle();
+
+        style.cloneStyleFrom(
+                bodyStyle
+        );
+
+        style.setAlignment(
+                HorizontalAlignment.RIGHT
+        );
+
+        DataFormat dataFormat =
+                workbook.createDataFormat();
+
+        style.setDataFormat(
+                dataFormat.getFormat(
+                        "#,##0.00"
+                )
+        );
+
+        return style;
+    }
+
+
+    // ============================================================
+    // EXCEL INTEGER STYLE
+    // ============================================================
+
+    private CellStyle createExcelIntegerStyle(
+            Workbook workbook,
+            CellStyle bodyStyle
+    ) {
+
+        CellStyle style =
+                workbook.createCellStyle();
+
+        style.cloneStyleFrom(
+                bodyStyle
+        );
+
+        style.setAlignment(
+                HorizontalAlignment.RIGHT
+        );
+
+        DataFormat dataFormat =
+                workbook.createDataFormat();
+
+        style.setDataFormat(
+                dataFormat.getFormat(
+                        "#,##0"
+                )
+        );
+
+        return style;
+    }
+
+
+    // ============================================================
+    // EXCEL DATE STYLE
+    // ============================================================
+
+    private CellStyle createExcelDateStyle(
+            Workbook workbook,
+            CellStyle bodyStyle
+    ) {
+
+        CellStyle style =
+                workbook.createCellStyle();
+
+        style.cloneStyleFrom(
+                bodyStyle
+        );
+
+        DataFormat dataFormat =
+                workbook.createDataFormat();
+
+        style.setDataFormat(
+                dataFormat.getFormat(
+                        "yyyy-mm-dd"
+                )
+        );
+
+        return style;
     }
 
 
@@ -481,6 +663,10 @@ public class ReportExportService {
         }
 
 
+        // ========================================================
+        // LOCAL DATE
+        // ========================================================
+
         if (value instanceof LocalDate date) {
 
             cell.setCellValue(
@@ -496,6 +682,10 @@ public class ReportExportService {
             return;
         }
 
+
+        // ========================================================
+        // LOCAL DATE TIME
+        // ========================================================
 
         if (
                 value instanceof LocalDateTime dateTime
@@ -515,6 +705,10 @@ public class ReportExportService {
         }
 
 
+        // ========================================================
+        // INTEGER TYPES
+        // ========================================================
+
         if (
                 value instanceof Byte
                         ||
@@ -525,9 +719,11 @@ public class ReportExportService {
                 value instanceof Long
         ) {
 
+            Number number =
+                    (Number) value;
+
             cell.setCellValue(
-                    ((Number) value)
-                            .doubleValue()
+                    number.doubleValue()
             );
 
             cell.setCellStyle(
@@ -538,15 +734,43 @@ public class ReportExportService {
         }
 
 
+        // ========================================================
+        // BIG INTEGER
+        // ========================================================
+
         if (
-                value instanceof Float
-                        ||
-                value instanceof Double
+                value instanceof java.math.BigInteger
         ) {
 
             cell.setCellValue(
-                    ((Number) value)
-                            .doubleValue()
+                    value.toString()
+            );
+
+            cell.setCellStyle(
+                    bodyStyle
+            );
+
+            return;
+        }
+
+
+        // ========================================================
+        // DECIMAL / DOUBLE / FLOAT
+        // ========================================================
+
+        if (
+                value instanceof BigDecimal
+                        ||
+                value instanceof Double
+                        ||
+                value instanceof Float
+        ) {
+
+            Number number =
+                    (Number) value;
+
+            cell.setCellValue(
+                    number.doubleValue()
             );
 
             cell.setCellStyle(
@@ -556,6 +780,10 @@ public class ReportExportService {
             return;
         }
 
+
+        // ========================================================
+        // OTHER NUMBER TYPES
+        // ========================================================
 
         if (value instanceof Number number) {
 
@@ -571,6 +799,10 @@ public class ReportExportService {
         }
 
 
+        // ========================================================
+        // STRING / BOOLEAN / ENUM / OTHER
+        // ========================================================
+
         cell.setCellValue(
                 value.toString()
         );
@@ -585,6 +817,15 @@ public class ReportExportService {
     // PDF
     // ============================================================
 
+    /**
+     * Generate a PDF report.
+     *
+     * @param title            report title
+     * @param columns          column names
+     * @param rows             report rows
+     * @param organizationName organization / tenant name
+     * @return PDF file as byte array
+     */
     public byte[] toPdf(
             String title,
             List<String> columns,
@@ -592,17 +833,50 @@ public class ReportExportService {
             String organizationName
     ) {
 
+        String reportTitle =
+                normalizeTitle(title);
+
+        String safeOrganizationName =
+                organizationName == null
+                        ? ""
+                        : organizationName;
+
+        List<String> safeColumns =
+                columns == null
+                        ? Collections.emptyList()
+                        : columns;
+
+        List<Map<String, Object>> safeRows =
+                rows == null
+                        ? Collections.emptyList()
+                        : rows;
+
+
+        // ========================================================
+        // VALIDATE COLUMNS
+        // ========================================================
+
+        if (safeColumns.isEmpty()) {
+
+            throw new IllegalArgumentException(
+                    "Cannot generate PDF report without columns"
+            );
+        }
+
+
         try (
                 ByteArrayOutputStream output =
                         new ByteArrayOutputStream()
         ) {
 
+            // ====================================================
+            // PAGE SIZE
+            // ====================================================
+
             /*
-             * CRB reports contain many columns.
-             *
-             * A4 portrait is too narrow.
-             *
-             * Landscape gives us much more horizontal space.
+             * CRB and regulatory reports normally contain many
+             * columns. Landscape A4 gives much more horizontal
+             * space than portrait.
              */
             Rectangle pageSize =
                     PageSize.A4.rotate();
@@ -627,7 +901,7 @@ public class ReportExportService {
 
             writer.setPageEvent(
                     new ReportPageEvent(
-                            title
+                            reportTitle
                     )
             );
 
@@ -692,21 +966,22 @@ public class ReportExportService {
             // ORGANIZATION
             // ====================================================
 
-            Paragraph organizationParagraph =
-                    new Paragraph(
-                            organizationName == null
-                                    ? ""
-                                    : organizationName,
-                            organizationFont
-                    );
+            if (!safeOrganizationName.isBlank()) {
 
-            organizationParagraph.setSpacingAfter(
-                    3
-            );
+                Paragraph organizationParagraph =
+                        new Paragraph(
+                                safeOrganizationName,
+                                organizationFont
+                        );
 
-            document.add(
-                    organizationParagraph
-            );
+                organizationParagraph.setSpacingAfter(
+                        3
+                );
+
+                document.add(
+                        organizationParagraph
+                );
+            }
 
 
             // ====================================================
@@ -715,9 +990,7 @@ public class ReportExportService {
 
             Paragraph titleParagraph =
                     new Paragraph(
-                            title == null
-                                    ? "Report"
-                                    : title,
+                            reportTitle,
                             titleFont
                     );
 
@@ -734,15 +1007,18 @@ public class ReportExportService {
             // GENERATED INFORMATION
             // ====================================================
 
+            String generatedAt =
+                    LocalDateTime.now()
+                            .format(
+                                    DATE_TIME_FORMAT
+                            );
+
             Paragraph generatedParagraph =
                     new Paragraph(
                             "Generated: "
-                                    + LocalDateTime.now()
-                                    .format(
-                                            DATE_TIME_FORMAT
-                                    )
+                                    + generatedAt
                                     + "    |    Records: "
-                                    + rows.size(),
+                                    + safeRows.size(),
                             metadataFont
                     );
 
@@ -761,33 +1037,31 @@ public class ReportExportService {
 
             PdfPTable table =
                     new PdfPTable(
-                            columns.size()
+                            safeColumns.size()
                     );
-
 
             table.setWidthPercentage(
                     100
             );
-
 
             table.setHeaderRows(
                     1
             );
 
 
-            /*
-             * Explicit relative widths prevent OpenPDF from giving
-             * every column the same amount of space.
-             */
+            // ====================================================
+            // COLUMN WIDTHS
+            // ====================================================
+
             float[] widths =
                     buildPdfColumnWidths(
-                            columns
+                            safeColumns
                     );
 
 
             if (
                     widths.length ==
-                            columns.size()
+                            safeColumns.size()
             ) {
 
                 table.setWidths(
@@ -802,13 +1076,18 @@ public class ReportExportService {
 
             for (
                     String column :
-                            columns
+                            safeColumns
             ) {
+
+                String safeColumn =
+                        column == null
+                                ? ""
+                                : column;
 
                 PdfPCell cell =
                         new PdfPCell(
                                 new Phrase(
-                                        column,
+                                        safeColumn,
                                         headerFont
                                 )
                         );
@@ -853,9 +1132,15 @@ public class ReportExportService {
 
 
             for (
-                    Map<String, Object> rowData :
-                            rows
+                    Map<String, Object> originalRowData :
+                            safeRows
             ) {
+
+                Map<String, Object> rowData =
+                        originalRowData == null
+                                ? Collections.emptyMap()
+                                : originalRowData;
+
 
                 alternate =
                         !alternate;
@@ -863,7 +1148,7 @@ public class ReportExportService {
 
                 for (
                         String column :
-                                columns
+                                safeColumns
                 ) {
 
                     Object value =
@@ -875,7 +1160,7 @@ public class ReportExportService {
                     PdfPCell cell =
                             new PdfPCell(
                                     new Phrase(
-                                            formatCell(
+                                            formatPdfCell(
                                                     value
                                             ),
                                             bodyFont
@@ -887,12 +1172,10 @@ public class ReportExportService {
                             3.5f
                     );
 
-
                     cell.setLeading(
                             8,
                             0
                     );
-
 
                     cell.setVerticalAlignment(
                             Element.ALIGN_MIDDLE
@@ -936,6 +1219,10 @@ public class ReportExportService {
             }
 
 
+            // ====================================================
+            // ADD TABLE
+            // ====================================================
+
             document.add(
                     table
             );
@@ -953,8 +1240,7 @@ public class ReportExportService {
         } catch (Exception exception) {
 
             throw new RuntimeException(
-                    "Failed to generate PDF export: "
-                            + exception.getMessage(),
+                    "Failed to generate PDF export",
                     exception
             );
         }
@@ -969,6 +1255,12 @@ public class ReportExportService {
             List<String> columns
     ) {
 
+        if (columns == null || columns.isEmpty()) {
+
+            return new float[0];
+        }
+
+
         float[] widths =
                 new float[columns.size()];
 
@@ -981,6 +1273,15 @@ public class ReportExportService {
 
             String column =
                     columns.get(i);
+
+
+            if (column == null) {
+
+                widths[i] =
+                        1.0f;
+
+                continue;
+            }
 
 
             widths[i] =
@@ -1069,17 +1370,22 @@ public class ReportExportService {
 
 
     // ============================================================
-    // CELL FORMAT
+    // PDF CELL FORMAT
     // ============================================================
 
-    private String formatCell(
+    private String formatPdfCell(
             Object value
     ) {
 
         if (value == null) {
+
             return "";
         }
 
+
+        // ========================================================
+        // LOCAL DATE
+        // ========================================================
 
         if (value instanceof LocalDate date) {
 
@@ -1088,6 +1394,10 @@ public class ReportExportService {
             );
         }
 
+
+        // ========================================================
+        // LOCAL DATE TIME
+        // ========================================================
 
         if (
                 value instanceof LocalDateTime dateTime
@@ -1099,18 +1409,40 @@ public class ReportExportService {
         }
 
 
+        // ========================================================
+        // BIG DECIMAL
+        // ========================================================
+
+        if (value instanceof BigDecimal decimal) {
+
+            return formatMoney(
+                    decimal
+            );
+        }
+
+
+        // ========================================================
+        // FLOAT / DOUBLE
+        // ========================================================
+
         if (
                 value instanceof Double
                         ||
                 value instanceof Float
         ) {
 
-            return MONEY_FORMAT.format(
-                    ((Number) value)
-                            .doubleValue()
+            return formatMoney(
+                    BigDecimal.valueOf(
+                            ((Number) value)
+                                    .doubleValue()
+                    )
             );
         }
 
+
+        // ========================================================
+        // INTEGER TYPES
+        // ========================================================
 
         if (
                 value instanceof Integer
@@ -1122,14 +1454,193 @@ public class ReportExportService {
                 value instanceof Byte
         ) {
 
-            return INTEGER_FORMAT.format(
+            return formatInteger(
                     ((Number) value)
                             .longValue()
             );
         }
 
 
+        // ========================================================
+        // OTHER NUMBER
+        // ========================================================
+
+        if (value instanceof Number number) {
+
+            return formatMoney(
+                    BigDecimal.valueOf(
+                            number.doubleValue()
+                    )
+            );
+        }
+
+
+        // ========================================================
+        // STRING / ENUM / BOOLEAN / OTHER
+        // ========================================================
+
         return value.toString();
+    }
+
+
+    // ============================================================
+    // MONEY FORMAT
+    // ============================================================
+
+    private String formatMoney(
+            BigDecimal value
+    ) {
+
+        if (value == null) {
+
+            return "";
+        }
+
+
+        DecimalFormat formatter =
+                new DecimalFormat(
+                        "#,##0.00"
+                );
+
+        return formatter.format(
+                value
+        );
+    }
+
+
+    // ============================================================
+    // INTEGER FORMAT
+    // ============================================================
+
+    private String formatInteger(
+            long value
+    ) {
+
+        DecimalFormat formatter =
+                new DecimalFormat(
+                        "#,##0"
+                );
+
+        return formatter.format(
+                value
+        );
+    }
+
+
+    // ============================================================
+    // NORMALIZE TITLE
+    // ============================================================
+
+    private String normalizeTitle(
+            String title
+    ) {
+
+        if (
+                title == null
+                        ||
+                title.isBlank()
+        ) {
+
+            return DEFAULT_REPORT_TITLE;
+        }
+
+
+        return title.trim();
+    }
+
+
+    // ============================================================
+    // SAFE EXCEL SHEET NAME
+    // ============================================================
+
+    private String createSafeExcelSheetName(
+            String title
+    ) {
+
+        String safeName =
+                title == null
+                        ? DEFAULT_REPORT_TITLE
+                        : title.trim();
+
+
+        if (safeName.isBlank()) {
+
+            safeName =
+                    DEFAULT_REPORT_TITLE;
+        }
+
+
+        /*
+         * Excel does not allow:
+         *
+         * :
+         * \
+         * /
+         * ?
+         * *
+         * [
+         * ]
+         */
+        safeName =
+                safeName.replace(
+                        ':',
+                        '_'
+                );
+
+        safeName =
+                safeName.replace(
+                        '\\',
+                        '_'
+                );
+
+        safeName =
+                safeName.replace(
+                        '/',
+                        '_'
+                );
+
+        safeName =
+                safeName.replace(
+                        '?',
+                        '_'
+                );
+
+        safeName =
+                safeName.replace(
+                        '*',
+                        '_'
+                );
+
+        safeName =
+                safeName.replace(
+                        '[',
+                        '_'
+                );
+
+        safeName =
+                safeName.replace(
+                        ']',
+                        '_'
+                );
+
+
+        if (safeName.length() > 31) {
+
+            safeName =
+                    safeName.substring(
+                            0,
+                            31
+                    );
+        }
+
+
+        if (safeName.isBlank()) {
+
+            return DEFAULT_REPORT_TITLE;
+        }
+
+
+        return safeName;
     }
 
 
@@ -1158,7 +1669,8 @@ public class ReportExportService {
 
             this.title =
                     title == null
-                            ? "Report"
+                            || title.isBlank()
+                            ? DEFAULT_REPORT_TITLE
                             : title;
         }
 
@@ -1182,14 +1694,19 @@ public class ReportExportService {
                     );
 
 
-            com.lowagie.text.pdf.ColumnText.showTextAligned(
+            float centerX =
+                    (
+                            document.left()
+                                    +
+                            document.right()
+                    ) / 2;
+
+
+            ColumnText.showTextAligned(
                     writer.getDirectContent(),
                     Element.ALIGN_CENTER,
                     phrase,
-                    (
-                            document.left()
-                                    + document.right()
-                    ) / 2,
+                    centerX,
                     18,
                     0
             );

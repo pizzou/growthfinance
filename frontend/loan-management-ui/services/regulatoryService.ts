@@ -1,9 +1,8 @@
+
 import api from '@/services/api';
 
 
-// ============================================================
-// TYPES
-// ============================================================
+
 
 export type RegulatoryPeriod =
   | 'DAILY'
@@ -13,12 +12,10 @@ export type RegulatoryPeriod =
   | 'YEARLY'
   | 'CUSTOM';
 
-
 export type ExportFormat =
   | 'pdf'
   | 'xlsx'
   | 'csv';
-
 
 export type RegulatoryApiClientType =
   | 'BNR'
@@ -36,16 +33,14 @@ export interface BnrReportParams {
   to?: string;
 }
 
-
 export interface CreditBureauReportParams {
+  borrowerId?: number;
   branchId?: number;
   from?: string;
   to?: string;
 }
 
-
-type QueryParams =
-  Record<string, unknown>;
+type QueryParams = Record<string, unknown>;
 
 
 // ============================================================
@@ -58,9 +53,7 @@ export interface BreakdownRow {
   amount: number;
 }
 
-
-export type BnrBreakdownRow =
-  BreakdownRow;
+export type BnrBreakdownRow = BreakdownRow;
 
 
 // ============================================================
@@ -68,7 +61,6 @@ export type BnrBreakdownRow =
 // ============================================================
 
 export interface BnrSummary {
-
   organizationId?: number;
   organizationName?: string;
 
@@ -209,7 +201,6 @@ export interface BnrSummary {
 // ============================================================
 
 export interface FinancialStatementRow {
-
   code?: string;
   name?: string;
 
@@ -221,9 +212,7 @@ export interface FinancialStatementRow {
   [key: string]: unknown;
 }
 
-
 export interface BnrFinancialStatementReport {
-
   organizationId?: number;
   organizationName?: string;
 
@@ -273,7 +262,6 @@ export interface BnrFinancialStatementReport {
   trialBalanceBalanced?: boolean;
 }
 
-
 export type BnrFinancialStatement =
   BnrFinancialStatementReport;
 
@@ -283,7 +271,6 @@ export type BnrFinancialStatement =
 // ============================================================
 
 export interface CreditRecord {
-
   borrowerId?: number;
 
   fullName?: string;
@@ -313,7 +300,6 @@ export interface CreditRecord {
   currency?: string;
 }
 
-
 export type CreditBureauRecord =
   CreditRecord;
 
@@ -323,7 +309,6 @@ export type CreditBureauRecord =
 // ============================================================
 
 export interface RegulatoryApiClient {
-
   id: number;
 
   name: string;
@@ -359,75 +344,58 @@ export interface RegulatoryApiClient {
 // ============================================================
 
 interface ApiEnvelope<T = unknown> {
-
   success?: boolean;
-
   message?: string;
-
   data?: T;
-
   content?: T;
 }
 
 
 // ============================================================
-// PAYLOAD
+// PAYLOAD UNWRAP
 // ============================================================
 
 function unwrap<T>(
   response: unknown
 ): T {
 
-  let current =
-    response;
-
+  let current = response;
 
   if (
     current &&
     typeof current === 'object'
   ) {
-
     const value =
       current as {
         data?: unknown;
       };
 
-
     if (
       value.data !== undefined
     ) {
-
-      current =
-        value.data;
+      current = value.data;
     }
   }
-
 
   if (
     current &&
     typeof current === 'object'
   ) {
-
     const envelope =
       current as ApiEnvelope<T>;
-
 
     if (
       envelope.data !== undefined
     ) {
-
       return envelope.data as T;
     }
-
 
     if (
       envelope.content !== undefined
     ) {
-
       return envelope.content as T;
     }
   }
-
 
   return current as T;
 }
@@ -441,30 +409,23 @@ function unwrapArray<T>(
   response: unknown
 ): T[] {
 
-  let current =
-    response;
-
+  let current = response;
 
   if (
     current &&
     typeof current === 'object'
   ) {
-
     const value =
       current as {
         data?: unknown;
       };
 
-
     if (
       value.data !== undefined
     ) {
-
-      current =
-        value.data;
+      current = value.data;
     }
   }
-
 
   for (
     let depth = 0;
@@ -475,19 +436,15 @@ function unwrapArray<T>(
     if (
       Array.isArray(current)
     ) {
-
       return current as T[];
     }
-
 
     if (
       !current ||
       typeof current !== 'object'
     ) {
-
       return [];
     }
-
 
     const value =
       current as {
@@ -498,110 +455,78 @@ function unwrapArray<T>(
         records?: unknown;
       };
 
-
     if (
       Array.isArray(value.data)
     ) {
-
       return value.data as T[];
     }
-
 
     if (
       Array.isArray(value.content)
     ) {
-
       return value.content as T[];
     }
-
 
     if (
       Array.isArray(value.items)
     ) {
-
       return value.items as T[];
     }
-
 
     if (
       Array.isArray(value.results)
     ) {
-
       return value.results as T[];
     }
-
 
     if (
       Array.isArray(value.records)
     ) {
-
       return value.records as T[];
     }
-
 
     if (
       value.data &&
       typeof value.data === 'object'
     ) {
-
-      current =
-        value.data;
-
+      current = value.data;
       continue;
     }
-
 
     if (
       value.content &&
       typeof value.content === 'object'
     ) {
-
-      current =
-        value.content;
-
+      current = value.content;
       continue;
     }
-
 
     if (
       value.items &&
       typeof value.items === 'object'
     ) {
-
-      current =
-        value.items;
-
+      current = value.items;
       continue;
     }
-
 
     if (
       value.results &&
       typeof value.results === 'object'
     ) {
-
-      current =
-        value.results;
-
+      current = value.results;
       continue;
     }
-
 
     if (
       value.records &&
       typeof value.records === 'object'
     ) {
-
-      current =
-        value.records;
-
+      current = value.records;
       continue;
     }
 
-
     return [];
   }
-
 
   return [];
 }
@@ -617,42 +542,33 @@ function toQueryParams(
 
   const query: QueryParams = {};
 
-
   if (
     params?.branchId !== undefined
   ) {
-
     query.branchId =
       params.branchId;
   }
 
-
   if (
     params?.period
   ) {
-
     query.period =
       params.period;
   }
 
-
   if (
     params?.from
   ) {
-
     query.from =
       params.from;
   }
 
-
   if (
     params?.to
   ) {
-
     query.to =
       params.to;
   }
-
 
   return query;
 }
@@ -668,35 +584,60 @@ function toCreditBureauQueryParams(
 
   const query: QueryParams = {};
 
+  if (
+    params?.borrowerId !== undefined
+  ) {
+    query.borrowerId =
+      params.borrowerId;
+  }
 
   if (
     params?.branchId !== undefined
   ) {
-
     query.branchId =
       params.branchId;
   }
 
-
   if (
     params?.from
   ) {
-
     query.from =
       params.from;
   }
 
-
   if (
     params?.to
   ) {
-
     query.to =
       params.to;
   }
 
-
   return query;
+}
+
+
+// ============================================================
+// FILE CONTENT TYPE
+// ============================================================
+
+function getExportContentType(
+  format: ExportFormat
+): string {
+
+  switch (format) {
+
+    case 'pdf':
+      return 'application/pdf';
+
+    case 'csv':
+      return 'text/csv;charset=utf-8';
+
+    case 'xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 
@@ -710,37 +651,119 @@ function triggerDownload(
 ): void {
 
   const url =
-    window.URL.createObjectURL(
-      blob
-    );
-
+    window.URL.createObjectURL(blob);
 
   const anchor =
     document.createElement('a');
 
+  anchor.href = url;
+  anchor.download = filename;
 
-  anchor.href =
-    url;
-
-
-  anchor.download =
-    filename;
-
-
-  document.body.appendChild(
-    anchor
-  );
-
+  document.body.appendChild(anchor);
 
   anchor.click();
 
-
   anchor.remove();
 
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(url);
+  }, 1000);
+}
 
-  window.URL.revokeObjectURL(
-    url
-  );
+
+// ============================================================
+// EXPORT ERROR PARSER
+// ============================================================
+
+async function getBlobErrorMessage(
+  error: unknown
+): Promise<string | null> {
+
+  if (
+    !error ||
+    typeof error !== 'object'
+  ) {
+    return null;
+  }
+
+  const value =
+    error as {
+      response?: {
+        status?: number;
+        data?: unknown;
+      };
+
+      message?: string;
+    };
+
+  const response =
+    value.response;
+
+  if (!response) {
+    return value.message ?? null;
+  }
+
+  if (
+    response.data instanceof Blob
+  ) {
+
+    try {
+
+      const text =
+        await response.data.text();
+
+      if (!text) {
+        return null;
+      }
+
+      try {
+
+        const json =
+          JSON.parse(text) as {
+            message?: string;
+            error?: string;
+            detail?: string;
+          };
+
+        return (
+          json.message ||
+          json.error ||
+          json.detail ||
+          null
+        );
+
+      } catch {
+
+        return text;
+      }
+
+    } catch {
+
+      return null;
+    }
+  }
+
+  if (
+    response.data &&
+    typeof response.data === 'object'
+  ) {
+
+    const data =
+      response.data as {
+        message?: string;
+        error?: string;
+        detail?: string;
+      };
+
+    return (
+      data.message ||
+      data.error ||
+      data.detail ||
+      null
+    );
+  }
+
+  return null;
 }
 
 
@@ -767,7 +790,6 @@ export const regulatoryApi = {
         }
       );
 
-
     return unwrap<BnrSummary>(
       response
     );
@@ -791,12 +813,10 @@ export const regulatoryApi = {
         }
       );
 
-
     const report =
       unwrap<BnrFinancialStatementReport>(
         response
       );
-
 
     return {
       ...report,
@@ -846,7 +866,6 @@ export const regulatoryApi = {
         }
       );
 
-
     return unwrapArray<BreakdownRow>(
       response
     );
@@ -869,7 +888,6 @@ export const regulatoryApi = {
             toQueryParams(params),
         }
       );
-
 
     return unwrapArray<BreakdownRow>(
       response
@@ -894,7 +912,6 @@ export const regulatoryApi = {
         }
       );
 
-
     return unwrapArray<BreakdownRow>(
       response
     );
@@ -910,45 +927,51 @@ export const regulatoryApi = {
     params?: BnrReportParams
   ): Promise<void> {
 
-    const response =
-      await api.get(
-        '/regulatory/bnr/export',
-        {
-          params: {
-            ...toQueryParams(params),
-            format,
-          },
+    try {
 
-          responseType: 'blob',
-        }
+      const response =
+        await api.get(
+          '/regulatory/bnr/export',
+          {
+            params: {
+              ...toQueryParams(params),
+              format,
+            },
+
+            responseType: 'blob',
+          }
+        );
+
+      const blob =
+        response.data instanceof Blob
+          ? response.data
+          : new Blob(
+              [response.data],
+              {
+                type:
+                  getExportContentType(format),
+              }
+            );
+
+      triggerDownload(
+        blob,
+        `bnr-summary.${format}`
       );
 
+    } catch (error) {
 
-    const blob =
-      response.data instanceof Blob
-        ? response.data
-        : new Blob(
-            [response.data],
-            {
-              type:
-                format === 'pdf'
-                  ? 'application/pdf'
-                  : format === 'csv'
-                    ? 'text/csv'
-                    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            }
-          );
+      console.error(
+        'BNR export failed:',
+        error
+      );
 
-
-    triggerDownload(
-      blob,
-      `bnr-summary.${format}`
-    );
+      throw error;
+    }
   },
 
 
   // ==========================================================
-  // REGULATORY CREDIT BUREAU PREVIEW
+  // CREDIT BUREAU PREVIEW
   // ==========================================================
 
   async creditBureauPreview(
@@ -960,12 +983,9 @@ export const regulatoryApi = {
         '/regulatory/credit-bureau/preview',
         {
           params:
-            toCreditBureauQueryParams(
-              params
-            ),
+            toCreditBureauQueryParams(params),
         }
       );
-
 
     return unwrapArray<CreditRecord>(
       response
@@ -974,7 +994,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // REGULATORY CREDIT BUREAU EXPORT
+  // CREDIT BUREAU EXPORT
   // ==========================================================
 
   async creditBureauExport(
@@ -982,48 +1002,91 @@ export const regulatoryApi = {
     params?: CreditBureauReportParams
   ): Promise<void> {
 
-    const response =
-      await api.get(
-        '/regulatory/credit-bureau/export',
+    try {
+
+      const queryParams =
+        toCreditBureauQueryParams(
+          params
+        );
+
+      console.log(
+        'Credit Bureau export request:',
         {
-          params: {
-            ...toCreditBureauQueryParams(
-              params
-            ),
-
-            format,
-          },
-
-          responseType: 'blob',
+          format,
+          queryParams,
         }
       );
 
+      const response =
+        await api.get(
+          '/regulatory/credit-bureau/export',
+          {
+            params: {
+              ...queryParams,
+              format,
+            },
 
-    const blob =
-      response.data instanceof Blob
-        ? response.data
-        : new Blob(
-            [response.data],
-            {
-              type:
-                format === 'pdf'
-                  ? 'application/pdf'
-                  : format === 'csv'
-                    ? 'text/csv'
-                    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            }
+            responseType: 'blob',
+
+            validateStatus:
+              (status) =>
+                status >= 200 &&
+                status < 300,
+          }
+        );
+
+      const blob =
+        response.data instanceof Blob
+          ? response.data
+          : new Blob(
+              [response.data],
+              {
+                type:
+                  getExportContentType(format),
+              }
+            );
+
+      triggerDownload(
+        blob,
+        `credit-bureau-export.${format}`
+      );
+
+    } catch (error) {
+
+      console.error(
+        'Credit Bureau export failed:',
+        error
+      );
+
+      const blobMessage =
+        await getBlobErrorMessage(
+          error
+        );
+
+      if (
+        blobMessage
+      ) {
+
+        const enhancedError =
+          new Error(
+            blobMessage
           );
 
+        Object.assign(
+          enhancedError,
+          error
+        );
 
-    triggerDownload(
-      blob,
-      `credit-bureau-export.${format}`
-    );
+        throw enhancedError;
+      }
+
+      throw error;
+    }
   },
 
 
   // ==========================================================
-  // ACTUAL CREDIT BUREAU HISTORY
+  // CREDIT BUREAU HISTORY
   // ==========================================================
 
   async creditBureauHistory(
@@ -1035,7 +1098,6 @@ export const regulatoryApi = {
         `/credit-bureau/borrowers/${borrowerId}/history`
       );
 
-
     return unwrapArray<unknown>(
       response
     );
@@ -1043,7 +1105,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // ACTUAL CREDIT BUREAU LATEST
+  // CREDIT BUREAU LATEST
   // ==========================================================
 
   async creditBureauLatest(
@@ -1056,7 +1118,6 @@ export const regulatoryApi = {
         await api.get(
           `/credit-bureau/borrowers/${borrowerId}/latest`
         );
-
 
       return (
         unwrap<unknown>(
@@ -1072,7 +1133,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // ACTUAL CREDIT BUREAU CHECK
+  // CREDIT BUREAU CHECK
   // ==========================================================
 
   async runCreditBureauCheck(
@@ -1085,7 +1146,6 @@ export const regulatoryApi = {
         undefined
       );
 
-
     return unwrap<unknown>(
       response
     );
@@ -1096,13 +1156,13 @@ export const regulatoryApi = {
   // API CLIENTS
   // ==========================================================
 
-  async listApiClients(): Promise<RegulatoryApiClient[]> {
+  async listApiClients():
+    Promise<RegulatoryApiClient[]> {
 
     const response =
       await api.get(
         '/regulatory/api-clients'
       );
-
 
     return unwrapArray<RegulatoryApiClient>(
       response
@@ -1136,7 +1196,6 @@ export const regulatoryApi = {
         data
       );
 
-
     return unwrap<RegulatoryApiClient>(
       response
     );
@@ -1160,7 +1219,6 @@ export const regulatoryApi = {
         }
       );
 
-
     return unwrap<RegulatoryApiClient>(
       response
     );
@@ -1168,7 +1226,7 @@ export const regulatoryApi = {
 
 
   // ==========================================================
-  // ERROR
+  // ERROR MESSAGE
   // ==========================================================
 
   getErrorMessage(
@@ -1185,55 +1243,69 @@ export const regulatoryApi = {
       const value =
         error as {
           response?: {
+            status?: number;
+
             data?: {
               message?: string;
               error?: string;
+              detail?: string;
             };
           };
 
           message?: string;
         };
 
-
       const message =
         value.response
           ?.data
           ?.message;
 
-
       if (
         typeof message === 'string' &&
         message
       ) {
-
         return message;
       }
-
 
       const errorMessage =
         value.response
           ?.data
           ?.error;
 
-
       if (
         typeof errorMessage === 'string' &&
         errorMessage
       ) {
-
         return errorMessage;
       }
 
+      const detail =
+        value.response
+          ?.data
+          ?.detail;
+
+      if (
+        typeof detail === 'string' &&
+        detail
+      ) {
+        return detail;
+      }
 
       if (
         typeof value.message === 'string' &&
         value.message
       ) {
-
         return value.message;
       }
-    }
 
+      if (
+        value.response?.status === 403
+      ) {
+        return (
+          'Access denied (403). Your account does not have permission to export Credit Bureau reports.'
+        );
+      }
+    }
 
     return fallback;
   },
