@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import { borrowerApi } from '@/services/api';
 import { Borrower } from '@/types';
@@ -40,6 +40,10 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 
 export default function BorrowersPage() {
+  const router = useRouter();
+
+  const { currency, locale } = useAuth();
+
   const [borrowers, setBorrowers] = useState<Borrower[]>([]);
   const [total, setTotal] = useState(0);
 
@@ -52,8 +56,6 @@ export default function BorrowersPage() {
 
   const [msg, setMsg] = useState('');
   const [saving, setSaving] = useState(false);
-
-  const { currency, locale } = useAuth();
 
   const blank = {
     firstName: '',
@@ -90,11 +92,12 @@ export default function BorrowersPage() {
     setLoading(true);
 
     try {
-      const response: any = await borrowerApi.list(
-        page,
-        20,
-        q,
-      );
+      const response: any =
+        await borrowerApi.list(
+          page,
+          20,
+          q,
+        );
 
       const content = Array.isArray(response)
         ? response
@@ -142,17 +145,20 @@ export default function BorrowersPage() {
       await borrowerApi.create({
         ...form,
 
-        monthlyIncome: form.monthlyIncome
-          ? Number(form.monthlyIncome)
-          : undefined,
+        monthlyIncome:
+          form.monthlyIncome
+            ? Number(form.monthlyIncome)
+            : undefined,
 
-        monthlyExpenses: form.monthlyExpenses
-          ? Number(form.monthlyExpenses)
-          : undefined,
+        monthlyExpenses:
+          form.monthlyExpenses
+            ? Number(form.monthlyExpenses)
+            : undefined,
 
-        creditScore: form.creditScore
-          ? Number(form.creditScore)
-          : undefined,
+        creditScore:
+          form.creditScore
+            ? Number(form.creditScore)
+            : undefined,
       });
 
       setAddOpen(false);
@@ -198,46 +204,75 @@ export default function BorrowersPage() {
 
   /**
    * ============================================================
-   * BORROWER DETAILS URL
+   * OPEN BORROWER DETAILS
    * ============================================================
    *
    * IMPORTANT:
    *
-   * Every borrower MUST use:
+   * Correct route:
    *
    * /dashboard/borrowers/{id}
    *
-   * NEVER:
+   * Example:
    *
-   * /dashboard/{id}
+   * /dashboard/borrowers/1
    */
 
-  const borrowerDetailsUrl = (
+  const openBorrower = (
     borrowerId: number | string,
   ) => {
     const id = Number(borrowerId);
 
-    if (!Number.isFinite(id) || id <= 0) {
-      return '/dashboard/borrowers';
+    if (
+      !Number.isFinite(id) ||
+      id <= 0
+    ) {
+      console.error(
+        'Invalid borrower ID:',
+        borrowerId,
+      );
+
+      return;
     }
 
-    return `/dashboard/borrowers/${id}`;
+    router.push(
+      `/dashboard/borrowers/${id}`,
+    );
+  };
+
+  /**
+   * ============================================================
+   * SEARCH
+   * ============================================================
+   */
+
+  const handleSearch = (
+    value: string,
+  ) => {
+    setQ(value);
+    setPage(0);
   };
 
   return (
-    <div>
+    <div className="space-y-6">
+
       {/* ======================================================
-          HEADER
+          PAGE HEADER
       ====================================================== */}
 
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-extrabold text-gray-900">
-            Borrowers
-          </h1>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 
-          <p className="text-sm text-gray-500 mt-0.5">
-            {formatNumber(total)} registered clients
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-7 rounded-full bg-teal-500" />
+
+            <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">
+              Borrowers
+            </h1>
+          </div>
+
+          <p className="mt-1 ml-4 text-sm text-gray-500">
+            Manage your customers, credit profiles and repayment relationships.
           </p>
         </div>
 
@@ -253,239 +288,393 @@ export default function BorrowersPage() {
       </div>
 
       {/* ======================================================
-          SEARCH
+          SUMMARY CARDS
       ====================================================== */}
 
-      <div className="flex gap-3 mb-4">
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-            🔍
-          </span>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
-          <Input
-            placeholder="Search name, email, ID…"
-            className="pl-9 w-64"
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(0);
-            }}
-          />
-        </div>
+        <SummaryCard
+          label="Total Borrowers"
+          value={formatNumber(total)}
+          description="Registered customers"
+          icon="👥"
+        />
+
+        <SummaryCard
+          label="Current Page"
+          value={formatNumber(
+            borrowers.length,
+          )}
+          description="Borrowers displayed"
+          icon="📋"
+        />
+
+        <SummaryCard
+          label="Page"
+          value={String(page + 1)}
+          description="Current result page"
+          icon="↔"
+        />
+
+        <SummaryCard
+          label="Records Per Page"
+          value="20"
+          description="Maximum displayed"
+          icon="▦"
+        />
+
       </div>
+
+      {/* ======================================================
+          SEARCH / FILTER BAR
+      ====================================================== */}
+
+      <Card>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+          <div>
+            <h2 className="font-bold text-gray-900">
+              Borrower Directory
+            </h2>
+
+            <p className="text-xs text-gray-500 mt-1">
+              Search and select a borrower to view their complete financial profile.
+            </p>
+          </div>
+
+          <div className="relative w-full lg:w-96">
+
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              🔍
+            </span>
+
+            <Input
+              placeholder="Search name, email or national ID..."
+              className="pl-10 w-full"
+              value={q}
+              onChange={(e) =>
+                handleSearch(
+                  e.target.value,
+                )
+              }
+            />
+
+            {q && (
+              <button
+                type="button"
+                onClick={() =>
+                  handleSearch('')
+                }
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+              >
+                ×
+              </button>
+            )}
+
+          </div>
+        </div>
+      </Card>
 
       {/* ======================================================
           BORROWER TABLE
       ====================================================== */}
 
-      <Card>
+      <Card className="overflow-hidden">
+
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+
+          <div>
+            <h2 className="font-bold text-gray-900">
+              All Borrowers
+            </h2>
+
+            <p className="text-xs text-gray-500 mt-0.5">
+              {formatNumber(
+                borrowers.length,
+              )}{' '}
+              records shown
+            </p>
+          </div>
+
+          {q && (
+            <div className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full">
+              Search: "{q}"
+            </div>
+          )}
+
+        </div>
+
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+          <div className="flex flex-col items-center justify-center py-20">
+
+            <div className="w-9 h-9 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+
+            <p className="text-sm text-gray-500 mt-4">
+              Loading borrowers...
+            </p>
+
+          </div>
+        ) : borrowers.length === 0 ? (
+          <div className="py-20 text-center">
+
+            <div className="mx-auto w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center text-2xl">
+              👥
+            </div>
+
+            <h3 className="mt-4 font-bold text-gray-900">
+              No borrowers found
+            </h3>
+
+            <p className="mt-1 text-sm text-gray-500">
+              {q
+                ? 'Try a different search term.'
+                : 'There are no borrowers registered yet.'}
+            </p>
+
+            {q && (
+              <button
+                type="button"
+                onClick={() =>
+                  handleSearch('')
+                }
+                className="mt-4 text-sm font-semibold text-teal-600 hover:text-teal-700"
+              >
+                Clear search
+              </button>
+            )}
+
           </div>
         ) : (
-          <Table>
-            <Thead>
-              <tr>
-                <Th>Name</Th>
-                <Th>Email</Th>
-                <Th>Phone</Th>
-                <Th>National ID</Th>
-                <Th>Employer</Th>
-                <Th>Income</Th>
-                <Th>Credit Score</Th>
-                <Th>Country</Th>
-                <Th>Since</Th>
-              </tr>
-            </Thead>
+          <div className="overflow-x-auto">
 
-            <Tbody>
-              {borrowers.length === 0 ? (
-                <EmptyRow
-                  cols={9}
-                  message="No borrowers found"
-                />
-              ) : (
-                borrowers.map(
-                  (borrower: Borrower) => {
-                    const detailsUrl =
-                      borrowerDetailsUrl(
-                        borrower.id,
-                      );
+            <Table>
+
+              <Thead>
+                <tr>
+                  <Th>Borrower</Th>
+                  <Th>Contact</Th>
+                  <Th>Identification</Th>
+                  <Th>Employment</Th>
+                  <Th>Income</Th>
+                  <Th>Credit</Th>
+                  <Th>Country</Th>
+                  <Th>Registered</Th>
+                </tr>
+              </Thead>
+
+              <Tbody>
+
+                {borrowers.map(
+                  (
+                    borrower: Borrower,
+                  ) => {
+
+                    const initials =
+                      `${borrower.firstName?.[0] ?? ''}${borrower.lastName?.[0] ?? ''}`
+                        .toUpperCase();
+
+                    const score =
+                      borrower.creditScore ??
+                      0;
 
                     return (
                       <Tr
                         key={borrower.id}
-                        className="hover:bg-gray-50"
+                        className="group cursor-pointer hover:bg-gray-50 transition-colors"
+                        onClick={() =>
+                          openBorrower(
+                            borrower.id,
+                          )
+                        }
                       >
-                        {/* ==================================================
-                            NAME
-                        ================================================== */}
+
+                        {/* BORROWER */}
 
                         <Td>
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-sm font-bold text-teal-700 flex-shrink-0">
-                                {borrower.firstName?.[0] ??
-                                  ''}
-                                {borrower.lastName?.[0] ??
-                                  ''}
-                              </div>
 
-                              <div>
-                                <div className="font-semibold text-sm text-gray-900 hover:text-teal-600">
-                                  {borrower.firstName}{' '}
-                                  {borrower.lastName}
-                                </div>
+                          <div className="flex items-center gap-3 min-w-[190px]">
 
-                                <div className="text-xs text-gray-400">
-                                  {borrower.employmentType ??
-                                    '—'}
-                                </div>
-                              </div>
+                            <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center text-sm font-bold text-teal-700 flex-shrink-0">
+                              {initials ||
+                                '?'}
                             </div>
-                          </Link>
+
+                            <div className="min-w-0">
+
+                              <div className="font-bold text-sm text-gray-900 truncate">
+                                {borrower.firstName}{' '}
+                                {borrower.lastName}
+                              </div>
+
+                              <div className="text-xs text-gray-400 mt-0.5">
+                                Borrower #
+                                {borrower.id}
+                              </div>
+
+                            </div>
+
+                          </div>
+
                         </Td>
 
-                        {/* ==================================================
-                            EMAIL
-                        ================================================== */}
-
-                        <Td className="text-sm text-gray-600">
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            {borrower.email ?? '—'}
-                          </Link>
-                        </Td>
-
-                        {/* ==================================================
-                            PHONE
-                        ================================================== */}
-
-                        <Td className="text-sm text-gray-600">
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            {borrower.phone ?? '—'}
-                          </Link>
-                        </Td>
-
-                        {/* ==================================================
-                            NATIONAL ID
-                        ================================================== */}
+                        {/* CONTACT */}
 
                         <Td>
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            <code className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                              {borrower.nationalId ??
-                                '—'}
-                            </code>
-                          </Link>
+
+                          <div className="space-y-1 min-w-[170px]">
+
+                            <div className="text-sm text-gray-700 truncate">
+                              {borrower.email ||
+                                'No email'}
+                            </div>
+
+                            <div className="text-xs text-gray-400">
+                              {borrower.phone ||
+                                'No phone'}
+                            </div>
+
+                          </div>
+
                         </Td>
 
-                        {/* ==================================================
-                            EMPLOYER
-                        ================================================== */}
-
-                        <Td className="text-sm text-gray-600">
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            {borrower.employerName ??
-                              '—'}
-                          </Link>
-                        </Td>
-
-                        {/* ==================================================
-                            INCOME
-                        ================================================== */}
-
-                        <Td className="font-semibold text-sm">
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            {formatCurrency(
-                              borrower.monthlyIncome,
-                              currency,
-                              locale,
-                            )}
-                          </Link>
-                        </Td>
-
-                        {/* ==================================================
-                            CREDIT SCORE
-                        ================================================== */}
+                        {/* IDENTIFICATION */}
 
                         <Td>
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            <span
-                              className={`font-bold text-sm ${
-                                (borrower.creditScore ??
-                                  0) >= 700
-                                  ? 'text-teal-600'
-                                  : (borrower.creditScore ??
-                                        0) >=
-                                      600
-                                    ? 'text-yellow-600'
-                                    : 'text-red-500'
-                              }`}
-                            >
-                              {borrower.creditScore ??
+
+                          <div className="min-w-[130px]">
+
+                            <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
+                              National ID
+                            </div>
+
+                            <div className="mt-1">
+
+                              {borrower.nationalId ? (
+                                <code className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-md">
+                                  {
+                                    borrower.nationalId
+                                  }
+                                </code>
+                              ) : (
+                                <span className="text-sm text-gray-400">
+                                  —
+                                </span>
+                              )}
+
+                            </div>
+
+                          </div>
+
+                        </Td>
+
+                        {/* EMPLOYMENT */}
+
+                        <Td>
+
+                          <div className="min-w-[150px]">
+
+                            <div className="font-medium text-sm text-gray-800">
+                              {borrower.employerName ||
+                                'Not provided'}
+                            </div>
+
+                            <div className="text-xs text-gray-400 mt-1">
+                              {borrower.employmentType ||
+                                'Employment unknown'}
+                            </div>
+
+                          </div>
+
+                        </Td>
+
+                        {/* INCOME */}
+
+                        <Td>
+
+                          <div className="min-w-[120px]">
+
+                            <div className="text-xs text-gray-400 uppercase tracking-wide font-semibold">
+                              Monthly
+                            </div>
+
+                            <div className="font-bold text-sm text-gray-900 mt-1">
+                              {formatCurrency(
+                                borrower.monthlyIncome,
+                                currency,
+                                locale,
+                              )}
+                            </div>
+
+                          </div>
+
+                        </Td>
+
+                        {/* CREDIT SCORE */}
+
+                        <Td>
+
+                          <div className="min-w-[100px]">
+
+                            <CreditBadge
+                              score={
+                                borrower.creditScore
+                              }
+                            />
+
+                          </div>
+
+                        </Td>
+
+                        {/* COUNTRY */}
+
+                        <Td>
+
+                          <div className="min-w-[80px]">
+
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs font-semibold text-gray-600">
+                              {borrower.country ||
                                 '—'}
                             </span>
-                          </Link>
+
+                          </div>
+
                         </Td>
 
-                        {/* ==================================================
-                            COUNTRY
-                        ================================================== */}
+                        {/* CREATED */}
 
-                        <Td className="text-xs text-gray-500">
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            {borrower.country ?? '—'}
-                          </Link>
+                        <Td>
+
+                          <div className="min-w-[100px]">
+
+                            <div className="text-sm text-gray-600">
+                              {borrower.createdAt
+                                ? formatDate(
+                                    borrower.createdAt,
+                                    locale,
+                                  )
+                                : '—'}
+                            </div>
+
+                            <div className="text-xs text-teal-600 mt-1 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                              View profile →
+                            </div>
+
+                          </div>
+
                         </Td>
 
-                        {/* ==================================================
-                            CREATED DATE
-                        ================================================== */}
-
-                        <Td className="text-xs text-gray-400">
-                          <Link
-                            href={detailsUrl}
-                            className="block"
-                          >
-                            {formatDate(
-                              borrower.createdAt,
-                              locale,
-                            )}
-                          </Link>
-                        </Td>
                       </Tr>
                     );
                   },
-                )
-              )}
-            </Tbody>
-          </Table>
+                )}
+
+              </Tbody>
+
+            </Table>
+
+          </div>
         )}
+
       </Card>
 
       {/* ======================================================
@@ -493,34 +682,62 @@ export default function BorrowersPage() {
       ====================================================== */}
 
       {total > 20 && (
-        <div className="flex items-center justify-between mt-4">
-          <Button
-            variant="secondary"
-            disabled={page === 0}
-            onClick={() =>
-              setPage(
-                Math.max(0, page - 1),
-              )
-            }
-          >
-            Previous
-          </Button>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
 
-          <span className="text-sm text-gray-500">
-            Page {page + 1}
-          </span>
+          <div className="text-sm text-gray-500">
+            Showing{' '}
+            <span className="font-semibold text-gray-700">
+              {page * 20 + 1}
+            </span>{' '}
+            to{' '}
+            <span className="font-semibold text-gray-700">
+              {Math.min(
+                (page + 1) * 20,
+                total,
+              )}
+            </span>{' '}
+            of{' '}
+            <span className="font-semibold text-gray-700">
+              {formatNumber(total)}
+            </span>
+          </div>
 
-          <Button
-            variant="secondary"
-            disabled={
-              (page + 1) * 20 >= total
-            }
-            onClick={() =>
-              setPage(page + 1)
-            }
-          >
-            Next
-          </Button>
+          <div className="flex items-center gap-2">
+
+            <Button
+              variant="secondary"
+              disabled={page === 0}
+              onClick={() =>
+                setPage(
+                  Math.max(
+                    0,
+                    page - 1,
+                  ),
+                )
+              }
+            >
+              ← Previous
+            </Button>
+
+            <div className="px-4 py-2 rounded-lg bg-gray-100 text-sm font-semibold text-gray-700">
+              Page {page + 1}
+            </div>
+
+            <Button
+              variant="secondary"
+              disabled={
+                (page + 1) * 20 >=
+                total
+              }
+              onClick={() =>
+                setPage(page + 1)
+              }
+            >
+              Next →
+            </Button>
+
+          </div>
+
         </div>
       )}
 
@@ -557,29 +774,36 @@ export default function BorrowersPage() {
           </>
         }
       >
-        <form onSubmit={handleAdd}>
+
+        <form
+          onSubmit={handleAdd}
+          className="space-y-5"
+        >
+
           {msg && (
             <Alert type="error">
               {msg}
             </Alert>
           )}
 
-          {/* ==================================================
-              PERSONAL INFORMATION
-          ================================================== */}
+          {/* PERSONAL */}
 
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-            Personal Information
-          </div>
+          <FormSection
+            title="Personal Information"
+            description="Basic identity and contact information."
+          />
 
           <FormRow>
+
             <FormGroup
               label="First Name"
               required
             >
               <Input
                 required
-                value={form.firstName}
+                value={
+                  form.firstName
+                }
                 onChange={set(
                   'firstName',
                 )}
@@ -592,35 +816,47 @@ export default function BorrowersPage() {
             >
               <Input
                 required
-                value={form.lastName}
+                value={
+                  form.lastName
+                }
                 onChange={set(
                   'lastName',
                 )}
               />
             </FormGroup>
+
           </FormRow>
 
           <FormRow>
+
             <FormGroup label="Email">
               <Input
                 type="email"
                 value={form.email}
-                onChange={set('email')}
+                onChange={set(
+                  'email',
+                )}
               />
             </FormGroup>
 
             <FormGroup label="Phone">
               <Input
                 value={form.phone}
-                onChange={set('phone')}
+                onChange={set(
+                  'phone',
+                )}
               />
             </FormGroup>
+
           </FormRow>
 
           <FormRow>
+
             <FormGroup label="National ID">
               <Input
-                value={form.nationalId}
+                value={
+                  form.nationalId
+                }
                 onChange={set(
                   'nationalId',
                 )}
@@ -630,19 +866,25 @@ export default function BorrowersPage() {
             <FormGroup label="Date of Birth">
               <Input
                 type="date"
-                value={form.dateOfBirth}
+                value={
+                  form.dateOfBirth
+                }
                 onChange={set(
                   'dateOfBirth',
                 )}
               />
             </FormGroup>
+
           </FormRow>
 
           <FormRow>
+
             <FormGroup label="Gender">
               <Select
                 value={form.gender}
-                onChange={set('gender')}
+                onChange={set(
+                  'gender',
+                )}
               >
                 <option value="">
                   Select…
@@ -653,24 +895,30 @@ export default function BorrowersPage() {
                   'Female',
                   'Other',
                   'Prefer not to say',
-                ].map((gender) => (
-                  <option
-                    key={gender}
-                    value={gender}
-                  >
-                    {gender}
-                  </option>
-                ))}
+                ].map(
+                  (gender) => (
+                    <option
+                      key={gender}
+                      value={gender}
+                    >
+                      {gender}
+                    </option>
+                  ),
+                )}
+
               </Select>
             </FormGroup>
 
             <FormGroup label="Nationality">
               <Select
-                value={form.nationality}
+                value={
+                  form.nationality
+                }
                 onChange={set(
                   'nationality',
                 )}
               >
+
                 {COUNTRIES.map(
                   (country) => (
                     <option
@@ -681,26 +929,32 @@ export default function BorrowersPage() {
                         country.code
                       }
                     >
-                      {country.name}
+                      {
+                        country.name
+                      }
                     </option>
                   ),
                 )}
+
               </Select>
             </FormGroup>
+
           </FormRow>
 
-          {/* ==================================================
-              EMPLOYMENT & FINANCE
-          ================================================== */}
+          {/* EMPLOYMENT */}
 
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 mt-4">
-            Employment & Finance
-          </div>
+          <FormSection
+            title="Employment & Finance"
+            description="Income, employment and credit information."
+          />
 
           <FormRow>
+
             <FormGroup label="Employer Name">
               <Input
-                value={form.employerName}
+                value={
+                  form.employerName
+                }
                 onChange={set(
                   'employerName',
                 )}
@@ -716,24 +970,30 @@ export default function BorrowersPage() {
                   'employmentType',
                 )}
               >
+
                 {[
                   'PERMANENT',
                   'CONTRACT',
                   'SELF_EMPLOYED',
                   'UNEMPLOYED',
-                ].map((type) => (
-                  <option
-                    key={type}
-                    value={type}
-                  >
-                    {type}
-                  </option>
-                ))}
+                ].map(
+                  (type) => (
+                    <option
+                      key={type}
+                      value={type}
+                    >
+                      {type}
+                    </option>
+                  ),
+                )}
+
               </Select>
             </FormGroup>
+
           </FormRow>
 
           <FormRow>
+
             <FormGroup label="Monthly Income">
               <Input
                 type="number"
@@ -759,9 +1019,11 @@ export default function BorrowersPage() {
                 )}
               />
             </FormGroup>
+
           </FormRow>
 
           <FormRow>
+
             <FormGroup label="Credit Score">
               <Input
                 type="number"
@@ -783,6 +1045,7 @@ export default function BorrowersPage() {
                   'country',
                 )}
               >
+
                 {COUNTRIES.map(
                   (country) => (
                     <option
@@ -793,26 +1056,32 @@ export default function BorrowersPage() {
                         country.code
                       }
                     >
-                      {country.name}
+                      {
+                        country.name
+                      }
                     </option>
                   ),
                 )}
+
               </Select>
             </FormGroup>
+
           </FormRow>
 
-          {/* ==================================================
-              BANK DETAILS
-          ================================================== */}
+          {/* BANK */}
 
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 mt-4">
-            Bank Details
-          </div>
+          <FormSection
+            title="Bank Details"
+            description="Optional banking information."
+          />
 
           <FormRow>
+
             <FormGroup label="Bank Name">
               <Input
-                value={form.bankName}
+                value={
+                  form.bankName
+                }
                 onChange={set(
                   'bankName',
                 )}
@@ -829,9 +1098,150 @@ export default function BorrowersPage() {
                 )}
               />
             </FormGroup>
+
           </FormRow>
+
         </form>
+
       </Modal>
+
+    </div>
+  );
+}
+
+/**
+ * ============================================================
+ * SUMMARY CARD
+ * ============================================================
+ */
+
+function SummaryCard({
+  label,
+  value,
+  description,
+  icon,
+}: {
+  label: string;
+  value: string;
+  description: string;
+  icon: string;
+}) {
+  return (
+    <Card>
+      <div className="flex items-start justify-between">
+
+        <div>
+
+          <div className="text-xs uppercase tracking-wider font-bold text-gray-400">
+            {label}
+          </div>
+
+          <div className="text-2xl font-extrabold text-gray-900 mt-2">
+            {value}
+          </div>
+
+          <div className="text-xs text-gray-500 mt-1">
+            {description}
+          </div>
+
+        </div>
+
+        <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-lg">
+          {icon}
+        </div>
+
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * ============================================================
+ * CREDIT BADGE
+ * ============================================================
+ */
+
+function CreditBadge({
+  score,
+}: {
+  score?: number | null;
+}) {
+  if (
+    score === null ||
+    score === undefined
+  ) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-gray-100 text-gray-500 text-xs font-bold">
+        Not rated
+      </span>
+    );
+  }
+
+  if (score >= 700) {
+    return (
+      <div>
+        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 text-xs font-extrabold">
+          {score}
+        </span>
+
+        <div className="text-[10px] text-teal-600 mt-1 font-semibold">
+          Excellent
+        </div>
+      </div>
+    );
+  }
+
+  if (score >= 600) {
+    return (
+      <div>
+        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-yellow-50 text-yellow-700 text-xs font-extrabold">
+          {score}
+        </span>
+
+        <div className="text-[10px] text-yellow-600 mt-1 font-semibold">
+          Fair
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-extrabold">
+        {score}
+      </span>
+
+      <div className="text-[10px] text-red-500 mt-1 font-semibold">
+        High Risk
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ============================================================
+ * FORM SECTION
+ * ============================================================
+ */
+
+function FormSection({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="pt-2 pb-1 border-b border-gray-100">
+
+      <div className="text-sm font-extrabold text-gray-900">
+        {title}
+      </div>
+
+      <div className="text-xs text-gray-500 mt-1">
+        {description}
+      </div>
+
     </div>
   );
 }
