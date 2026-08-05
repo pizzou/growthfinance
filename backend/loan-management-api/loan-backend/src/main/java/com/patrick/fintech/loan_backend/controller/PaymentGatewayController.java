@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
@@ -5,31 +6,22 @@ import com.patrick.fintech.loan_backend.dto.PaymentGatewayRequest;
 import com.patrick.fintech.loan_backend.dto.PaymentGatewayResponse;
 import com.patrick.fintech.loan_backend.model.Loan;
 import com.patrick.fintech.loan_backend.repository.LoanRepository;
+import com.patrick.fintech.loan_backend.service.AirtelMobileMoneyService;
 import com.patrick.fintech.loan_backend.service.FlutterwaveService;
-import com.patrick.fintech.loan_backend.service.PaymentService;
+import com.patrick.fintech.loan_backend.service.MtnMobileMoneyService;
 import com.patrick.fintech.loan_backend.util.CurrentUserUtil;
+
 import jakarta.validation.Valid;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Initiates a real payment (card, mobile money, or bank transfer) through
- * Flutterwave for a loan repayment.
- *
- * With no FLUTTERWAVE_SECRET_KEY configured, this runs in simulation mode
- * (no real charge, payment recorded immediately) — safe for demos. Set real
- * credentials and it starts making real charges automatically, no code
- * changes needed.
- *
- * Card/bank-transfer/some mobile-money charges are asynchronous — Flutterwave
- * confirms them later via webhook (see PaymentWebhookController), not in
- * this response. Simulation mode always completes immediately.
- */
 @RestController
 @RequestMapping("/api/loans/{loanId}/payments/gateway")
 @RequiredArgsConstructor
@@ -37,45 +29,296 @@ import java.util.Map;
 public class PaymentGatewayController {
 
     private final FlutterwaveService flutterwaveService;
-    private final PaymentService     paymentService;
-    private final LoanRepository     loanRepo;
-    private final CurrentUserUtil    currentUserUtil;
+
+    private final MtnMobileMoneyService mtnMobileMoneyService;
+
+    private final AirtelMobileMoneyService airtelMoneyService;
+
+    private final LoanRepository loanRepo;
+
+    private final CurrentUserUtil currentUserUtil;
 
     @PostMapping("/initiate")
-    public ResponseEntity<ApiResponse<Map<String,Object>>> initiate(
-            @PathVariable Long loanId, @Valid @RequestBody PaymentGatewayRequest req) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> initiate(
+            @PathVariable Long loanId,
+            @Valid @RequestBody PaymentGatewayRequest request) {
 
-        var user = currentUserUtil.getCurrentUser();
-        Loan loan = loanRepo.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
-        if (!loan.getOrganization().getId().equals(user.getOrganization().getId()))
-            throw new RuntimeException("Access denied");
+        var user =
+                currentUserUtil.getCurrentUser();
 
-        PaymentGatewayResponse gw = flutterwaveService.initiatePayment(
-            loanId, req, req.getAmount(), loan.getCurrency(),
-            "Loan repayment " + loan.getReferenceNumber());
+        Loan loan =
+                loanRepo.findById(loanId)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Loan not found"
+                                )
+                        );
 
-        Map<String,Object> result = new LinkedHashMap<>();
-        result.put("status", gw.getStatus());
-        result.put("message", gw.getMessage());
-        result.put("transactionId", gw.getTransactionId());
-        result.put("redirectUrl", gw.getRedirectUrl()); // present for card 3DS — frontend should redirect here if set
+        if (loan.getOrganization() == null ||
+                user.getOrganization() == null ||
+                !loan.getOrganization()
+                        .getId()
+                        .equals(
+                                user.getOrganization()
+                                        .getId()
+                        )) {
 
-        if ("success".equals(gw.getStatus())) {
-            // Simulation mode, or a gateway that confirms synchronously — record right away
-            paymentService.recordPayment(loanId, gw.getAmount() != null ? gw.getAmount() : req.getAmount(),
-                req.getPaymentMethod(), gw.getTransactionId(), "GATEWAY", "Paid via Flutterwave", user);
-            result.put("recorded", true);
-            return ResponseEntity.ok(ApiResponse.ok("Payment completed", result));
+            throw new RuntimeException(
+                    "Access denied"
+            );
         }
 
-        if ("pending".equals(gw.getStatus())) {
-            // Real mobile money / bank transfer — waiting on the borrower to approve on their phone,
-            // or on bank settlement. The webhook completes this, NOT this response.
-            result.put("recorded", false);
-            return ResponseEntity.ok(ApiResponse.ok(
-                "Payment initiated — waiting for the borrower to confirm on their phone, or for bank settlement", result));
+        validateAmount(
+                request.getAmount()
+        );
+
+        String provider =
+                normalizeProvider(
+                        request
+                                .getProvider()
+                );
+
+        String paymentMethod =
+                normalizeProvider(
+                        request
+                                .getPaymentMethod()
+                );
+
+        PaymentGatewayResponse gatewayResponse;
+
+        String currency =
+                loan.getCurrency() != null
+                        ? loan.getCurrency()
+                        : "RWF";
+
+        String description =
+                "Loan repayment "
+                        + loan.getReferenceNumber();
+
+        if ("MOBILE_MONEY".equals(
+                paymentMethod)) {
+
+            gatewayResponse =
+                    initiateMobileMoney(
+                            provider,
+                            loanId,
+                            request,
+                            currency,
+                            description
+                    );
+
+        } else if ("FLUTTERWAVE".equals(
+                provider)) {
+
+            gatewayResponse =
+                    flutterwaveService
+                            .initiatePayment(
+                                    loanId,
+                                    request,
+                                    request.getAmount(),
+                                    currency,
+                                    description
+                            );
+
+        } else {
+
+            throw new RuntimeException(
+                    "Unsupported payment provider: "
+                            + provider
+            );
         }
 
-        throw new RuntimeException("Payment failed: " + gw.getMessage());
+        Map<String, Object> result =
+                new LinkedHashMap<>();
+
+        result.put(
+                "status",
+                gatewayResponse.getStatus()
+        );
+
+        result.put(
+                "message",
+                gatewayResponse.getMessage()
+        );
+
+        result.put(
+                "transactionId",
+                gatewayResponse
+                        .getTransactionId()
+        );
+
+        result.put(
+                "providerReference",
+                gatewayResponse
+                        .getProviderReference()
+        );
+
+        result.put(
+                "provider",
+                provider
+        );
+
+        result.put(
+                "paymentMethod",
+                paymentMethod
+        );
+
+        result.put(
+                "amount",
+                gatewayResponse.getAmount()
+                        != null
+                        ? gatewayResponse.getAmount()
+                        : request.getAmount()
+        );
+
+        result.put(
+                "currency",
+                currency
+        );
+
+        result.put(
+                "redirectUrl",
+                gatewayResponse
+                        .getRedirectUrl()
+        );
+
+        /*
+         * CRITICAL:
+         *
+         * Do NOT record a real mobile-money payment here.
+         *
+         * MTN/Airtel/Flutterwave mobile-money requests are
+         * asynchronous.
+         *
+         * The webhook/verification process records the
+         * payment only after the transaction is confirmed.
+         */
+
+        boolean completedImmediately =
+                "SUCCESS".equalsIgnoreCase(
+                        gatewayResponse.getStatus()
+                )
+                &&
+                !"MOBILE_MONEY".equals(
+                        paymentMethod
+                );
+
+        result.put(
+                "recorded",
+                completedImmediately
+        );
+
+        if ("FAILED".equalsIgnoreCase(
+                gatewayResponse.getStatus())) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            ApiResponse.ok(
+                                    "Payment initiation failed",
+                                    result
+                            )
+                    );
+        }
+
+        if ("PENDING".equalsIgnoreCase(
+                gatewayResponse.getStatus()
+        ) ||
+            "INITIATED".equalsIgnoreCase(
+                gatewayResponse.getStatus()
+            )) {
+
+            return ResponseEntity.ok(
+                    ApiResponse.ok(
+                            "Payment initiated. Waiting for customer confirmation.",
+                            result
+                    )
+            );
+        }
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        "Payment request processed",
+                        result
+                )
+        );
+    }
+
+    private PaymentGatewayResponse initiateMobileMoney(
+            String provider,
+            Long loanId,
+            PaymentGatewayRequest request,
+            String currency,
+            String description) {
+
+        switch (provider) {
+
+            case "FLUTTERWAVE":
+
+                return flutterwaveService
+                        .initiatePayment(
+                                loanId,
+                                request,
+                                request.getAmount(),
+                                currency,
+                                description
+                        );
+
+            case "MTN_DIRECT":
+
+                return mtnMobileMoneyService
+                        .initiate(
+                                loanId,
+                                request,
+                                request.getAmount(),
+                                currency,
+                                description
+                        );
+
+            case "AIRTEL_DIRECT":
+
+                return airtelMoneyService
+                        .initiate(
+                                loanId,
+                                request,
+                                request.getAmount(),
+                                currency,
+                                description
+                        );
+
+            default:
+
+                throw new RuntimeException(
+                        "Unsupported mobile-money provider: "
+                                + provider
+                );
+        }
+    }
+
+    private void validateAmount(
+            Double amount) {
+
+        if (amount == null ||
+                amount <= 0) {
+
+            throw new IllegalArgumentException(
+                    "Payment amount must be greater than zero"
+            );
+        }
+    }
+
+    private String normalizeProvider(
+            String value) {
+
+        if (value == null) {
+
+            throw new IllegalArgumentException(
+                    "Payment provider is required"
+            );
+        }
+
+        return value
+                .trim()
+                .toUpperCase();
     }
 }
