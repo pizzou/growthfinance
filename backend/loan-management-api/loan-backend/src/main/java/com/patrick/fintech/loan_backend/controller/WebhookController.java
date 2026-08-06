@@ -3,7 +3,7 @@ package com.patrick.fintech.loan_backend.controller;
 import com.patrick.fintech.loan_backend.model.*;
 import com.patrick.fintech.loan_backend.repository.*;
 import com.patrick.fintech.loan_backend.service.AuditService;
-import com.patrick.fintech.loan_backend.service.WebhookService;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
