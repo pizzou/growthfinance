@@ -8,6 +8,7 @@ import com.patrick.fintech.loan_backend.util.CurrentUserUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 import java.util.Map;
 
@@ -16,53 +17,237 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PaymentController {
 
-    private final PaymentService     paymentService;
-    private final CurrentUserUtil    currentUserUtil;
+    private final PaymentService paymentService;
+    private final CurrentUserUtil currentUserUtil;
     private final IdempotencyService idempotencyService;
 
+
     /**
-     * Record a manual payment (cash, bank transfer, mobile money, etc.)
+     * Record a manual payment.
      *
-     * Accepts an optional Idempotency-Key header — this matters most for
-     * payments recorded while offline and synced later: if a sync retry
-     * ever resends the same request (flaky connection, app killed mid-sync),
-     * the same key returns the original result instead of recording the
-     * payment twice.
+     * All monetary values remain Double to match the existing
+     * application model and inherited classes.
+     *
+     * Supports Idempotency-Key for offline synchronization and
+     * retry protection.
      */
     @PostMapping
     public ResponseEntity<ApiResponse<Payment>> recordPayment(
             @PathVariable Long loanId,
-            @RequestBody Map<String,Object> body,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(
+                    value = "Idempotency-Key",
+                    required = false
+            ) String idempotencyKey) {
 
-        var org = currentUserUtil.getCurrentUser().getOrganization();
-        var outcome = idempotencyService.checkOrReserve(idempotencyKey, org, "POST /loans/" + loanId + "/payments", body.toString());
-        if (outcome.isReplay()) {
-            return ResponseEntity.ok(ApiResponse.ok("Payment recorded", null));
+        var currentUser =
+                currentUserUtil.getCurrentUser();
+
+        if (currentUser == null) {
+            throw new RuntimeException(
+                    "Authenticated user could not be determined."
+            );
         }
 
+        var org =
+                currentUser.getOrganization();
+
+        if (org == null) {
+            throw new RuntimeException(
+                    "User is not associated with an organization."
+            );
+        }
+
+
+        // ============================================================
+        // IDEMPOTENCY
+        // ============================================================
+
+        var outcome =
+                idempotencyService.checkOrReserve(
+                        idempotencyKey,
+                        org,
+                        "POST /loans/" + loanId + "/payments",
+                        body.toString()
+                );
+
+
+        /*
+         * If this request is a retry, do not create another payment.
+         *
+         * We return null here because the current IdempotencyService
+         * implementation does not expose the original Payment through
+         * the replay result.
+         *
+         * The important part is that the payment is NOT duplicated.
+         */
+        if (outcome.isReplay()) {
+
+            return ResponseEntity.ok(
+                    ApiResponse.ok(
+                            "Payment already recorded",
+                            null
+                    )
+            );
+        }
+
+
         try {
-            Double amount  = Double.parseDouble(body.get("amount").toString());
-            String method  = body.getOrDefault("paymentMethod","BANK_TRANSFER").toString();
-            String txnId   = body.getOrDefault("transactionId","").toString();
-            String channel = body.getOrDefault("channel","").toString();
-            String notes   = body.getOrDefault("notes","").toString();
-            Payment p = paymentService.recordPayment(
-                loanId, amount, method, txnId, channel, notes,
-                currentUserUtil.getCurrentUser());
-            idempotencyService.recordSuccess(idempotencyKey, org, p, 200);
-            return ResponseEntity.ok(ApiResponse.ok("Payment recorded", p));
+
+            // ========================================================
+            // AMOUNT
+            // ========================================================
+
+            Object amountValue =
+                    body.get("amount");
+
+            if (amountValue == null) {
+
+                throw new RuntimeException(
+                        "Payment amount is required."
+                );
+            }
+
+            Double amount;
+
+            try {
+
+                amount =
+                        Double.parseDouble(
+                                amountValue
+                                        .toString()
+                                        .trim()
+                        );
+
+            } catch (NumberFormatException e) {
+
+                throw new RuntimeException(
+                        "Payment amount must be a valid number."
+                );
+            }
+
+
+            if (amount == null ||
+                    amount <= 0) {
+
+                throw new RuntimeException(
+                        "Payment amount must be greater than zero."
+                );
+            }
+
+
+            // ========================================================
+            // PAYMENT DETAILS
+            // ========================================================
+
+            String method =
+                    body.getOrDefault(
+                            "paymentMethod",
+                            "BANK_TRANSFER"
+                    )
+                    .toString()
+                    .trim();
+
+            if (method.isBlank()) {
+
+                method = "BANK_TRANSFER";
+            }
+
+
+            String txnId =
+                    body.getOrDefault(
+                            "transactionId",
+                            ""
+                    )
+                    .toString()
+                    .trim();
+
+
+            String channel =
+                    body.getOrDefault(
+                            "channel",
+                            ""
+                    )
+                    .toString()
+                    .trim();
+
+
+            String notes =
+                    body.getOrDefault(
+                            "notes",
+                            ""
+                    )
+                    .toString()
+                    .trim();
+
+
+            // ========================================================
+            // RECORD PAYMENT
+            // ========================================================
+
+            Payment payment =
+                    paymentService.recordPayment(
+                            loanId,
+                            amount,
+                            method,
+                            txnId,
+                            channel,
+                            notes,
+                            currentUser
+                    );
+
+
+            // ========================================================
+            // RECORD IDEMPOTENCY SUCCESS
+            // ========================================================
+
+            idempotencyService.recordSuccess(
+                    idempotencyKey,
+                    org,
+                    payment,
+                    200
+            );
+
+
+            return ResponseEntity.ok(
+                    ApiResponse.ok(
+                            "Payment recorded",
+                            payment
+                    )
+            );
+
+
         } catch (Exception e) {
-            idempotencyService.recordFailure(idempotencyKey, org);
+
+            idempotencyService.recordFailure(
+                    idempotencyKey,
+                    org
+            );
+
             throw e;
         }
     }
 
-    /** Get full repayment schedule for a loan */
+
+    /**
+     * Get the full repayment schedule for a loan.
+     */
     @GetMapping
-    public ResponseEntity<ApiResponse<List<Payment>>> getSchedule(@PathVariable Long loanId) {
-        Long orgId = currentUserUtil.getCurrentOrganizationId();
-        return ResponseEntity.ok(ApiResponse.ok(
-            paymentService.getLoanSchedule(loanId, orgId)));
+    public ResponseEntity<ApiResponse<List<Payment>>>
+    getSchedule(
+            @PathVariable Long loanId) {
+
+        Long organizationId =
+                currentUserUtil
+                        .getCurrentOrganizationId();
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        paymentService.getLoanSchedule(
+                                loanId,
+                                organizationId
+                        )
+                )
+        );
     }
 }

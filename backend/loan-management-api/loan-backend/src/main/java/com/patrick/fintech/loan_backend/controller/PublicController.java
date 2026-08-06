@@ -519,11 +519,9 @@ public class PublicController {
             );
         }
 
-        /*
-         * ========================================================
-         * NORMALIZE PAYMENT METHOD
-         * ========================================================
-         */
+        // ========================================================
+        // NORMALIZE PAYMENT METHOD
+        // ========================================================
 
         String method =
                 normalizePaymentMethod(
@@ -537,24 +535,10 @@ public class PublicController {
             );
         }
 
-        /*
-         * ========================================================
-         * MOBILE MONEY NETWORK
-         * ========================================================
-         *
-         * The frontend may intentionally send:
-         *
-         * paymentMethod = MOBILE_MONEY
-         * network       = MTN
-         *
-         * or:
-         *
-         * paymentMethod = MOBILE_MONEY
-         * network       = AIRTEL
-         *
-         * Convert the generic method into the actual gateway
-         * before reaching the provider-specific code.
-         */
+
+        // ========================================================
+        // MOBILE MONEY NETWORK
+        // ========================================================
 
         String network =
                 normalizeNetwork(
@@ -579,11 +563,6 @@ public class PublicController {
             }
         }
 
-
-        /*
-         * If the frontend directly sends MTN_MOBILE_MONEY or
-         * AIRTEL_MOBILE_MONEY, make sure the network is consistent.
-         */
 
         if ("MTN_MOBILE_MONEY".equals(method)) {
 
@@ -633,10 +612,9 @@ public class PublicController {
         }
 
 
-        /*
-         * Never allow a borrower to submit more than the outstanding
-         * balance.
-         */
+        // ========================================================
+        // OUTSTANDING BALANCE LIMIT
+        // ========================================================
 
         if (loan.getOutstandingBalance() != null &&
                 dueAmount > loan.getOutstandingBalance()) {
@@ -655,22 +633,7 @@ public class PublicController {
 
         req.setAmount(dueAmount);
 
-        /*
-         * Use the resolved provider-specific method.
-         *
-         * For example:
-         *
-         * MOBILE_MONEY + MTN
-         * -> MTN_MOBILE_MONEY
-         */
-
         req.setPaymentMethod(method);
-
-
-        /*
-         * Use the supplied phone if present.
-         * Otherwise use the verified borrower phone.
-         */
 
         String paymentPhone =
                 str(body.get("phoneNumber"));
@@ -800,12 +763,6 @@ public class PublicController {
                 "BANK_TRANSFER".equals(method) ||
                 "FLUTTERWAVE_MOBILE_MONEY".equals(method)) {
 
-            /*
-             * Flutterwave mobile money expects MOBILE_MONEY,
-             * while the public API can expose
-             * FLUTTERWAVE_MOBILE_MONEY.
-             */
-
             if ("FLUTTERWAVE_MOBILE_MONEY".equals(method)) {
 
                 req.setPaymentMethod("MOBILE_MONEY");
@@ -885,12 +842,6 @@ public class PublicController {
                 gatewayResponse.getRedirectUrl()
         );
 
-        /*
-         * Return the resolved method/network as well.
-         * This is useful to the frontend for debugging and
-         * confirmation.
-         */
-
         result.put(
                 "paymentMethod",
                 method
@@ -910,11 +861,38 @@ public class PublicController {
                 gatewayResponse.getStatus())) {
 
             /*
-             * Only record immediately when the provider has actually
-             * confirmed the payment.
+             * A gateway SUCCESS response must have a transaction
+             * identifier.
              *
-             * Direct MTN/Airtel implementations may return pending,
-             * in which case the callback/webhook records the payment.
+             * This identifier is critical because the same successful
+             * transaction may subsequently arrive through a webhook.
+             *
+             * We therefore do not record an anonymous gateway success.
+             */
+
+            String transactionId =
+                    gatewayResponse.getTransactionId();
+
+            if (transactionId == null ||
+                    transactionId.isBlank()) {
+
+                log.error(
+                        "[PUBLIC PAYMENT] Gateway returned SUCCESS without transaction ID. " +
+                                "loan={}, provider={}, amount={}",
+                        loan.getId(),
+                        gatewayResponse.getProvider(),
+                        dueAmount
+                );
+
+                throw new RuntimeException(
+                        "Payment provider confirmed the payment but did not return a transaction ID."
+                );
+            }
+
+
+            /*
+             * The gateway's confirmed amount is preferred when supplied.
+             * Otherwise use the requested/due amount.
              */
 
             double confirmedAmount =
@@ -922,21 +900,42 @@ public class PublicController {
                             ? gatewayResponse.getAmount()
                             : dueAmount;
 
+
+            /*
+             * IMPORTANT:
+             *
+             * recordPayment() receives the gateway transaction ID.
+             *
+             * PaymentService is the common point used by this immediate
+             * success path and the later webhook/callback path.
+             *
+             * The PaymentService must therefore treat this transaction
+             * ID as an idempotency key and return the existing payment
+             * when the same gateway event arrives again.
+             */
+
             paymentService.recordPayment(
                     loan.getId(),
                     confirmedAmount,
                     method,
-                    gatewayResponse.getTransactionId(),
+                    transactionId,
                     "GATEWAY",
                     "Paid via " +
                             gatewayResponse.getProvider(),
                     null
             );
 
+
             result.put(
                     "recorded",
                     true
             );
+
+            result.put(
+                    "transactionId",
+                    transactionId
+            );
+
 
             auditService.log(
                     loan.getOrganization(),
@@ -951,8 +950,11 @@ public class PublicController {
                             " completed via " +
                             gatewayResponse.getProvider() +
                             " for loan " +
-                            loan.getReferenceNumber()
+                            loan.getReferenceNumber() +
+                            ". Gateway transaction: " +
+                            transactionId
             );
+
 
             return ResponseEntity.ok(
                     ApiResponse.ok(
@@ -1050,25 +1052,9 @@ public class PublicController {
 
         return switch (value) {
 
-            /*
-             * GENERIC MOBILE MONEY
-             *
-             * This is the important fix for the frontend request:
-             *
-             * {
-             *   "paymentMethod": "MOBILE_MONEY",
-             *   "network": "MTN"
-             * }
-             */
-
             case "MOBILE_MONEY",
                  "MOBILEMONEY"
                     -> "MOBILE_MONEY";
-
-
-            /*
-             * MTN
-             */
 
             case "MTN",
                  "MOMO",
@@ -1078,11 +1064,6 @@ public class PublicController {
                  "MTN_MOBILEMONEY"
                     -> "MTN_MOBILE_MONEY";
 
-
-            /*
-             * AIRTEL
-             */
-
             case "AIRTEL",
                  "AIRTEL_MONEY",
                  "AIRTEL_MOBILE",
@@ -1090,41 +1071,24 @@ public class PublicController {
                  "AIRTEL_MOBILEMONEY"
                     -> "AIRTEL_MOBILE_MONEY";
 
-
-            /*
-             * FLUTTERWAVE
-             */
-
             case "FLW",
                  "FLUTTERWAVE"
                     -> "FLUTTERWAVE";
-
 
             case "FLUTTERWAVE_MOMO",
                  "FLUTTERWAVE_MOBILE_MONEY",
                  "FLUTTERWAVE_MOBILEMONEY"
                     -> "FLUTTERWAVE_MOBILE_MONEY";
 
-
-            /*
-             * CARD
-             */
-
             case "CARD",
                  "CREDIT_CARD",
                  "DEBIT_CARD"
                     -> "CARD";
 
-
-            /*
-             * BANK TRANSFER
-             */
-
             case "BANK",
                  "BANK_TRANSFER",
                  "BANKTRANSFER"
                     -> "BANK_TRANSFER";
-
 
             default
                     -> value;

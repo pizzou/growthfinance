@@ -6,6 +6,7 @@ import com.patrick.fintech.loan_backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,31 +50,11 @@ public class PaymentService {
      *
      * Monthly interest is calculated ONCE for a monthly cycle.
      *
-     * Example:
+     * Multiple payments during the same cycle continue using the
+     * same installment/cycle.
      *
-     * Principal = 5,000,000
-     * Monthly rate = 10%
-     * Monthly interest = 500,000
-     *
-     * Payment 1 = 2,000,000
-     *
-     *     Interest  = 500,000
-     *     Principal = 1,500,000
-     *     Balance   = 3,500,000
-     *
-     * Payment 2 = 1,000,000 on same cycle
-     *
-     *     Interest  = 0
-     *     Principal = 1,000,000
-     *     Balance   = 2,500,000
-     *
-     * Payment 3 = 500,000 on same cycle
-     *
-     *     Interest  = 0
-     *     Principal = 500,000
-     *     Balance   = 2,000,000
-     *
-     * NO additional monthly interest is charged during the same cycle.
+     * Transaction ID is used as the primary application-level
+     * idempotency mechanism.
      */
     @Transactional
     public Payment recordPayment(
@@ -86,18 +67,32 @@ public class PaymentService {
             User recordedBy
     ) {
 
+        if (loanId == null) {
+            throw new IllegalArgumentException(
+                    "Loan ID is required"
+            );
+        }
+
         if (amount == null || amount <= 0) {
             throw new IllegalArgumentException(
                     "Payment amount must be greater than zero"
             );
         }
 
-        /*
-         * Keep Double.
-         *
-         * Normalize incoming payment to two decimal places.
-         */
+
+        // ============================================================
+        // NORMALIZE INPUT
+        // ============================================================
+
         amount = roundMoney(amount);
+
+        String normalizedTxnId =
+                normalizeTransactionId(txnId);
+
+
+        // ============================================================
+        // FIND LOAN
+        // ============================================================
 
         Loan loan =
                 loanRepo.findById(loanId)
@@ -122,22 +117,9 @@ public class PaymentService {
                                 recordedBy.getOrganization().getId()
                         )
         ) {
-            throw new RuntimeException("Access denied");
-        }
 
-
-        // ============================================================
-        // LOAN STATUS
-        // ============================================================
-
-        if (
-                loan.getStatus() != LoanStatus.ACTIVE
-                        && loan.getStatus() != LoanStatus.OVERDUE
-        ) {
             throw new RuntimeException(
-                    "Loan is not active (status: "
-                            + loan.getStatus()
-                            + ")"
+                    "Access denied"
             );
         }
 
@@ -146,13 +128,29 @@ public class PaymentService {
         // TRANSACTION IDEMPOTENCY
         // ============================================================
 
-        if (txnId != null && !txnId.isBlank()) {
+        /*
+         * This check MUST happen before:
+         *
+         * - payment allocation
+         * - loan balance update
+         * - audit
+         * - SMS
+         * - email
+         * - officer notification
+         * - webhook dispatch
+         * - accounting
+         *
+         * This means that if the same gateway transaction reaches
+         * the application twice, the second request returns the
+         * already-existing payment.
+         */
+        if (normalizedTxnId != null) {
 
             Optional<Payment> existingPayment =
                     paymentRepo
                             .findByOrganization_IdAndTransactionId(
                                     loan.getOrganization().getId(),
-                                    txnId
+                                    normalizedTxnId
                             );
 
             if (existingPayment.isPresent()) {
@@ -168,8 +166,9 @@ public class PaymentService {
                 ) {
 
                     log.info(
-                            "Duplicate payment transaction {} detected for loan {}. Returning payment {}.",
-                            txnId,
+                            "Duplicate payment transaction detected. " +
+                                    "transactionId={}, loanId={}, paymentId={}",
+                            normalizedTxnId,
                             loanId,
                             existing.getId()
                     );
@@ -179,10 +178,27 @@ public class PaymentService {
 
                 throw new IllegalStateException(
                         "Transaction ID "
-                                + txnId
-                                + " has already been used for another payment."
+                                + normalizedTxnId
+                                + " has already been used for another loan."
                 );
             }
+        }
+
+
+        // ============================================================
+        // LOAN STATUS
+        // ============================================================
+
+        if (
+                loan.getStatus() != LoanStatus.ACTIVE
+                        && loan.getStatus() != LoanStatus.OVERDUE
+        ) {
+
+            throw new RuntimeException(
+                    "Loan is not active (status: "
+                            + loan.getStatus()
+                            + ")"
+            );
         }
 
 
@@ -191,23 +207,24 @@ public class PaymentService {
         // ============================================================
 
         List<Payment> loanPayments =
-                paymentRepo.findByLoanId(loanId);
+                paymentRepo.findByLoanId(
+                        loanId
+                );
 
         LocalDate today =
                 LocalDate.now();
 
+
         /*
-         * VERY IMPORTANT:
+         * Continue an installment that has already received money
+         * and whose due date has not passed.
          *
-         * First look for an installment that has already received
-         * money and whose due date has NOT passed.
-         *
-         * This is what prevents:
+         * This prevents:
          *
          * Payment 1 -> installment 1
          * Payment 2 -> installment 2
          *
-         * on the same day/month.
+         * during the same monthly cycle.
          *
          * Instead:
          *
@@ -221,7 +238,8 @@ public class PaymentService {
                                 p.getAmountPaid() != null
                                         && p.getAmountPaid() > 0
                                         && p.getDueDate() != null
-                                        && !p.getDueDate().isBefore(today)
+                                        && !p.getDueDate()
+                                        .isBefore(today)
                         )
                         .min(
                                 Comparator.comparing(
@@ -234,7 +252,7 @@ public class PaymentService {
 
 
         /*
-         * If there is no payment already made in the current cycle,
+         * If there is no existing current-cycle payment,
          * use the first unpaid installment.
          */
         Optional<Payment> unpaidInstallment =
@@ -257,16 +275,15 @@ public class PaymentService {
 
         Payment installment;
 
+
         if (existingCurrentCycle.isPresent()) {
 
-            /*
-             * CONTINUE THE SAME MONTHLY CYCLE.
-             */
             installment =
                     existingCurrentCycle.get();
 
             log.info(
-                    "Continuing existing payment cycle. Loan={}, installment={}, dueDate={}",
+                    "Continuing existing payment cycle. " +
+                            "loanId={}, installment={}, dueDate={}",
                     loanId,
                     installment.getInstallmentNumber(),
                     installment.getDueDate()
@@ -301,12 +318,24 @@ public class PaymentService {
                             .installmentNumber(
                                     nextNumber
                             )
-                            .dueDate(dueDate)
-                            .amountPaid(0.0)
-                            .principalComponent(0.0)
-                            .interestComponent(0.0)
-                            .penalty(0.0)
-                            .paid(false)
+                            .dueDate(
+                                    dueDate
+                            )
+                            .amountPaid(
+                                    0.0
+                            )
+                            .principalComponent(
+                                    0.0
+                            )
+                            .interestComponent(
+                                    0.0
+                            )
+                            .penalty(
+                                    0.0
+                            )
+                            .paid(
+                                    false
+                            )
                             .build();
         }
 
@@ -325,7 +354,9 @@ public class PaymentService {
                 );
 
         boolean isLate =
-                today.isAfter(cycleDueDate);
+                today.isAfter(
+                        cycleDueDate
+                );
 
         int daysLate =
                 isLate
@@ -349,16 +380,6 @@ public class PaymentService {
                 amountPaidSoFar > 0.0;
 
 
-        /*
-         * interestComponent represents ACTUAL interest paid after
-         * the first payment has been recorded.
-         *
-         * Before any payment:
-         *
-         *     amountPaid = 0
-         *
-         * Therefore the schedule's projected interest is ignored.
-         */
         double interestAlreadyPaid =
                 existingCycle
                         ? safe(
@@ -403,39 +424,15 @@ public class PaymentService {
         currentBalance =
                 Math.max(
                         0.0,
-                        roundMoney(currentBalance)
+                        roundMoney(
+                                currentBalance
+                        )
                 );
 
 
         // ============================================================
         // DETERMINE CYCLE-OPENING PRINCIPAL
         // ============================================================
-
-        /*
-         * THIS IS VERY IMPORTANT.
-         *
-         * If this is the first payment:
-         *
-         *     cycleOpeningBalance = currentBalance
-         *
-         * If this is a later payment in the same cycle:
-         *
-         *     cumulativePrincipalPaid =
-         *
-         *         amountPaid
-         *         - interestPaid
-         *         - penalty
-         *
-         * Therefore:
-         *
-         *     cycleOpeningBalance =
-         *
-         *         currentBalance
-         *         + cumulativePrincipalPaid
-         *
-         * This reconstructs the principal balance at the beginning
-         * of the monthly cycle without changing the database model.
-         */
 
         double cumulativePrincipalPaid =
                 0.0;
@@ -487,7 +484,9 @@ public class PaymentService {
 
         if (
                 "MONTHLY"
-                        .equalsIgnoreCase(rateType)
+                        .equalsIgnoreCase(
+                                rateType
+                        )
         ) {
 
             monthlyRate =
@@ -505,18 +504,17 @@ public class PaymentService {
         // ============================================================
 
         /*
-         * Interest is ALWAYS calculated from the balance at the
-         * beginning of this cycle.
+         * Interest is calculated from the balance at the beginning
+         * of the current payment cycle.
          *
          * It is NOT recalculated from the reduced balance after
-         * every payment.
+         * each payment during the same cycle.
          */
         double monthlyInterest =
                 roundMoney(
                         cycleOpeningBalance
                                 * monthlyRate
                 );
-
 
         monthlyInterest =
                 Math.max(
@@ -546,7 +544,10 @@ public class PaymentService {
         double calculatedPenalty =
                 0.0;
 
-        if (isLate && daysLate > 0) {
+        if (
+                isLate
+                        && daysLate > 0
+        ) {
 
             calculatedPenalty =
                     roundMoney(
@@ -576,7 +577,8 @@ public class PaymentService {
                 roundMoney(
                         Math.max(
                                 0.0,
-                                amount - newPenalty
+                                amount
+                                        - newPenalty
                         )
                 );
 
@@ -697,7 +699,7 @@ public class PaymentService {
 
 
         /*
-         * Store ACTUAL cumulative interest paid.
+         * Store actual cumulative interest paid.
          */
         installment.setInterestComponent(
                 totalInterestPaid
@@ -705,7 +707,7 @@ public class PaymentService {
 
 
         /*
-         * Store ACTUAL cumulative principal paid.
+         * Store actual cumulative principal paid.
          */
         installment.setPrincipalComponent(
                 totalPrincipalPaid
@@ -742,28 +744,28 @@ public class PaymentService {
                 method
         );
 
+
+        /*
+         * Store the normalized transaction ID.
+         *
+         * This is important because the same provider transaction
+         * must be recognizable if it later arrives through a webhook.
+         */
         installment.setTransactionId(
-                txnId
+                normalizedTxnId
         );
+
 
         installment.setChannel(
                 channel
         );
+
 
         installment.setNotes(
                 notes
         );
 
 
-        /*
-         * A cycle is complete when its interest has been fully paid.
-         *
-         * IMPORTANT:
-         *
-         * Even if paid=true, recordPayment() will still find this
-         * installment again during the same cycle because it searches
-         * for amountPaid > 0 and dueDate >= today.
-         */
         installment.setPaid(
                 cycleCompleted
         );
@@ -783,19 +785,77 @@ public class PaymentService {
 
         if (
                 installment.getPaymentReference() == null
-                        || installment.getPaymentReference().isBlank()
+                        || installment.getPaymentReference()
+                        .isBlank()
         ) {
 
             installment.setPaymentReference(
-                    generateRef(loan)
+                    generateRef(
+                            loan
+                    )
             );
         }
 
 
-        installment =
-                paymentRepo.save(
-                        installment
-                );
+        // ============================================================
+        // SAVE PAYMENT
+        // ============================================================
+
+        try {
+
+            installment =
+                    paymentRepo.save(
+                            installment
+                    );
+
+        } catch (DataIntegrityViolationException e) {
+
+            /*
+             * If the database has a unique constraint on
+             * organization + transactionId, another concurrent
+             * request may have inserted the transaction between
+             * our initial lookup and this save.
+             *
+             * Re-query the existing transaction and return it.
+             */
+            if (normalizedTxnId != null) {
+
+                Optional<Payment> concurrentPayment =
+                        paymentRepo
+                                .findByOrganization_IdAndTransactionId(
+                                        loan.getOrganization().getId(),
+                                        normalizedTxnId
+                                );
+
+                if (concurrentPayment.isPresent()) {
+
+                    Payment existing =
+                            concurrentPayment.get();
+
+                    if (
+                            existing.getLoan() != null
+                                    && existing.getLoan()
+                                    .getId()
+                                    .equals(
+                                            loanId
+                                    )
+                    ) {
+
+                        log.info(
+                                "Concurrent duplicate payment detected. " +
+                                        "transactionId={}, loanId={}, paymentId={}",
+                                normalizedTxnId,
+                                loanId,
+                                existing.getId()
+                        );
+
+                        return existing;
+                    }
+                }
+            }
+
+            throw e;
+        }
 
 
         // ============================================================
@@ -843,7 +903,9 @@ public class PaymentService {
 
             List<Payment> stillPending =
                     paymentRepo
-                            .findByLoanId(loanId)
+                            .findByLoanId(
+                                    loanId
+                            )
                             .stream()
                             .filter(
                                     p ->
@@ -873,9 +935,11 @@ public class PaymentService {
                     null
             );
 
+
             loan.setNextPaymentDate(
                     null
             );
+
 
             loan.setNextInstallmentAmount(
                     0.0
@@ -896,11 +960,14 @@ public class PaymentService {
             if (interestCovered) {
 
                 LocalDate nextDue =
-                        cycleDueDate.plusMonths(1);
+                        cycleDueDate.plusMonths(
+                                1
+                        );
 
                 loan.setNextDueDate(
                         nextDue
                 );
+
 
                 loan.setNextPaymentDate(
                         nextDue
@@ -916,6 +983,7 @@ public class PaymentService {
                 loan.setNextDueDate(
                         cycleDueDate
                 );
+
 
                 loan.setNextPaymentDate(
                         cycleDueDate
@@ -938,7 +1006,9 @@ public class PaymentService {
                 recordedBy,
                 "PAYMENT_RECORDED",
                 "PAYMENT",
-                installment.getId().toString(),
+                installment.getId() != null
+                        ? installment.getId().toString()
+                        : "UNKNOWN",
                 "Payment of "
                         + amount
                         + " on loan "
@@ -949,6 +1019,8 @@ public class PaymentService {
                         + principalPaid
                         + ", penalty: "
                         + newPenalty
+                        + ", transactionId: "
+                        + normalizedTxnId
         );
 
 
@@ -1047,30 +1119,60 @@ public class PaymentService {
         // WEBHOOK
         // ============================================================
 
-        webhookService.dispatch(
-                loan.getOrganization(),
-                "PAYMENT_MADE",
-                loan
-        );
+        try {
+
+            webhookService.dispatch(
+                    loan.getOrganization(),
+                    "PAYMENT_MADE",
+                    loan
+            );
+
+        } catch (Exception e) {
+
+            /*
+             * Do not undo a successful payment merely because an
+             * outbound notification failed.
+             */
+            log.warn(
+                    "Payment webhook dispatch failed",
+                    e
+            );
+        }
 
 
         // ============================================================
         // ACCOUNTING
         // ============================================================
 
-        /*
-         * ONLY post this transaction's allocation.
-         *
-         * Do NOT pass cumulative principal/interest here.
-         */
-        accountingService.postPaymentReceived(
-                installment,
-                amount,
-                principalPaid,
-                interestPaid,
-                newPenalty
-        );
+        try {
 
+            accountingService.postPaymentReceived(
+                    installment,
+                    amount,
+                    principalPaid,
+                    interestPaid,
+                    newPenalty
+            );
+
+        } catch (Exception e) {
+
+            /*
+             * Payment has already been recorded.
+             *
+             * Log the accounting failure so it can be investigated
+             * without pretending that the borrower payment failed.
+             */
+            log.error(
+                    "Accounting posting failed for payment {}",
+                    installment.getId(),
+                    e
+            );
+        }
+
+
+        // ============================================================
+        // RETURN
+        // ============================================================
 
         return installment;
     }
@@ -1086,7 +1188,9 @@ public class PaymentService {
     ) {
 
         Loan loan =
-                loanRepo.findById(loanId)
+                loanRepo.findById(
+                        loanId
+                )
                         .orElseThrow(
                                 () ->
                                         new RuntimeException(
@@ -1094,17 +1198,21 @@ public class PaymentService {
                                         )
                         );
 
+
         if (
                 loan.getOrganization() == null
                         || !loan.getOrganization()
                         .getId()
-                        .equals(orgId)
+                        .equals(
+                                orgId
+                        )
         ) {
 
             throw new RuntimeException(
                     "Access denied"
             );
         }
+
 
         return paymentRepo.findByLoanId(
                 loanId
@@ -1134,6 +1242,7 @@ public class PaymentService {
 
             Loan loan =
                     payment.getLoan();
+
 
             if (
                     loan.getStatus()
@@ -1175,6 +1284,31 @@ public class PaymentService {
     // HELPERS
     // ================================================================
 
+    /**
+     * Normalizes a provider transaction ID.
+     *
+     * Blank transaction IDs become null.
+     */
+    private String normalizeTransactionId(
+            String txnId
+    ) {
+
+        if (txnId == null) {
+            return null;
+        }
+
+        String normalized =
+                txnId.trim();
+
+        return normalized.isBlank()
+                ? null
+                : normalized;
+    }
+
+
+    /**
+     * Safely read a Double value.
+     */
     private double safe(
             Double value
     ) {
@@ -1213,6 +1347,9 @@ public class PaymentService {
     }
 
 
+    /**
+     * Generate internal payment reference.
+     */
     private String generateRef(
             Loan loan
     ) {
@@ -1227,6 +1364,9 @@ public class PaymentService {
     }
 
 
+    /**
+     * Audit payment.
+     */
     private void audit(
             Organization org,
             User user,

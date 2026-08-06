@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.model.Loan;
@@ -17,7 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
-
 
 @RestController
 @RequestMapping("/api/public/webhooks")
@@ -38,36 +36,18 @@ public class PaymentWebhookController {
     private final IdempotencyService idempotencyService;
 
 
-    /**
-     * ============================================================
-     * FLUTTERWAVE WEBHOOK SECRET
-     * ============================================================
-     */
+    // ============================================================
+    // WEBHOOK SECRETS
+    // ============================================================
+
     @Value("${flutterwave.webhook-secret:}")
     private String flutterwaveWebhookSecret;
 
 
-    /**
-     * ============================================================
-     * MTN WEBHOOK SECRET
-     * ============================================================
-     *
-     * Optional.
-     *
-     * If your MTN integration does not use a webhook secret,
-     * leave this empty.
-     */
     @Value("${mtn.mobile-money.webhook-secret:}")
     private String mtnWebhookSecret;
 
 
-    /**
-     * ============================================================
-     * AIRTEL WEBHOOK SECRET
-     * ============================================================
-     *
-     * Optional.
-     */
     @Value("${airtel.money.webhook-secret:}")
     private String airtelWebhookSecret;
 
@@ -77,15 +57,14 @@ public class PaymentWebhookController {
     // ============================================================
 
     /**
-     * Flutterwave webhook.
-     *
-     * Example:
+     * Flutterwave webhook endpoint.
      *
      * POST
+     *
      * /api/public/webhooks/flutterwave
      *
-     * Flutterwave should call this endpoint after a transaction
-     * changes state.
+     * Flutterwave sends the webhook after the transaction changes
+     * state.
      */
     @PostMapping("/flutterwave")
     public ResponseEntity<String> handleFlutterwaveWebhook(
@@ -93,22 +72,25 @@ public class PaymentWebhookController {
             @RequestHeader(
                     value = "verif-hash",
                     required = false
-            ) String signature) {
+            ) String signature
+    ) {
 
         try {
 
-            // ----------------------------------------------------
-            // Verify webhook signature
-            // ----------------------------------------------------
+            // ====================================================
+            // VERIFY WEBHOOK SIGNATURE
+            // ====================================================
 
             if (
                     flutterwaveWebhookSecret != null
-                    && !flutterwaveWebhookSecret.isBlank()
+                            && !flutterwaveWebhookSecret.isBlank()
             ) {
 
                 if (
                         signature == null
-                        || !signature.equals(flutterwaveWebhookSecret)
+                                || !signature.equals(
+                                flutterwaveWebhookSecret
+                        )
                 ) {
 
                     log.warn(
@@ -122,38 +104,125 @@ public class PaymentWebhookController {
             }
 
 
-            // ----------------------------------------------------
-            // Extract data
-            // ----------------------------------------------------
+            // ====================================================
+            // EXTRACT DATA
+            // ====================================================
 
-            Object dataObject = payload.get("data");
+            Object dataObject =
+                    payload.get("data");
+
 
             if (!(dataObject instanceof Map<?, ?>)) {
 
+                log.warn(
+                        "[FLW WEBHOOK] Missing data object"
+                );
+
                 return ResponseEntity
-                        .ok("ignored: no data");
+                        .ok(
+                                "ignored: no data"
+                        );
             }
+
 
             @SuppressWarnings("unchecked")
             Map<String, Object> data =
                     (Map<String, Object>) dataObject;
 
 
+            // ====================================================
+            // TRANSACTION ID
+            // ====================================================
+
             String transactionId =
-                    String.valueOf(data.get("id"));
+                    firstNonBlank(
+                            data,
+                            "id",
+                            "transaction_id",
+                            "transactionId"
+                    );
+
+
+            if (transactionId == null) {
+
+                log.warn(
+                        "[FLW WEBHOOK] Missing transaction ID"
+                );
+
+                return ResponseEntity
+                        .ok(
+                                "ignored: missing transaction id"
+                        );
+            }
+
+
+            // ====================================================
+            // TRANSACTION REFERENCE
+            // ====================================================
 
             String transactionReference =
-                    String.valueOf(data.get("tx_ref"));
+                    firstNonBlank(
+                            data,
+                            "tx_ref",
+                            "txRef",
+                            "reference"
+                    );
 
 
-            // ----------------------------------------------------
-            // Extract loan ID
-            // ----------------------------------------------------
+            if (transactionReference == null) {
+
+                log.warn(
+                        "[FLW WEBHOOK] Missing transaction reference. transaction={}",
+                        transactionId
+                );
+
+                return ResponseEntity
+                        .ok(
+                                "ignored: missing transaction reference"
+                        );
+            }
+
+
+            // ====================================================
+            // TRANSACTION STATUS
+            // ====================================================
+
+            String status =
+                    firstNonBlank(
+                            data,
+                            "status"
+                    );
+
+
+            if (
+                    status != null
+                            && !isSuccessfulStatus(
+                            status
+                    )
+            ) {
+
+                log.info(
+                        "[FLW WEBHOOK] Transaction {} status={}",
+                        transactionId,
+                        status
+                );
+
+                return ResponseEntity
+                        .ok(
+                                "payment not successful"
+                        );
+            }
+
+
+            // ====================================================
+            // EXTRACT LOAN ID
+            // ====================================================
 
             Long loanId =
                     FlutterwaveService.loanIdFromTxRef(
                             transactionReference
                     );
+
 
             if (loanId == null) {
 
@@ -163,38 +232,22 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("ignored: unrecognized transaction");
+                        .ok(
+                                "ignored: unrecognized transaction"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Verify transaction directly with Flutterwave
-            // ----------------------------------------------------
-
-            boolean verified =
-                    flutterwaveService.verifyTransaction(
-                            transactionId
-                    );
-
-            if (!verified) {
-
-                log.warn(
-                        "[FLW WEBHOOK] Transaction {} failed verification",
-                        transactionId
-                );
-
-                return ResponseEntity
-                        .ok("not verified");
-            }
-
-
-            // ----------------------------------------------------
-            // Find loan
-            // ----------------------------------------------------
+            // ====================================================
+            // FIND LOAN
+            // ====================================================
 
             Loan loan =
-                    loanRepo.findById(loanId)
+                    loanRepo.findById(
+                            loanId
+                    )
                             .orElse(null);
+
 
             if (loan == null) {
 
@@ -204,13 +257,39 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("ignored: unknown loan");
+                        .ok(
+                                "ignored: unknown loan"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Idempotency
-            // ----------------------------------------------------
+            // ====================================================
+            // VERIFY TRANSACTION DIRECTLY WITH FLUTTERWAVE
+            // ====================================================
+
+            boolean verified =
+                    flutterwaveService.verifyTransaction(
+                            transactionId
+                    );
+
+
+            if (!verified) {
+
+                log.warn(
+                        "[FLW WEBHOOK] Transaction {} failed verification",
+                        transactionId
+                );
+
+                return ResponseEntity
+                        .ok(
+                                "not verified"
+                        );
+            }
+
+
+            // ====================================================
+            // WEBHOOK IDEMPOTENCY
+            // ====================================================
 
             var idempotency =
                     idempotencyService.checkOrReserve(
@@ -220,50 +299,88 @@ public class PaymentWebhookController {
                             payload.toString()
                     );
 
+
             if (idempotency.isReplay()) {
 
+                log.info(
+                        "[FLW WEBHOOK] Replay detected. transaction={}",
+                        transactionId
+                );
+
                 return ResponseEntity
-                        .ok("already processed");
+                        .ok(
+                                "already processed"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Amount
-            // ----------------------------------------------------
+            // ====================================================
+            // AMOUNT
+            // ====================================================
 
             double amount =
-                    extractAmount(data.get("amount"));
+                    extractAmount(
+                            data.get("amount")
+                    );
 
 
             if (amount <= 0) {
 
                 log.warn(
-                        "[FLW WEBHOOK] Invalid amount for transaction {}",
+                        "[FLW WEBHOOK] Invalid amount. transaction={}",
                         transactionId
                 );
 
                 return ResponseEntity
-                        .ok("invalid amount");
+                        .ok(
+                                "invalid amount"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Payment method
-            // ----------------------------------------------------
+            // ====================================================
+            // PAYMENT METHOD
+            // ====================================================
 
             String method =
-                    String.valueOf(
-                            data.getOrDefault(
-                                    "payment_type",
-                                    "MOBILE_MONEY"
-                            )
-                    ).toUpperCase();
+                    firstNonBlank(
+                            data,
+                            "payment_type",
+                            "paymentType"
+                    );
 
 
-            // ----------------------------------------------------
-            // Record payment
-            // ----------------------------------------------------
+            if (method == null) {
+                method = "MOBILE_MONEY";
+            }
 
+
+            method =
+                    method.toUpperCase();
+
+
+            // ====================================================
+            // RECORD PAYMENT
+            // ====================================================
+
+            /*
+             * IMPORTANT:
+             *
+             * transactionId is passed directly to PaymentService.
+             *
+             * If the immediate payment path already recorded this
+             * transaction, PaymentService will find the existing
+             * Payment and return it.
+             *
+             * Therefore the webhook will NOT:
+             *
+             * - add money again
+             * - reduce principal again
+             * - charge interest again
+             * - send another SMS
+             * - send another email
+             * - create another accounting transaction
+             */
             paymentService.recordPayment(
                     loanId,
                     amount,
@@ -276,7 +393,8 @@ public class PaymentWebhookController {
 
 
             log.info(
-                    "[FLW WEBHOOK] Payment recorded. loan={}, amount={}, transaction={}",
+                    "[FLW WEBHOOK] Payment processed. " +
+                            "loan={}, amount={}, transaction={}",
                     loanId,
                     amount,
                     transactionId
@@ -284,7 +402,9 @@ public class PaymentWebhookController {
 
 
             return ResponseEntity
-                    .ok("processed");
+                    .ok(
+                            "processed"
+                    );
 
         } catch (Exception e) {
 
@@ -294,36 +414,31 @@ public class PaymentWebhookController {
             );
 
             /*
-             * Return 200 so the gateway does not continuously retry
-             * a malformed/internal request forever.
+             * Return 500 so the provider can retry.
              *
-             * The payment is NOT marked successful if recording failed.
+             * This is safer than returning 200 for an internal
+             * processing failure because a 200 tells the provider
+             * that the webhook was successfully handled.
              */
             return ResponseEntity
-                    .ok("error processing webhook");
+                    .internalServerError()
+                    .body(
+                            "error processing webhook"
+                    );
         }
     }
 
 
     // ============================================================
-    // DIRECT MTN MOBILE MONEY
+    // MTN MOBILE MONEY
     // ============================================================
 
     /**
-     * ============================================================
-     * MTN MOBILE MONEY WEBHOOK
-     * ============================================================
-     *
-     * Example:
+     * MTN Mobile Money webhook.
      *
      * POST
+     *
      * /api/public/webhooks/mtn
-     *
-     * The exact payload sent by MTN depends on the MTN API product
-     * and integration environment.
-     *
-     * Therefore this endpoint intentionally accepts a generic
-     * JSON payload and extracts common transaction fields.
      */
     @PostMapping("/mtn")
     public ResponseEntity<String> handleMtnWebhook(
@@ -331,22 +446,25 @@ public class PaymentWebhookController {
             @RequestHeader(
                     value = "X-Webhook-Secret",
                     required = false
-            ) String signature) {
+            ) String signature
+    ) {
 
         try {
 
-            // ----------------------------------------------------
-            // Optional signature validation
-            // ----------------------------------------------------
+            // ====================================================
+            // SIGNATURE
+            // ====================================================
 
             if (
                     mtnWebhookSecret != null
-                    && !mtnWebhookSecret.isBlank()
+                            && !mtnWebhookSecret.isBlank()
             ) {
 
                 if (
                         signature == null
-                        || !signature.equals(mtnWebhookSecret)
+                                || !signature.equals(
+                                mtnWebhookSecret
+                        )
                 ) {
 
                     log.warn(
@@ -355,14 +473,16 @@ public class PaymentWebhookController {
 
                     return ResponseEntity
                             .status(401)
-                            .body("Invalid signature");
+                            .body(
+                                    "Invalid signature"
+                            );
                 }
             }
 
 
-            // ----------------------------------------------------
-            // Extract transaction reference
-            // ----------------------------------------------------
+            // ====================================================
+            // TRANSACTION ID
+            // ====================================================
 
             String transactionId =
                     firstNonBlank(
@@ -372,7 +492,8 @@ public class PaymentWebhookController {
                             "externalId",
                             "external_id",
                             "reference",
-                            "financialTransactionId"
+                            "financialTransactionId",
+                            "financial_transaction_id"
                     );
 
 
@@ -384,13 +505,15 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("ignored: missing transaction id");
+                        .ok(
+                                "ignored: missing transaction id"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Extract loan ID
-            // ----------------------------------------------------
+            // ====================================================
+            // LOAN ID
+            // ====================================================
 
             Long loanId =
                     extractLoanId(
@@ -407,28 +530,40 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("ignored: unknown loan");
+                        .ok(
+                                "ignored: unknown loan"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Find loan
-            // ----------------------------------------------------
+            // ====================================================
+            // FIND LOAN
+            // ====================================================
 
             Loan loan =
-                    loanRepo.findById(loanId)
+                    loanRepo.findById(
+                            loanId
+                    )
                             .orElse(null);
+
 
             if (loan == null) {
 
+                log.warn(
+                        "[MTN WEBHOOK] Loan {} not found",
+                        loanId
+                );
+
                 return ResponseEntity
-                        .ok("ignored: unknown loan");
+                        .ok(
+                                "ignored: unknown loan"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Check payment status
-            // ----------------------------------------------------
+            // ====================================================
+            // STATUS
+            // ====================================================
 
             String status =
                     firstNonBlank(
@@ -441,7 +576,9 @@ public class PaymentWebhookController {
 
             if (
                     status != null
-                    && !isSuccessfulStatus(status)
+                            && !isSuccessfulStatus(
+                            status
+                    )
             ) {
 
                 log.info(
@@ -451,13 +588,15 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("payment not successful");
+                        .ok(
+                                "payment not successful"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Idempotency
-            // ----------------------------------------------------
+            // ====================================================
+            // IDEMPOTENCY
+            // ====================================================
 
             var idempotency =
                     idempotencyService.checkOrReserve(
@@ -467,16 +606,24 @@ public class PaymentWebhookController {
                             payload.toString()
                     );
 
+
             if (idempotency.isReplay()) {
 
+                log.info(
+                        "[MTN WEBHOOK] Replay detected. transaction={}",
+                        transactionId
+                );
+
                 return ResponseEntity
-                        .ok("already processed");
+                        .ok(
+                                "already processed"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Amount
-            // ----------------------------------------------------
+            // ====================================================
+            // AMOUNT
+            // ====================================================
 
             double amount =
                     extractAmount(
@@ -492,13 +639,15 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("invalid amount");
+                        .ok(
+                                "invalid amount"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Record payment
-            // ----------------------------------------------------
+            // ====================================================
+            // RECORD PAYMENT
+            // ====================================================
 
             paymentService.recordPayment(
                     loanId,
@@ -512,7 +661,8 @@ public class PaymentWebhookController {
 
 
             log.info(
-                    "[MTN WEBHOOK] Payment recorded. loan={}, amount={}, transaction={}",
+                    "[MTN WEBHOOK] Payment processed. " +
+                            "loan={}, amount={}, transaction={}",
                     loanId,
                     amount,
                     transactionId
@@ -520,7 +670,9 @@ public class PaymentWebhookController {
 
 
             return ResponseEntity
-                    .ok("processed");
+                    .ok(
+                            "processed"
+                    );
 
         } catch (Exception e) {
 
@@ -530,23 +682,23 @@ public class PaymentWebhookController {
             );
 
             return ResponseEntity
-                    .ok("error processing webhook");
+                    .internalServerError()
+                    .body(
+                            "error processing webhook"
+                    );
         }
     }
 
 
     // ============================================================
-    // DIRECT AIRTEL MONEY
+    // AIRTEL MONEY
     // ============================================================
 
     /**
-     * ============================================================
-     * AIRTEL MONEY WEBHOOK
-     * ============================================================
-     *
-     * Example:
+     * Airtel Money webhook.
      *
      * POST
+     *
      * /api/public/webhooks/airtel
      */
     @PostMapping("/airtel")
@@ -555,22 +707,25 @@ public class PaymentWebhookController {
             @RequestHeader(
                     value = "X-Webhook-Secret",
                     required = false
-            ) String signature) {
+            ) String signature
+    ) {
 
         try {
 
-            // ----------------------------------------------------
-            // Optional signature validation
-            // ----------------------------------------------------
+            // ====================================================
+            // SIGNATURE
+            // ====================================================
 
             if (
                     airtelWebhookSecret != null
-                    && !airtelWebhookSecret.isBlank()
+                            && !airtelWebhookSecret.isBlank()
             ) {
 
                 if (
                         signature == null
-                        || !signature.equals(airtelWebhookSecret)
+                                || !signature.equals(
+                                airtelWebhookSecret
+                        )
                 ) {
 
                     log.warn(
@@ -579,14 +734,16 @@ public class PaymentWebhookController {
 
                     return ResponseEntity
                             .status(401)
-                            .body("Invalid signature");
+                            .body(
+                                    "Invalid signature"
+                            );
                 }
             }
 
 
-            // ----------------------------------------------------
-            // Extract transaction ID
-            // ----------------------------------------------------
+            // ====================================================
+            // TRANSACTION ID
+            // ====================================================
 
             String transactionId =
                     firstNonBlank(
@@ -608,13 +765,15 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("ignored: missing transaction id");
+                        .ok(
+                                "ignored: missing transaction id"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Extract loan ID
-            // ----------------------------------------------------
+            // ====================================================
+            // LOAN ID
+            // ====================================================
 
             Long loanId =
                     extractLoanId(
@@ -631,28 +790,40 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("ignored: unknown loan");
+                        .ok(
+                                "ignored: unknown loan"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Find loan
-            // ----------------------------------------------------
+            // ====================================================
+            // FIND LOAN
+            // ====================================================
 
             Loan loan =
-                    loanRepo.findById(loanId)
+                    loanRepo.findById(
+                            loanId
+                    )
                             .orElse(null);
+
 
             if (loan == null) {
 
+                log.warn(
+                        "[AIRTEL WEBHOOK] Loan {} not found",
+                        loanId
+                );
+
                 return ResponseEntity
-                        .ok("ignored: unknown loan");
+                        .ok(
+                                "ignored: unknown loan"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Check transaction status
-            // ----------------------------------------------------
+            // ====================================================
+            // STATUS
+            // ====================================================
 
             String status =
                     firstNonBlank(
@@ -660,13 +831,16 @@ public class PaymentWebhookController {
                             "status",
                             "transactionStatus",
                             "transaction_status",
-                            "resultCode"
+                            "resultCode",
+                            "result_code"
                     );
 
 
             if (
                     status != null
-                    && !isSuccessfulStatus(status)
+                            && !isSuccessfulStatus(
+                            status
+                    )
             ) {
 
                 log.info(
@@ -676,13 +850,15 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("payment not successful");
+                        .ok(
+                                "payment not successful"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Idempotency
-            // ----------------------------------------------------
+            // ====================================================
+            // IDEMPOTENCY
+            // ====================================================
 
             var idempotency =
                     idempotencyService.checkOrReserve(
@@ -692,16 +868,24 @@ public class PaymentWebhookController {
                             payload.toString()
                     );
 
+
             if (idempotency.isReplay()) {
 
+                log.info(
+                        "[AIRTEL WEBHOOK] Replay detected. transaction={}",
+                        transactionId
+                );
+
                 return ResponseEntity
-                        .ok("already processed");
+                        .ok(
+                                "already processed"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Amount
-            // ----------------------------------------------------
+            // ====================================================
+            // AMOUNT
+            // ====================================================
 
             double amount =
                     extractAmount(
@@ -717,13 +901,15 @@ public class PaymentWebhookController {
                 );
 
                 return ResponseEntity
-                        .ok("invalid amount");
+                        .ok(
+                                "invalid amount"
+                        );
             }
 
 
-            // ----------------------------------------------------
-            // Record payment
-            // ----------------------------------------------------
+            // ====================================================
+            // RECORD PAYMENT
+            // ====================================================
 
             paymentService.recordPayment(
                     loanId,
@@ -737,7 +923,8 @@ public class PaymentWebhookController {
 
 
             log.info(
-                    "[AIRTEL WEBHOOK] Payment recorded. loan={}, amount={}, transaction={}",
+                    "[AIRTEL WEBHOOK] Payment processed. " +
+                            "loan={}, amount={}, transaction={}",
                     loanId,
                     amount,
                     transactionId
@@ -745,7 +932,9 @@ public class PaymentWebhookController {
 
 
             return ResponseEntity
-                    .ok("processed");
+                    .ok(
+                            "processed"
+                    );
 
         } catch (Exception e) {
 
@@ -755,7 +944,10 @@ public class PaymentWebhookController {
             );
 
             return ResponseEntity
-                    .ok("error processing webhook");
+                    .internalServerError()
+                    .body(
+                            "error processing webhook"
+                    );
         }
     }
 
@@ -765,27 +957,34 @@ public class PaymentWebhookController {
     // ============================================================
 
     /**
-     * Extract amount safely from webhook payload.
+     * Extract amount safely from a webhook value.
      */
-    private double extractAmount(Object value) {
+    private double extractAmount(
+            Object value
+    ) {
 
         if (value == null) {
-            return 0;
+            return 0.0;
         }
 
+
         if (value instanceof Number number) {
+
             return number.doubleValue();
         }
+
 
         try {
 
             return Double.parseDouble(
-                    String.valueOf(value)
+                    String.valueOf(
+                            value
+                    ).trim()
             );
 
         } catch (Exception e) {
 
-            return 0;
+            return 0.0;
         }
     }
 
@@ -795,24 +994,40 @@ public class PaymentWebhookController {
      */
     private String firstNonBlank(
             Map<String, Object> payload,
-            String... fields) {
+            String... fields
+    ) {
 
-        for (String field : fields) {
+        if (payload == null) {
+            return null;
+        }
+
+
+        for (String field :
+                fields) {
 
             Object value =
-                    payload.get(field);
+                    payload.get(
+                            field
+                    );
+
 
             if (value == null) {
                 continue;
             }
 
+
             String text =
-                    String.valueOf(value).trim();
+                    String.valueOf(
+                            value
+                    ).trim();
+
 
             if (!text.isBlank()) {
+
                 return text;
             }
         }
+
 
         return null;
     }
@@ -823,62 +1038,86 @@ public class PaymentWebhookController {
      *
      * Preferred:
      *
-     *      loanId
+     *     loanId
      *
      * or:
      *
-     *      loan_id
+     *     loan_id
      *
-     * Otherwise attempt to recover it from a transaction reference
-     * such as:
+     * Otherwise attempt:
      *
-     *      LOAN-123-ABC456
+     *     LOAN-123-ABC456
      */
     private Long extractLoanId(
             Map<String, Object> payload,
-            String transactionReference) {
+            String transactionReference
+    ) {
 
         Object value =
-                payload.get("loanId");
+                payload.get(
+                        "loanId"
+                );
+
 
         if (value == null) {
-            value = payload.get("loan_id");
+
+            value =
+                    payload.get(
+                            "loan_id"
+                    );
         }
+
 
         if (value != null) {
 
             try {
 
                 return Long.valueOf(
-                        String.valueOf(value)
+                        String.valueOf(
+                                value
+                        ).trim()
                 );
 
             } catch (Exception ignored) {
+                // Continue to reference parsing.
             }
         }
 
 
-        // Try reference format:
-        // LOAN-123-XXXX
+        // ========================================================
+        // TRY TRANSACTION REFERENCE
+        // ========================================================
 
-        if (transactionReference != null) {
+        if (
+                transactionReference != null
+                        && !transactionReference.isBlank()
+        ) {
 
             try {
 
                 String[] parts =
-                        transactionReference.split("-");
+                        transactionReference.split(
+                                "-"
+                        );
+
 
                 if (
                         parts.length >= 2
-                        && "LOAN".equalsIgnoreCase(parts[0])
+                                && "LOAN".equalsIgnoreCase(
+                                parts[0]
+                        )
                 ) {
 
-                    return Long.valueOf(parts[1]);
+                    return Long.valueOf(
+                            parts[1]
+                    );
                 }
 
             } catch (Exception ignored) {
+                // Unable to extract loan ID.
             }
         }
+
 
         return null;
     }
@@ -889,24 +1128,45 @@ public class PaymentWebhookController {
      * transaction.
      */
     private boolean isSuccessfulStatus(
-            String status) {
+            String status
+    ) {
 
         if (status == null) {
             return true;
         }
+
 
         String normalized =
                 status.trim()
                         .toLowerCase();
 
 
-        return normalized.equals("success")
-                || normalized.equals("successful")
-                || normalized.equals("completed")
-                || normalized.equals("complete")
-                || normalized.equals("paid")
-                || normalized.equals("successful_payment")
-                || normalized.equals("200")
-                || normalized.equals("0");
+        return normalized.equals(
+                "success"
+        )
+                || normalized.equals(
+                "successful"
+        )
+                || normalized.equals(
+                "completed"
+        )
+                || normalized.equals(
+                "complete"
+        )
+                || normalized.equals(
+                "paid"
+        )
+                || normalized.equals(
+                "successful_payment"
+        )
+                || normalized.equals(
+                "successful payment"
+        )
+                || normalized.equals(
+                "200"
+        )
+                || normalized.equals(
+                "0"
+        );
     }
 }
