@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.repository;
 
 import com.patrick.fintech.loan_backend.model.Organization;
@@ -12,7 +11,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-public interface PaymentRepository extends JpaRepository<Payment, Long> {
+public interface PaymentRepository
+        extends JpaRepository<Payment, Long> {
 
     // ============================================================
     // BASIC QUERIES
@@ -22,27 +22,57 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     List<Payment> findByLoan_Organization_Id(Long orgId);
 
-    List<Payment> findByPaidFalseAndDueDateBefore(LocalDate date);
+    List<Payment> findByPaidFalseAndDueDateBefore(
+            LocalDate date
+    );
 
     List<Payment> findByOrganization_IdAndPaidFalseAndDueDateBefore(
             Long orgId,
             LocalDate date
     );
 
-    Optional<Payment> findByPaymentReference(String ref);
+    Optional<Payment> findByPaymentReference(
+            String ref
+    );
+
+
+    // ============================================================
+    // LOAN PAYMENT SCHEDULE
+    // ============================================================
+
+    /**
+     * Tenant-safe loan schedule.
+     *
+     * Returns only payments belonging to the specified loan
+     * AND organization.
+     */
+    @Query("""
+        SELECT p
+        FROM Payment p
+        WHERE p.loan.id = :loanId
+          AND p.organization.id = :organizationId
+        ORDER BY p.dueDate ASC
+        """)
+    List<Payment> findLoanSchedule(
+            @Param("loanId") Long loanId,
+            @Param("organizationId") Long organizationId
+    );
+
+
+    /**
+     * Alternative simple schedule query.
+     *
+     * Kept because other services may already use it.
+     */
+    List<Payment> findByLoanIdOrderByDueDateAsc(
+            Long loanId
+    );
 
 
     // ============================================================
     // BORROWER PAYMENT HISTORY
     // ============================================================
 
-    /**
-     * All payments belonging to a borrower inside an organization.
-     *
-     * Payment -> Loan -> Borrower
-     *
-     * Organization restriction preserves tenant isolation.
-     */
     @Query("""
         SELECT p
         FROM Payment p
@@ -99,9 +129,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // BORROWER PAYMENT STATISTICS
     // ============================================================
 
-    /**
-     * Number of payment records belonging to borrower.
-     */
     @Query("""
         SELECT COUNT(p)
         FROM Payment p
@@ -116,9 +143,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     );
 
 
-    /**
-     * Number of paid payment records.
-     */
     @Query("""
         SELECT COUNT(p)
         FROM Payment p
@@ -134,9 +158,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     );
 
 
-    /**
-     * Number of late payment records.
-     */
     @Query("""
         SELECT COUNT(p)
         FROM Payment p
@@ -152,9 +173,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     );
 
 
-    /**
-     * Number of unpaid and overdue payment records.
-     */
     @Query("""
         SELECT COUNT(p)
         FROM Payment p
@@ -176,12 +194,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // BORROWER PAYMENT TOTALS
     // ============================================================
 
-    /**
-     * Total amount actually paid by borrower.
-     *
-     * Payment entity field:
-     * amountPaid
-     */
     @Query("""
         SELECT COALESCE(SUM(p.amountPaid), 0.0)
         FROM Payment p
@@ -197,12 +209,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     );
 
 
-    /**
-     * Total principal paid by borrower.
-     *
-     * IMPORTANT:
-     * Payment has principalComponent, NOT principalPaid.
-     */
     @Query("""
         SELECT COALESCE(SUM(p.principalComponent), 0.0)
         FROM Payment p
@@ -218,12 +224,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     );
 
 
-    /**
-     * Total interest paid by borrower.
-     *
-     * IMPORTANT:
-     * Payment has interestComponent, NOT interestPaid.
-     */
     @Query("""
         SELECT COALESCE(SUM(p.interestComponent), 0.0)
         FROM Payment p
@@ -239,9 +239,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     );
 
 
-    /**
-     * Total penalties paid by borrower.
-     */
     @Query("""
         SELECT COALESCE(SUM(p.penalty), 0.0)
         FROM Payment p
@@ -261,9 +258,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // COLLECTIONS
     // ============================================================
 
-    /**
-     * Total collections for an organization since a given date.
-     */
     @Query("""
         SELECT COALESCE(SUM(p.amountPaid), 0.0)
         FROM Payment p
@@ -302,7 +296,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 
     // ============================================================
-    // RECENT PAYMENTS FOR A LOAN
+    // RECENT PAYMENTS
     // ============================================================
 
     List<Payment> findTop10ByLoanIdOrderByPaidDateDesc(

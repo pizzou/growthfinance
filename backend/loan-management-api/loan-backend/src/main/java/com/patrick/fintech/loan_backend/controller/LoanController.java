@@ -61,13 +61,7 @@ public class LoanController {
         return ResponseEntity.ok(ApiResponse.ok(paymentService.getLoanSchedule(id, orgId)));
     }
 
-    /**
-     * Powers the "Required Documents" checklist on the loan detail page.
-     * This was previously missing here, so the frontend's call to
-     * GET /api/loans/{id}/document-requirements fell through to Spring's
-     * static-resource handler and blew up as a 404 NoResourceFoundException
-     * logged as an "Unhandled error" 500.
-     */
+ 
     @GetMapping("/{id}/document-requirements")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDocumentRequirements(@PathVariable Long id) {
         Long orgId = currentUserUtil.getCurrentOrganizationId();
