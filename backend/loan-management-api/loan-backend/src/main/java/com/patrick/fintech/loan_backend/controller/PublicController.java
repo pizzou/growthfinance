@@ -3061,7 +3061,7 @@ public class PublicController {
         t.add(
                 Map.of(
                         "name",
-                        "Marie-Claire U.",
+                        "MRS U.",
 
                         "role",
                         "Teacher",
@@ -3102,7 +3102,7 @@ public class PublicController {
         team.add(
                 Map.of(
                         "name",
-                        "Grace N.",
+                        "MR N.",
                         "role",
                         "Chief Finance Officer",
                         "initials",
@@ -3124,11 +3124,11 @@ public class PublicController {
         team.add(
                 Map.of(
                         "name",
-                        "Alice K.",
+                        "DR A.",
                         "role",
                         "Head of Operations",
                         "initials",
-                        "AK"
+                        "DA"
                 )
         );
 
