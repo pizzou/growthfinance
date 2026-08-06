@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -25,7 +24,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/public")
@@ -52,7 +50,6 @@ public class PublicController {
     private final LoanCommentRepository loanCommentRepo;
     private final ContactMessageRepository contactMessageRepo;
 
-   
     private final FlutterwaveService flutterwaveService;
     private final MtnMobileMoneyService mtnMobileMoneyService;
     private final AirtelMobileMoneyService airtelMobileMoneyService;
@@ -62,7 +59,9 @@ public class PublicController {
     private final ReportExportService exportService;
 
 
-   
+    // ============================================================
+    // CONTACT
+    // ============================================================
 
     @PostMapping("/contact")
     public ResponseEntity<ApiResponse<String>> submitContact(
@@ -103,8 +102,8 @@ public class PublicController {
                 .stream()
                 .filter(u ->
                         u.getRole() != null &&
-                        Set.of("ADMIN", "MANAGER")
-                                .contains(u.getRole().getName())
+                                Set.of("ADMIN", "MANAGER")
+                                        .contains(u.getRole().getName())
                 )
                 .toList();
 
@@ -202,6 +201,7 @@ public class PublicController {
         );
 
         if (loan.getBorrower() != null) {
+
             result.put(
                     "maritalStatus",
                     loan.getBorrower().getMaritalStatus()
@@ -241,10 +241,13 @@ public class PublicController {
         DocumentType docType;
 
         try {
+
             docType = DocumentType.valueOf(
                     documentType.trim().toUpperCase()
             );
+
         } catch (IllegalArgumentException e) {
+
             throw new RuntimeException(
                     "Unknown document type."
             );
@@ -358,6 +361,7 @@ public class PublicController {
         }
 
         if (!file.isUploadedByApplicant()) {
+
             throw new RuntimeException(
                     "This document was added by our staff and can't be removed here."
             );
@@ -470,6 +474,7 @@ public class PublicController {
         for (String p : parts) {
 
             if (!p.isBlank()) {
+
                 sb.append(
                         Character.toUpperCase(
                                 p.charAt(0)
@@ -489,6 +494,10 @@ public class PublicController {
         return sb.toString().trim();
     }
 
+
+    // ============================================================
+    // PUBLIC PAYMENT INITIATION
+    // ============================================================
 
     @PostMapping("/applications/{reference}/payments/initiate")
     @Transactional
@@ -510,16 +519,85 @@ public class PublicController {
             );
         }
 
+        /*
+         * ========================================================
+         * NORMALIZE PAYMENT METHOD
+         * ========================================================
+         */
+
         String method =
                 normalizePaymentMethod(
                         str(body.get("paymentMethod"))
                 );
 
         if (method == null) {
+
             throw new RuntimeException(
                     "Payment method is required."
             );
         }
+
+        /*
+         * ========================================================
+         * MOBILE MONEY NETWORK
+         * ========================================================
+         *
+         * The frontend may intentionally send:
+         *
+         * paymentMethod = MOBILE_MONEY
+         * network       = MTN
+         *
+         * or:
+         *
+         * paymentMethod = MOBILE_MONEY
+         * network       = AIRTEL
+         *
+         * Convert the generic method into the actual gateway
+         * before reaching the provider-specific code.
+         */
+
+        String network =
+                normalizeNetwork(
+                        str(body.get("network"))
+                );
+
+        if ("MOBILE_MONEY".equals(method)) {
+
+            if ("MTN".equals(network)) {
+
+                method = "MTN_MOBILE_MONEY";
+
+            } else if ("AIRTEL".equals(network)) {
+
+                method = "AIRTEL_MOBILE_MONEY";
+
+            } else {
+
+                throw new RuntimeException(
+                        "For mobile money payments, network must be MTN or AIRTEL."
+                );
+            }
+        }
+
+
+        /*
+         * If the frontend directly sends MTN_MOBILE_MONEY or
+         * AIRTEL_MOBILE_MONEY, make sure the network is consistent.
+         */
+
+        if ("MTN_MOBILE_MONEY".equals(method)) {
+
+            network = "MTN";
+
+        } else if ("AIRTEL_MOBILE_MONEY".equals(method)) {
+
+            network = "AIRTEL";
+        }
+
+
+        // ========================================================
+        // PAYMENT AMOUNT
+        // ========================================================
 
         Double requestedAmount =
                 num(body.get("amount"));
@@ -546,6 +624,7 @@ public class PublicController {
                             : 0;
         }
 
+
         if (dueAmount <= 0) {
 
             throw new RuntimeException(
@@ -553,10 +632,12 @@ public class PublicController {
             );
         }
 
+
         /*
          * Never allow a borrower to submit more than the outstanding
          * balance.
          */
+
         if (loan.getOutstandingBalance() != null &&
                 dueAmount > loan.getOutstandingBalance()) {
 
@@ -564,30 +645,44 @@ public class PublicController {
                     loan.getOutstandingBalance();
         }
 
+
+        // ========================================================
+        // BUILD PAYMENT REQUEST
+        // ========================================================
+
         PaymentGatewayRequest req =
                 new PaymentGatewayRequest();
 
         req.setAmount(dueAmount);
+
+        /*
+         * Use the resolved provider-specific method.
+         *
+         * For example:
+         *
+         * MOBILE_MONEY + MTN
+         * -> MTN_MOBILE_MONEY
+         */
+
         req.setPaymentMethod(method);
+
 
         /*
          * Use the supplied phone if present.
-         * Otherwise use the authenticated/verified borrower phone.
+         * Otherwise use the verified borrower phone.
          */
+
         String paymentPhone =
                 str(body.get("phoneNumber"));
 
         if (paymentPhone == null) {
+
             paymentPhone = phone;
         }
 
         req.setPhoneNumber(paymentPhone);
 
-        req.setNetwork(
-                normalizeNetwork(
-                        str(body.get("network"))
-                )
-        );
+        req.setNetwork(network);
 
         req.setCardNumber(
                 str(body.get("cardNumber"))
@@ -627,12 +722,30 @@ public class PublicController {
                         loan.getReferenceNumber();
 
 
-        /*
-         * ========================================================
-         * MTN DIRECT
-         * ========================================================
-         */
+        // ========================================================
+        // LOG PAYMENT REQUEST
+        // ========================================================
+
+        log.info(
+                "[PUBLIC PAYMENT] Payment request. loan={}, method={}, network={}, amount={}, phone={}",
+                loan.getId(),
+                method,
+                network,
+                dueAmount,
+                maskPhone(paymentPhone)
+        );
+
+
+        // ========================================================
+        // GATEWAY RESPONSE
+        // ========================================================
+
         PaymentGatewayResponse gatewayResponse;
+
+
+        // ========================================================
+        // MTN DIRECT
+        // ========================================================
 
         if ("MTN_MOBILE_MONEY".equals(method)) {
 
@@ -653,11 +766,11 @@ public class PublicController {
                     );
         }
 
-        /*
-         * ========================================================
-         * AIRTEL DIRECT
-         * ========================================================
-         */
+
+        // ========================================================
+        // AIRTEL DIRECT
+        // ========================================================
+
         else if ("AIRTEL_MOBILE_MONEY".equals(method)) {
 
             log.info(
@@ -677,21 +790,24 @@ public class PublicController {
                     );
         }
 
-        /*
-         * ========================================================
-         * FLUTTERWAVE
-         * ========================================================
-         */
+
+        // ========================================================
+        // FLUTTERWAVE
+        // ========================================================
+
         else if ("FLUTTERWAVE".equals(method) ||
                 "CARD".equals(method) ||
                 "BANK_TRANSFER".equals(method) ||
                 "FLUTTERWAVE_MOBILE_MONEY".equals(method)) {
 
             /*
-             * For Flutterwave mobile money, convert the public
-             * provider name to the gateway's expected method.
+             * Flutterwave mobile money expects MOBILE_MONEY,
+             * while the public API can expose
+             * FLUTTERWAVE_MOBILE_MONEY.
              */
+
             if ("FLUTTERWAVE_MOBILE_MONEY".equals(method)) {
+
                 req.setPaymentMethod("MOBILE_MONEY");
             }
 
@@ -705,6 +821,11 @@ public class PublicController {
                     );
         }
 
+
+        // ========================================================
+        // UNSUPPORTED
+        // ========================================================
+
         else {
 
             throw new RuntimeException(
@@ -714,7 +835,7 @@ public class PublicController {
 
 
         // ========================================================
-        // BUILD RESPONSE FOR WEBSITE
+        // BUILD FRONTEND RESPONSE
         // ========================================================
 
         Map<String, Object> result =
@@ -764,6 +885,22 @@ public class PublicController {
                 gatewayResponse.getRedirectUrl()
         );
 
+        /*
+         * Return the resolved method/network as well.
+         * This is useful to the frontend for debugging and
+         * confirmation.
+         */
+
+        result.put(
+                "paymentMethod",
+                method
+        );
+
+        result.put(
+                "network",
+                network
+        );
+
 
         // ========================================================
         // SUCCESS
@@ -779,6 +916,7 @@ public class PublicController {
              * Direct MTN/Airtel implementations may return pending,
              * in which case the callback/webhook records the payment.
              */
+
             double confirmedAmount =
                     gatewayResponse.getAmount() != null
                             ? gatewayResponse.getAmount()
@@ -912,6 +1050,26 @@ public class PublicController {
 
         return switch (value) {
 
+            /*
+             * GENERIC MOBILE MONEY
+             *
+             * This is the important fix for the frontend request:
+             *
+             * {
+             *   "paymentMethod": "MOBILE_MONEY",
+             *   "network": "MTN"
+             * }
+             */
+
+            case "MOBILE_MONEY",
+                 "MOBILEMONEY"
+                    -> "MOBILE_MONEY";
+
+
+            /*
+             * MTN
+             */
+
             case "MTN",
                  "MOMO",
                  "MTN_MOMO",
@@ -920,6 +1078,11 @@ public class PublicController {
                  "MTN_MOBILEMONEY"
                     -> "MTN_MOBILE_MONEY";
 
+
+            /*
+             * AIRTEL
+             */
+
             case "AIRTEL",
                  "AIRTEL_MONEY",
                  "AIRTEL_MOBILE",
@@ -927,20 +1090,41 @@ public class PublicController {
                  "AIRTEL_MOBILEMONEY"
                     -> "AIRTEL_MOBILE_MONEY";
 
+
+            /*
+             * FLUTTERWAVE
+             */
+
             case "FLW",
                  "FLUTTERWAVE"
                     -> "FLUTTERWAVE";
 
+
             case "FLUTTERWAVE_MOMO",
-                 "FLUTTERWAVE_MOBILE_MONEY"
+                 "FLUTTERWAVE_MOBILE_MONEY",
+                 "FLUTTERWAVE_MOBILEMONEY"
                     -> "FLUTTERWAVE_MOBILE_MONEY";
 
-            case "CARD"
+
+            /*
+             * CARD
+             */
+
+            case "CARD",
+                 "CREDIT_CARD",
+                 "DEBIT_CARD"
                     -> "CARD";
 
+
+            /*
+             * BANK TRANSFER
+             */
+
             case "BANK",
-                 "BANK_TRANSFER"
+                 "BANK_TRANSFER",
+                 "BANKTRANSFER"
                     -> "BANK_TRANSFER";
+
 
             default
                     -> value;
@@ -971,12 +1155,14 @@ public class PublicController {
 
             case "MTN",
                  "MTN_RW",
-                 "MTN_RWA"
+                 "MTN_RWA",
+                 "MTN_RWA_250"
                     -> "MTN";
 
             case "AIRTEL",
                  "AIRTEL_RW",
-                 "AIRTEL_RWA"
+                 "AIRTEL_RWA",
+                 "AIRTEL_RWA_250"
                     -> "AIRTEL";
 
             case "VODAFONE",
@@ -1551,7 +1737,6 @@ public class PublicController {
                 )
         );
 
-      
         config.put(
                 "paymentMethods",
                 paymentMethods()
@@ -1571,6 +1756,73 @@ public class PublicController {
 
         List<Map<String, Object>> methods =
                 new ArrayList<>();
+
+
+        // ========================================================
+        // GENERIC MOBILE MONEY
+        // ========================================================
+
+        Map<String, Object> mobileMoney =
+                new LinkedHashMap<>();
+
+        mobileMoney.put(
+                "id",
+                "MOBILE_MONEY"
+        );
+
+        mobileMoney.put(
+                "name",
+                "Mobile Money"
+        );
+
+        mobileMoney.put(
+                "shortName",
+                "Mobile Money"
+        );
+
+        mobileMoney.put(
+                "type",
+                "MOBILE_MONEY"
+        );
+
+        mobileMoney.put(
+                "provider",
+                "MTN_AIRTEL"
+        );
+
+        mobileMoney.put(
+                "available",
+                true
+        );
+
+        mobileMoney.put(
+                "networks",
+                List.of(
+                        Map.of(
+                                "id",
+                                "MTN",
+                                "name",
+                                "MTN Mobile Money",
+                                "available",
+                                true
+                        ),
+                        Map.of(
+                                "id",
+                                "AIRTEL",
+                                "name",
+                                "Airtel Money",
+                                "available",
+                                true
+                        )
+                )
+        );
+
+        methods.add(mobileMoney);
+
+
+        // ========================================================
+        // MTN
+        // ========================================================
 
         Map<String, Object> mtn =
                 new LinkedHashMap<>();
@@ -1608,6 +1860,10 @@ public class PublicController {
         methods.add(mtn);
 
 
+        // ========================================================
+        // AIRTEL
+        // ========================================================
+
         Map<String, Object> airtel =
                 new LinkedHashMap<>();
 
@@ -1643,6 +1899,10 @@ public class PublicController {
 
         methods.add(airtel);
 
+
+        // ========================================================
+        // FLUTTERWAVE
+        // ========================================================
 
         Map<String, Object> flutterwave =
                 new LinkedHashMap<>();
@@ -1863,11 +2123,13 @@ public class PublicController {
                         );
 
         borrower.setFirstName(firstName);
+
         borrower.setLastName(
                 str(body.get("lastName"))
         );
 
         borrower.setPhone(phone);
+
         borrower.setEmail(
                 inputEmail.trim()
         );
@@ -1993,6 +2255,7 @@ public class PublicController {
                         borrower
                 );
 
+
         int months = 12;
 
         if (body.get(
@@ -2021,6 +2284,7 @@ public class PublicController {
                                 360
                         )
                 );
+
 
         LoanRequest req =
                 LoanRequest.builder()
@@ -2071,6 +2335,7 @@ public class PublicController {
                         )
                         .build();
 
+
         Loan loan =
                 loanService.createLoan(
                         req,
@@ -2087,11 +2352,13 @@ public class PublicController {
                         loan
                 );
 
+
         notifyStaff(
                 org,
                 borrower,
                 loan
         );
+
 
         try {
 
@@ -2106,6 +2373,7 @@ public class PublicController {
                     e.getMessage()
             );
         }
+
 
         try {
 
@@ -2129,6 +2397,7 @@ public class PublicController {
             );
         }
 
+
         auditService.log(
                 org,
                 null,
@@ -2141,6 +2410,7 @@ public class PublicController {
                         org.getName() +
                         " website"
         );
+
 
         return ResponseEntity.ok(
                 ApiResponse.ok(
@@ -2373,6 +2643,7 @@ public class PublicController {
 
             m.put("title", p[0]);
             m.put("icon", p[1]);
+
             m.put(
                     "rate",
                     p[2] +
@@ -3061,7 +3332,7 @@ public class PublicController {
         t.add(
                 Map.of(
                         "name",
-                        "MRS U.",
+                        "Marie-Claire U.",
 
                         "role",
                         "Teacher",
@@ -3102,7 +3373,7 @@ public class PublicController {
         team.add(
                 Map.of(
                         "name",
-                        "MR N.",
+                        "Grace N.",
                         "role",
                         "Chief Finance Officer",
                         "initials",
@@ -3124,11 +3395,11 @@ public class PublicController {
         team.add(
                 Map.of(
                         "name",
-                        "DR A.",
+                        "Alice K.",
                         "role",
                         "Head of Operations",
                         "initials",
-                        "DA"
+                        "AK"
                 )
         );
 
