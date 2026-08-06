@@ -8,11 +8,16 @@ import com.patrick.fintech.loan_backend.model.Loan;
 import com.patrick.fintech.loan_backend.model.Payment;
 import com.patrick.fintech.loan_backend.repository.LoanRepository;
 import com.patrick.fintech.loan_backend.repository.PaymentRepository;
+import com.patrick.fintech.loan_backend.security.HmacIndexer;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -22,148 +27,263 @@ public class PublicPortalService {
     private final LoanRepository loanRepository;
     private final PaymentRepository paymentRepository;
 
-    public BorrowerDashboardResponse getDashboard(BorrowerDashboardRequest request) {
+    /**
+     * Public borrower dashboard.
+     *
+     * IMPORTANT:
+     * This method is transactional because Loan contains
+     * Hibernate lazy relationships such as Borrower and LoanOfficer.
+     */
+    @Transactional(readOnly = true)
+    public BorrowerDashboardResponse getDashboard(
+            BorrowerDashboardRequest request) {
+
+        if (request == null) {
+            throw new IllegalArgumentException(
+                    "Dashboard request is required");
+        }
+
+        if (request.getReference() == null
+                || request.getReference().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Reference number is required");
+        }
+
+        if (request.getPhone() == null
+                || request.getPhone().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Phone number is required");
+        }
+
+        //------------------------------------------------------------
+        // HASH PHONE
+        //------------------------------------------------------------
 
         String phoneHash =
-                com.patrick.fintech.loan_backend.security.HmacIndexer
-                        .index(request.getPhone());
+                HmacIndexer.index(
+                        request.getPhone().trim());
 
-        Loan loan = loanRepository
-                .findByReferenceNumberAndBorrower_PhoneHash(
-                        request.getReference(),
-                        phoneHash)
-                .orElseThrow(() ->
-                        new RuntimeException("Application not found"));
+        //------------------------------------------------------------
+        // FIND LOAN
+        //
+        // Repository query should fetch Borrower and LoanOfficer.
+        //------------------------------------------------------------
+
+        Loan loan =
+                loanRepository
+                        .findPublicDashboardLoan(
+                                request.getReference().trim(),
+                                phoneHash)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "Application not found"));
+
+        //------------------------------------------------------------
+        // BASIC DATES
+        //------------------------------------------------------------
+
+        LocalDate today =
+                LocalDate.now();
 
         int daysUntilDue = 0;
 
         if (loan.getNextPaymentDate() != null) {
+
             daysUntilDue =
                     (int) ChronoUnit.DAYS.between(
-                            LocalDate.now(),
+                            today,
                             loan.getNextPaymentDate());
         }
 
-        //----------------------------------------------------
-        // Repayment Progress
-        //----------------------------------------------------
+        //------------------------------------------------------------
+        // REPAYMENT PROGRESS
+        //------------------------------------------------------------
 
-        double repaymentProgress = 0;
+        double repaymentProgress = 0.0;
 
-        if (loan.getTotalRepayable() != null
-                && loan.getTotalRepayable() > 0
-                && loan.getTotalPaid() != null) {
+        Double totalRepayable =
+                loan.getTotalRepayable();
+
+        Double totalPaid =
+                loan.getTotalPaid();
+
+        if (totalRepayable != null
+                && totalRepayable > 0
+                && totalPaid != null) {
 
             repaymentProgress =
-                    (loan.getTotalPaid()
-                            / loan.getTotalRepayable()) * 100;
+                    (totalPaid / totalRepayable) * 100.0;
 
-            if (repaymentProgress > 100) {
-                repaymentProgress = 100;
-            }
+            repaymentProgress =
+                    Math.max(
+                            0.0,
+                            Math.min(
+                                    repaymentProgress,
+                                    100.0));
         }
 
-        //----------------------------------------------------
-        // Recent Payments
-        //----------------------------------------------------
+        //------------------------------------------------------------
+        // RECENT PAYMENTS
+        //------------------------------------------------------------
 
         List<PaymentHistoryResponse> recentPayments =
                 paymentRepository
-                        .findTop10ByLoanIdOrderByPaidDateDesc(loan.getId())
+                        .findTop10ByLoanIdOrderByPaidDateDesc(
+                                loan.getId())
                         .stream()
-                        .map(payment ->
-                                PaymentHistoryResponse.builder()
-                                        .paymentId(payment.getId())
-                                        .paymentDate(payment.getPaidDate())
-                                        .amount(payment.getAmountPaid())
-                                        .method(payment.getPaymentMethod())
-                                        .status(payment.getStatus().name())
-                                        .build())
+                        .map(this::toPaymentHistoryResponse)
                         .toList();
 
-        //----------------------------------------------------
-        // Upcoming Installments
-        //----------------------------------------------------
-        // Sourced from the live payment ledger (the same table
-        // PaymentService.recordPayment() updates on every real payment) —
-        // not the one-time projected schedule generated at disbursement,
-        // which never changes once a borrower starts paying flexible
-        // amounts and would otherwise drift out of sync with reality.
+        //------------------------------------------------------------
+        // UPCOMING INSTALLMENTS
+        //------------------------------------------------------------
 
         List<UpcomingInstallmentResponse> upcomingInstallments =
                 paymentRepository
                         .findByLoanId(loan.getId())
                         .stream()
-                        .filter(p -> !p.getPaid())
-                        .sorted(java.util.Comparator.comparing(Payment::getDueDate))
+                        .filter(payment ->
+                                Boolean.FALSE.equals(
+                                        payment.getPaid()))
+                        .sorted(
+                                Comparator.comparing(
+                                        Payment::getDueDate,
+                                        Comparator.nullsLast(
+                                                Comparator.naturalOrder())))
                         .limit(6)
-                        .map(payment ->
-                                UpcomingInstallmentResponse.builder()
-                                        .installmentNumber(payment.getInstallmentNumber())
-                                        .dueDate(payment.getDueDate())
-                                        .amount(payment.getAmount())
-                                        .principal(payment.getPrincipalComponent())
-                                        .interest(payment.getInterestComponent())
-                                        .status(payment.getStatus() != null ? payment.getStatus().name() : "PENDING")
-                                        .build())
+                        .map(this::toUpcomingInstallmentResponse)
                         .toList();
 
-        //----------------------------------------------------
-        // Payment Methods
-        //----------------------------------------------------
+        //------------------------------------------------------------
+        // BORROWER
+        //
+        // Borrower is already fetched by repository query.
+        //------------------------------------------------------------
 
-        List<String> paymentMethods = List.of(
-                "MTN Mobile Money",
-                "Airtel Money",
-                "Bank Transfer",
-                "Visa / Mastercard"
-        );
+        Long borrowerId =
+                loan.getBorrower().getId();
 
-        //----------------------------------------------------
-        // Loan Statistics
-        //----------------------------------------------------
+        //------------------------------------------------------------
+        // ORGANIZATION
+        //
+        // Organization is required for multi-tenant loan statistics.
+        //------------------------------------------------------------
+
+        Long organizationId =
+                loan.getOrganization().getId();
+
+        //------------------------------------------------------------
+        // ALL BORROWER LOANS
+        //------------------------------------------------------------
 
         List<Loan> borrowerLoans =
-                loanRepository.findByBorrowerIdAndOrganizationId(
-                        loan.getBorrower().getId(),
-                        loan.getOrganization().getId());
+                loanRepository
+                        .findByBorrowerIdAndOrganizationId(
+                                borrowerId,
+                                organizationId);
+
+        //------------------------------------------------------------
+        // LOAN STATISTICS
+        //------------------------------------------------------------
 
         int activeLoans = 0;
         int overdueLoans = 0;
         int completedLoans = 0;
 
-        for (Loan l : borrowerLoans) {
+        for (Loan borrowerLoan : borrowerLoans) {
 
-            if (l.getStatus().name().equals("ACTIVE")) {
-                activeLoans++;
+            if (borrowerLoan.getStatus() == null) {
+                continue;
             }
 
-            if (l.getStatus().name().equals("OVERDUE")) {
-                overdueLoans++;
-            }
+            switch (borrowerLoan.getStatus().name()) {
 
-            if (l.getStatus().name().equals("PAID") || l.getStatus().name().equals("CLOSED")) {
-                completedLoans++;
+                case "ACTIVE" -> activeLoans++;
+
+                case "OVERDUE" -> overdueLoans++;
+
+                case "PAID", "CLOSED" -> completedLoans++;
+
+                default -> {
+                    // Other statuses are ignored.
+                }
             }
         }
 
-        //----------------------------------------------------
-        // Response
-        //----------------------------------------------------
+        //------------------------------------------------------------
+        // PAYMENT METHODS
+        //------------------------------------------------------------
+
+        List<String> paymentMethods =
+                List.of(
+                        "MTN Mobile Money",
+                        "Airtel Money",
+                        "Bank Transfer",
+                        "Visa / Mastercard"
+                );
+
+        //------------------------------------------------------------
+        // BORROWER NAME
+        //------------------------------------------------------------
+
+        String borrowerName = null;
+
+        if (loan.getBorrower() != null) {
+
+            borrowerName =
+                    loan.getBorrower().getFullName();
+        }
+
+        //------------------------------------------------------------
+        // LOAN OFFICER
+        //------------------------------------------------------------
+
+        String loanOfficer = null;
+
+        if (loan.getLoanOfficer() != null) {
+
+            loanOfficer =
+                    loan.getLoanOfficer().getFullName();
+        }
+
+        //------------------------------------------------------------
+        // RESPONSE
+        //------------------------------------------------------------
 
         return BorrowerDashboardResponse.builder()
 
-                .loanId(loan.getId())
-                .referenceNumber(loan.getReferenceNumber())
-                .borrowerName(loan.getBorrower().getFullName())
+                .loanId(
+                        loan.getId())
 
-                .status(loan.getStatus().name())
-                .loanType(loan.getLoanType().name())
+                .referenceNumber(
+                        loan.getReferenceNumber())
 
-                .principal(loan.getAmount())
-                .outstandingBalance(loan.getOutstandingBalance())
-                .totalPaid(loan.getTotalPaid())
-                .totalRepayable(loan.getTotalRepayable())
+                .borrowerName(
+                        borrowerName)
+
+                .status(
+                        loan.getStatus() == null
+                                ? null
+                                : loan.getStatus().name())
+
+                .loanType(
+                        loan.getLoanType() == null
+                                ? null
+                                : loan.getLoanType().name())
+
+                .principal(
+                        loan.getAmount())
+
+                .outstandingBalance(
+                        loan.getOutstandingBalance())
+
+                .totalPaid(
+                        loan.getTotalPaid())
+
+                .totalRepayable(
+                        loan.getTotalRepayable())
 
                 .nextInstallmentAmount(
                         loan.getNextInstallmentAmount())
@@ -177,6 +297,12 @@ public class PublicPortalService {
                 .maturityDate(
                         loan.getMaturityDate())
 
+                .missedInstallments(
+                        loan.getMissedInstallments())
+
+                .daysOverdue(
+                        loan.getDaysOverdue())
+
                 .interestRate(
                         loan.getInterestRate())
 
@@ -184,29 +310,93 @@ public class PublicPortalService {
                         loan.getCurrency())
 
                 .loanOfficer(
-                        loan.getLoanOfficer() == null
-                                ? null
-                                : loan.getLoanOfficer().getFullName())
+                        loanOfficer)
 
-                .missedInstallments(
-                        loan.getMissedInstallments())
+                .activeLoans(
+                        activeLoans)
 
-                .daysOverdue(
-                        loan.getDaysOverdue())
+                .overdueLoans(
+                        overdueLoans)
 
-                .daysUntilDue(daysUntilDue)
+                .completedLoans(
+                        completedLoans)
 
-                .repaymentProgress(repaymentProgress)
+                .daysUntilDue(
+                        daysUntilDue)
 
-                .activeLoans(activeLoans)
-                .overdueLoans(overdueLoans)
-                .completedLoans(completedLoans)
+                .repaymentProgress(
+                        repaymentProgress)
 
-                .recentPayments(recentPayments)
+                .recentPayments(
+                        recentPayments)
 
-                .upcomingInstallments(upcomingInstallments)
+                .upcomingInstallments(
+                        upcomingInstallments)
 
-                .availablePaymentMethods(paymentMethods)
+                .availablePaymentMethods(
+                        paymentMethods)
+
+                .build();
+    }
+
+    //------------------------------------------------------------
+    // PAYMENT HISTORY MAPPER
+    //------------------------------------------------------------
+
+    private PaymentHistoryResponse toPaymentHistoryResponse(
+            Payment payment) {
+
+        return PaymentHistoryResponse.builder()
+
+                .paymentId(
+                        payment.getId())
+
+                .paymentDate(
+                        payment.getPaidDate())
+
+                .amount(
+                        payment.getAmountPaid())
+
+                .method(
+                        payment.getPaymentMethod())
+
+                .status(
+                        payment.getStatus() == null
+                                ? "UNKNOWN"
+                                : payment.getStatus().name())
+
+                .build();
+    }
+
+    //------------------------------------------------------------
+    // UPCOMING INSTALLMENT MAPPER
+    //------------------------------------------------------------
+
+    private UpcomingInstallmentResponse
+    toUpcomingInstallmentResponse(
+            Payment payment) {
+
+        return UpcomingInstallmentResponse.builder()
+
+                .installmentNumber(
+                        payment.getInstallmentNumber())
+
+                .dueDate(
+                        payment.getDueDate())
+
+                .amount(
+                        payment.getAmount())
+
+                .principal(
+                        payment.getPrincipalComponent())
+
+                .interest(
+                        payment.getInterestComponent())
+
+                .status(
+                        payment.getStatus() == null
+                                ? "PENDING"
+                                : payment.getStatus().name())
 
                 .build();
     }
