@@ -6,17 +6,6 @@ import lombok.*;
 
 import java.time.LocalDateTime;
 
-/**
- * Stores the delivery history of every webhook event.
- *
- * One WebhookEndpoint can have many WebhookDelivery records.
- *
- * Example:
- *
- * PAYMENT_MADE -> SUCCESS -> HTTP 200
- * PAYMENT_MADE -> FAILED  -> HTTP 500
- * LOAN_APPROVED -> SUCCESS -> HTTP 200
- */
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(
@@ -51,9 +40,6 @@ public class WebhookDelivery {
     private Long id;
 
 
-    // ============================================================
-    // WEBHOOK ENDPOINT
-    // ============================================================
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -63,9 +49,6 @@ public class WebhookDelivery {
     private WebhookEndpoint webhookEndpoint;
 
 
-    // ============================================================
-    // ORGANIZATION
-    // ============================================================
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -75,17 +58,6 @@ public class WebhookDelivery {
     private Organization organization;
 
 
-    // ============================================================
-    // EVENT
-    // ============================================================
-
-    /**
-     * Example:
-     *
-     * PAYMENT_MADE
-     * LOAN_APPROVED
-     * PAYMENT_FAILED
-     */
     @Column(
             name = "event_type",
             nullable = false,
@@ -94,13 +66,6 @@ public class WebhookDelivery {
     private String eventType;
 
 
-    // ============================================================
-    // REQUEST
-    // ============================================================
-
-    /**
-     * JSON payload sent to the external webhook endpoint.
-     */
     @Column(
             name = "payload",
             columnDefinition = "TEXT"

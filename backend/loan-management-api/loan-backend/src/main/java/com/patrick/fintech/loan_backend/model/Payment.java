@@ -11,15 +11,16 @@ import java.time.LocalDateTime;
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(
-    name = "payments",
-    indexes = {
-        @Index(name = "idx_payment_loan", columnList = "loan_id"),
-        @Index(name = "idx_payment_due", columnList = "due_date"),
-        @Index(name = "idx_payment_paid_date", columnList = "paid_date"),
-        @Index(name = "idx_payment_status", columnList = "status"),
-        @Index(name = "idx_payment_org", columnList = "organization_id"),
-        @Index(name = "idx_payment_transaction", columnList = "transaction_id")
-    }
+        name = "payments",
+        indexes = {
+                @Index(name = "idx_payment_loan", columnList = "loan_id"),
+                @Index(name = "idx_payment_due", columnList = "due_date"),
+                @Index(name = "idx_payment_paid_date", columnList = "paid_date"),
+                @Index(name = "idx_payment_status", columnList = "status"),
+                @Index(name = "idx_payment_org", columnList = "organization_id"),
+                @Index(name = "idx_payment_transaction", columnList = "transaction_id"),
+                @Index(name = "idx_payment_interest_date", columnList = "interest_calculation_date")
+        }
 )
 @Data
 @NoArgsConstructor
@@ -27,40 +28,62 @@ import java.time.LocalDateTime;
 @Builder
 public class Payment {
 
+    // ============================================================
+    // IDENTITY
+    // ============================================================
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+
+    // ============================================================
+    // PAYMENT REFERENCE
+    // ============================================================
+
     @Column(
-        name = "payment_reference",
-        unique = true,
-        length = 100
+            name = "payment_reference",
+            unique = true,
+            length = 100
     )
     private String paymentReference;
 
-    @JsonIgnore
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(
-        name = "loan_id",
-        nullable = false
-    )
-    private Loan loan;
+
+    // ============================================================
+    // RELATIONSHIPS
+    // ============================================================
 
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
-        name = "organization_id",
-        nullable = false
+            name = "loan_id",
+            nullable = false
+    )
+    private Loan loan;
+
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(
+            name = "organization_id",
+            nullable = false
     )
     private Organization organization;
+
 
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "recorded_by")
     private User recordedBy;
 
+
+    // ============================================================
+    // INSTALLMENT
+    // ============================================================
+
     @Column(name = "installment_number")
     private Integer installmentNumber;
+
 
     /**
      * Scheduled installment amount.
@@ -68,122 +91,190 @@ public class Payment {
     @Column(name = "amount")
     private Double amount;
 
+
     /**
-     * Principal component allocated from the current payment.
-     *
-     * IMPORTANT:
-     * This represents the principal allocated by the latest recording
-     * against this cycle, not necessarily the entire lifetime principal
-     * reduction of the cycle.
+     * Cumulative principal allocated to this installment/cycle.
      */
     @Column(name = "principal_component")
     private Double principalComponent;
 
+
     /**
-     * Interest component allocated from the current payment.
+     * Cumulative interest actually paid for this installment/cycle.
      */
     @Column(name = "interest_component")
     private Double interestComponent;
 
+
     /**
-     * Total amount paid against this cycle/installment so far.
+     * Total money paid against this installment/cycle.
      *
-     * This is cumulative when multiple payments are made against the
-     * same cycle.
+     * This is cumulative when several payments are made.
      */
     @Column(name = "amount_paid")
     private Double amountPaid;
+
+
+    // ============================================================
+    // PENALTIES
+    // ============================================================
 
     @Column(name = "penalty")
     @Builder.Default
     private Double penalty = 0.0;
 
+
     @Column(name = "waived_amount")
     @Builder.Default
     private Double waivedAmount = 0.0;
 
+
+    // ============================================================
+    // BALANCE
+    // ============================================================
+
     @Column(name = "outstanding_after")
     private Double outstandingAfter;
+
+
+    // ============================================================
+    // PAYMENT STATUS
+    // ============================================================
 
     @Column(name = "paid")
     @Builder.Default
     private Boolean paid = false;
 
+
     @Enumerated(EnumType.STRING)
     @Column(
-        name = "status",
-        length = 30
+            name = "status",
+            length = 30
     )
     @Builder.Default
     private PaymentStatus status = PaymentStatus.PENDING;
 
+
+    // ============================================================
+    // DATES
+    // ============================================================
+
     @Column(name = "due_date")
     private LocalDate dueDate;
 
+
     @Column(name = "paid_date")
     private LocalDate paidDate;
+
+
+    /**
+     * The date through which daily interest has already been
+     * calculated for this payment cycle.
+     *
+     * Example:
+     *
+     * interestCalculationDate = January 1
+     * borrower pays January 16
+     *
+     * The system calculates 15 days of interest and then changes
+     * this field to January 16.
+     *
+     * A later payment on January 21 therefore calculates only
+     * another 5 days.
+     */
+    @Column(name = "interest_calculation_date")
+    private LocalDate interestCalculationDate;
+
+
+    // ============================================================
+    // LATE PAYMENT
+    // ============================================================
 
     @Column(name = "days_late")
     @Builder.Default
     private Integer daysLate = 0;
 
+
     @Column(name = "is_late")
     @Builder.Default
     private boolean isLate = false;
 
+
+    // ============================================================
+    // PAYMENT DETAILS
+    // ============================================================
+
     @Column(name = "payment_method", length = 50)
     private String paymentMethod;
+
 
     @Column(name = "transaction_id", length = 150)
     private String transactionId;
 
+
     @Column(name = "external_reference", length = 150)
     private String externalReference;
 
+
     @Column(
-        name = "gateway_response",
-        columnDefinition = "TEXT"
+            name = "gateway_response",
+            columnDefinition = "TEXT"
     )
     private String gatewayResponse;
+
 
     @Column(name = "channel", length = 50)
     private String channel;
 
+
     @Column(
-        name = "notes",
-        columnDefinition = "TEXT"
+            name = "notes",
+            columnDefinition = "TEXT"
     )
     private String notes;
+
+
+    // ============================================================
+    // SYSTEM DATES
+    // ============================================================
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+
     @Column(name = "verified_at")
     private LocalDateTime verifiedAt;
 
+
+    // ============================================================
+    // DAILY INTEREST
+    // ============================================================
+
     /**
-     * Monthly interest obligation established for this payment cycle.
+     * Total interest accrued for this payment cycle.
      *
-     * This value is calculated ONCE when the cycle receives its first
-     * payment and remains unchanged for subsequent partial payments.
+     * This is NOT necessarily the amount already paid.
+     *
+     * Example:
+     *
+     * cycleInterestDue = 50,000
+     * interestComponent = 20,000
+     * cycleInterestRemaining = 30,000
      */
     @Column(name = "cycle_interest_due")
     private Double cycleInterestDue;
 
+
     /**
-     * Remaining interest obligation for this cycle.
-     *
-     * Example:
-     *
-     * cycleInterestDue = 30,000
-     * first payment interest = 10,000
-     * cycleInterestRemaining = 20,000
-     *
-     * A later payment will use this remaining amount before reducing
-     * principal.
+     * Interest still owed for this payment cycle.
      */
     @Column(name = "cycle_interest_remaining")
     private Double cycleInterestRemaining;
+
+
+    // ============================================================
+    // JPA LIFECYCLE
+    // ============================================================
 
     @PrePersist
     protected void onCreate() {
@@ -237,6 +328,7 @@ public class Payment {
         }
     }
 
+
     @PreUpdate
     protected void onUpdate() {
 
@@ -252,6 +344,11 @@ public class Payment {
             cycleInterestRemaining = 0.0;
         }
     }
+
+
+    // ============================================================
+    // ENUM
+    // ============================================================
 
     public enum PaymentStatus {
 

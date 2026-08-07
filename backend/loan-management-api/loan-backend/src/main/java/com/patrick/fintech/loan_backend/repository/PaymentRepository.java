@@ -35,6 +35,17 @@ public interface PaymentRepository
             String ref
     );
 
+    /**
+     * Returns the most recent payment for a loan that has a
+     * payment date.
+     *
+     * Used as a fallback when determining the date from which
+     * daily interest should start accruing.
+     */
+    Optional<Payment> findTopByLoanIdAndPaidDateIsNotNullOrderByPaidDateDesc(
+            Long loanId
+    );
+
 
     // ============================================================
     // LOAN PAYMENT SCHEDULE
@@ -61,8 +72,6 @@ public interface PaymentRepository
 
     /**
      * Alternative simple schedule query.
-     *
-     * Kept because other services may already use it.
      */
     List<Payment> findByLoanIdOrderByDueDateAsc(
             Long loanId
