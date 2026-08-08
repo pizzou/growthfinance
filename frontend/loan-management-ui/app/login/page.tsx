@@ -7,10 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { FormGroup, Input, Alert } from '@/components/ui/Form';
 import Link from 'next/link';
 
-const DEMOS = [
-  { label: 'Admin',   email: 'admin@growthfinance.rw',   password: 'Admin@1234' },
-  { label: 'Officer', email: 'officer@growthfinance.rw',  password: 'Officer@1234' },
-];
+
 
 function LoginInner() {
   const [email, setEmail]       = useState('');
@@ -164,12 +161,7 @@ function LoginInner() {
           <div className="mt-6 pt-5 border-t border-gray-200">
             <p className="text-xs text-gray-400 mb-3 font-semibold uppercase tracking-wider">Demo Accounts</p>
             <div className="grid grid-cols-2 gap-2">
-              {DEMOS.map(d => (
-                <button key={d.email} onClick={() => { setEmail(d.email); setPassword(d.password); setMfaRequired(false); setOtpRequired(false); }}
-                  className="text-xs px-3 py-2 border border-gray-200 rounded-lg hover:border-teal-400 hover:text-teal-700 transition-colors text-gray-600 text-left">
-                  {d.label}
-                </button>
-              ))}
+              
             </div>
           </div>
         </div>
