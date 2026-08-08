@@ -782,10 +782,10 @@ public class BorrowerDetailsService {
                             )
 
                             .dateOpened(
-                                    loan.getDisbursedAt() != null
-                                            ? loan.getDisbursedAt()
-                                            : loan.getStartDate()
-                            )
+        loan.getDisbursedAt() != null
+                ? loan.getDisbursedAt().toLocalDate()
+                : loan.getStartDate()
+)
 
                             .maturityDate(
                                     loan.getMaturityDate()

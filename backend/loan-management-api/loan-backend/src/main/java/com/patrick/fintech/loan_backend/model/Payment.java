@@ -159,31 +159,56 @@ public class Payment {
     // DATES
     // ============================================================
 
+    /**
+     * Contractual/scheduled due date.
+     *
+     * This remains a LocalDate because the repayment schedule is
+     * date-based.
+     */
     @Column(name = "due_date")
     private LocalDate dueDate;
 
 
+    /**
+     * Calendar date on which the payment was recorded.
+     */
     @Column(name = "paid_date")
     private LocalDate paidDate;
 
 
     /**
-     * The date through which daily interest has already been
-     * calculated for this payment cycle.
+     * EXACT timestamp through which daily interest has already
+     * been calculated for this payment cycle.
+     *
+     * IMPORTANT:
+     *
+     * This must be LocalDateTime rather than LocalDate because
+     * interest is calculated every 24 hours.
      *
      * Example:
      *
-     * interestCalculationDate = January 1
-     * borrower pays January 16
+     * Disbursement:
+     *     2026-08-08 10:30:00
      *
-     * The system calculates 15 days of interest and then changes
-     * this field to January 16.
+     * Payment:
+     *     2026-08-09 10:30:00
      *
-     * A later payment on January 21 therefore calculates only
-     * another 5 days.
+     * Elapsed time:
+     *     exactly 24 hours
+     *
+     * Therefore:
+     *     1 day of interest
+     *
+     * After payment, this field becomes:
+     *     2026-08-09 10:30:00
+     *
+     * A later payment at:
+     *     2026-08-10 10:30:00
+     *
+     * calculates another 1 day.
      */
     @Column(name = "interest_calculation_date")
-    private LocalDate interestCalculationDate;
+    private LocalDateTime interestCalculationDate;
 
 
     // ============================================================

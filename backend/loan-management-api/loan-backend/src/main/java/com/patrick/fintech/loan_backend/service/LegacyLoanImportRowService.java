@@ -156,7 +156,11 @@ public class LegacyLoanImportRowService {
                 .outstandingBalance(outstandingBalance)
                 .startDate(startDate)
                 .approvedAt(pastApproval ? startDate : null)
-                .disbursedAt(pastApproval ? startDate : null)
+                .disbursedAt(
+        pastApproval
+                ? startDate.atStartOfDay()
+                : null
+)
                 .notes(opt(row, "notes", null))
                 .internalNotes("Imported from legacy ledger (batch #" + importBatchId + ")")
                 .imported(true)

@@ -2558,11 +2558,11 @@ public class RegulatoryReportingService {
                             creditScore
                     )
 
-                    .dateOpened(
-                            loan.getDisbursedAt() != null
-                                    ? loan.getDisbursedAt()
-                                    : loan.getStartDate()
-                    )
+                   .dateOpened(
+        loan.getDisbursedAt() != null
+                ? loan.getDisbursedAt().toLocalDate()
+                : loan.getStartDate()
+)
 
                     .lastPaymentDate(
                             loan.getLastPaymentDate()

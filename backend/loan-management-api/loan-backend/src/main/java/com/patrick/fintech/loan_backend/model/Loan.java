@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -40,7 +41,6 @@ public class Loan {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
 
     @Column(
             name = "reference_number",
@@ -218,13 +218,21 @@ public class Loan {
     /**
      * MONTHLY or ANNUAL.
      *
-     * For the daily 30-day model:
+     * DAILY INTEREST MODEL:
      *
      * MONTHLY:
-     *     daily rate = monthly rate / 30
+     *     daily rate = monthly rate / 100 / 30
+     *
+     * Example:
+     *
+     *     10% monthly
+     *
+     *     10 / 100 / 30
+     *     = 0.0033333333 per day
      *
      * ANNUAL:
-     *     daily rate = annual rate / 12 / 30
+     *
+     *     daily rate = annual rate / 100 / 12 / 30
      */
     @Column(
             name = "interest_rate_type",
@@ -349,8 +357,26 @@ public class Loan {
     private LocalDate approvedAt;
 
 
+    /**
+     * EXACT DATE AND TIME THE LOAN WAS DISBURSED.
+     *
+     * This is intentionally LocalDateTime.
+     *
+     * Daily interest is based on elapsed 24-hour periods from
+     * this timestamp.
+     *
+     * Example:
+     *
+     * 2026-08-08 10:30:00
+     *
+     * to
+     *
+     * 2026-08-09 10:30:00
+     *
+     * = exactly 24 hours = 1 day of interest.
+     */
     @Column(name = "disbursed_at")
-    private LocalDate disbursedAt;
+    private LocalDateTime disbursedAt;
 
 
     @Column(name = "maturity_date")

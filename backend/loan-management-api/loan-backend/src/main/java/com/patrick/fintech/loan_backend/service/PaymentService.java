@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.model.Loan;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -174,11 +176,14 @@ public class PaymentService {
 
 
         // ============================================================
-        // CURRENT DATE
+        // CURRENT DATE AND EXACT TIME
         // ============================================================
 
         LocalDate today =
                 LocalDate.now();
+
+        LocalDateTime now =
+                LocalDateTime.now();
 
 
         // ============================================================
@@ -192,13 +197,9 @@ public class PaymentService {
 
 
         /*
-         * IMPORTANT:
+         * Continue an installment that already has a partial payment.
          *
-         * A completed installment must NEVER be reused.
-         *
-         * This is especially important for the daily-interest model
-         * because a new payment after a completed cycle must use the
-         * next payment cycle.
+         * A completed installment is never reused.
          */
         Optional<Payment> existingCurrentCycle =
                 loanPayments.stream()
@@ -221,6 +222,9 @@ public class PaymentService {
                         );
 
 
+        /*
+         * Otherwise find the next unpaid scheduled installment.
+         */
         Optional<Payment> unpaidInstallment =
                 loanPayments.stream()
                         .filter(
@@ -444,55 +448,69 @@ public class PaymentService {
 
 
         // ============================================================
-        // DETERMINE INTEREST START DATE
+        // DETERMINE EXACT INTEREST START TIMESTAMP
         // ============================================================
 
-        LocalDate interestStartDate =
-                determineInterestStartDate(
+        LocalDateTime interestStartDateTime =
+                determineInterestStartDateTime(
                         installment,
                         loan,
-                        today
+                        now
                 );
 
 
         /*
-         * If the stored date is somehow in the future, do not create
-         * negative interest.
+         * Never allow a future timestamp to create negative elapsed
+         * time.
          */
-        if (interestStartDate.isAfter(today)) {
+        if (interestStartDateTime.isAfter(now)) {
 
-            interestStartDate =
-                    today;
+            interestStartDateTime =
+                    now;
         }
 
 
         // ============================================================
-        // DAYS SINCE LAST INTEREST CALCULATION
+        // EXACT ELAPSED TIME
         // ============================================================
 
+        long elapsedHours =
+                ChronoUnit.HOURS.between(
+                        interestStartDateTime,
+                        now
+                );
+
+
+        if (elapsedHours < 0) {
+            elapsedHours = 0;
+        }
+
+
+        /*
+         * Interest is charged in completed 24-hour periods.
+         *
+         * Example:
+         *
+         * 10:00 Monday -> 10:00 Tuesday
+         * = 24 hours
+         * = 1 day
+         *
+         * 10:00 Monday -> 09:59 Tuesday
+         * = 23 hours
+         * = 0 completed days
+         *
+         * 10:00 Monday -> 10:00 Wednesday
+         * = 48 hours
+         * = 2 completed days
+         */
         long elapsedDays =
-                ChronoUnit.DAYS.between(
-                        interestStartDate,
-                        today
-                );
+                elapsedHours / 24L;
 
 
-        if (elapsedDays < 0) {
-            elapsedDays = 0;
-        }
+        // ============================================================
+        // DAILY INTEREST RATE
+        // ============================================================
 
-
-        /*
-         * This is the core daily-interest calculation.
-         *
-         * MONTHLY rate:
-         *
-         *     dailyRate = monthlyRate / 30
-         *
-         * ANNUAL rate:
-         *
-         *     dailyRate = annualRate / 12 / 30
-         */
         double dailyRate =
                 calculateDailyRate(
                         loan
@@ -537,9 +555,8 @@ public class PaymentService {
 
 
         /*
-         * Remaining interest includes interest that was already
-         * outstanding from previous partial payments plus the newly
-         * accrued daily interest.
+         * Interest already paid during this cycle is deducted from
+         * the total accrued interest.
          */
         double remainingInterestBeforePayment =
                 roundMoney(
@@ -568,8 +585,6 @@ public class PaymentService {
              * Existing penalty rule preserved:
              *
              * 2% per 30 days against the current payment amount.
-             *
-             * This is separate from daily loan interest.
              */
             calculatedPenalty =
                     roundMoney(
@@ -709,15 +724,13 @@ public class PaymentService {
 
 
         /*
-         * A payment cycle is completed when:
+         * The current cycle is complete when:
          *
-         * 1. All interest accrued for that cycle has been paid, OR
+         * 1. All interest for the current cycle has been paid, OR
          * 2. The entire principal has been paid.
          *
-         * When interest is covered but principal remains, the next
-         * cycle starts from today's payment date. This means another
-         * payment five days later will charge only five additional
-         * days of interest.
+         * If interest is covered and principal remains, a new cycle
+         * begins after this payment.
          */
         boolean cycleCompleted =
                 interestCovered
@@ -811,6 +824,7 @@ public class PaymentService {
 
 
         if (recordedBy != null) {
+
             installment.setRecordedBy(
                     recordedBy
             );
@@ -823,15 +837,18 @@ public class PaymentService {
 
 
         /*
-         * VERY IMPORTANT:
+         * CRITICAL:
          *
-         * Interest has now been calculated up to today.
+         * Interest has now been calculated up to the exact current
+         * timestamp.
          *
-         * A future payment therefore calculates only the days after
-         * today.
+         * Therefore the next interest calculation starts from this
+         * exact timestamp.
+         *
+         * This creates the required 24-hour reset.
          */
         installment.setInterestCalculationDate(
-                today
+                now
         );
 
 
@@ -1011,12 +1028,8 @@ public class PaymentService {
 
 
             /*
-             * The contractual next due date remains available for
-             * schedule/reporting purposes.
-             *
-             * Daily interest does NOT depend on this date.
-             *
-             * It depends on interestCalculationDate.
+             * The contractual due date remains independent from the
+             * daily-interest clock.
              */
             if (
                     cycleCompleted
@@ -1073,13 +1086,21 @@ public class PaymentService {
                         + amount
                         + " on loan "
                         + loan.getReferenceNumber()
-                        + " — elapsed interest days: "
+                        + " — interest start: "
+                        + interestStartDateTime
+                        + ", payment time: "
+                        + now
+                        + ", elapsed hours: "
+                        + elapsedHours
+                        + ", completed interest days: "
                         + elapsedDays
                         + ", daily interest: "
                         + roundMoney(
                         currentBalance * dailyRate
                 )
-                        + ", interest: "
+                        + ", newly accrued interest: "
+                        + newlyAccruedInterest
+                        + ", interest paid: "
                         + interestPaid
                         + ", principal: "
                         + principalPaid
@@ -1284,6 +1305,12 @@ public class PaymentService {
 
 
             paymentWebhook.put(
+                    "interestHours",
+                    elapsedHours
+            );
+
+
+            paymentWebhook.put(
                     "dailyInterestRate",
                     dailyRate
             );
@@ -1316,6 +1343,18 @@ public class PaymentService {
             paymentWebhook.put(
                     "paymentDate",
                     today.toString()
+            );
+
+
+            paymentWebhook.put(
+                    "paymentTimestamp",
+                    now.toString()
+            );
+
+
+            paymentWebhook.put(
+                    "interestCalculationStart",
+                    interestStartDateTime.toString()
             );
 
 
@@ -1499,14 +1538,14 @@ public class PaymentService {
                                     );
 
 
-                   loan.setDaysOverdue(
-    Math.max(
-        loan.getDaysOverdue() != null
-                ? loan.getDaysOverdue()
-                : 0,
-        days
-    )
-);
+                    loan.setDaysOverdue(
+                            Math.max(
+                                    loan.getDaysOverdue() != null
+                                            ? loan.getDaysOverdue()
+                                            : 0,
+                                    days
+                            )
+                    );
                 }
 
 
@@ -1519,20 +1558,22 @@ public class PaymentService {
 
 
     // ================================================================
-    // DETERMINE INTEREST START DATE
+    // DETERMINE EXACT INTEREST START TIMESTAMP
     // ================================================================
 
-    private LocalDate determineInterestStartDate(
+    private LocalDateTime determineInterestStartDateTime(
             Payment installment,
             Loan loan,
-            LocalDate today
+            LocalDateTime now
     ) {
 
         /*
-         * First priority:
+         * FIRST PRIORITY:
          *
-         * The payment record tells us exactly through which date
-         * interest has already been calculated.
+         * The payment cycle itself tells us exactly through which
+         * timestamp interest has already been calculated.
+         *
+         * This is what provides the 24-hour reset.
          */
         if (
                 installment.getInterestCalculationDate() != null
@@ -1543,8 +1584,9 @@ public class PaymentService {
 
 
         /*
-         * If this payment already has a paid date, use that as the
-         * fallback.
+         * If this installment has already received a payment but
+         * somehow does not have an interest timestamp, use the
+         * payment creation timestamp as a safe fallback.
          */
         if (
                 installment.getPaidDate() != null
@@ -1553,24 +1595,34 @@ public class PaymentService {
                 ) > 0.0
         ) {
 
-            return installment.getPaidDate();
+            if (installment.getCreatedAt() != null) {
+
+                return installment.getCreatedAt();
+            }
         }
 
 
         /*
-         * If another payment was already made on the loan, interest
-         * starts from that payment date.
+         * If another payment was made on the loan, use the last
+         * payment date at midnight as a backward-compatible fallback.
+         *
+         * New payments will always store the exact LocalDateTime
+         * after this change.
          */
         if (
                 loan.getLastPaymentDate() != null
         ) {
 
-            return loan.getLastPaymentDate();
+            return loan.getLastPaymentDate()
+                    .atStartOfDay();
         }
 
 
         /*
-         * Prefer actual disbursement date.
+         * MOST IMPORTANT:
+         *
+         * For a newly disbursed loan, interest starts from the exact
+         * disbursement timestamp.
          */
         if (
                 loan.getDisbursedAt() != null
@@ -1581,20 +1633,22 @@ public class PaymentService {
 
 
         /*
-         * Then use loan start date.
+         * If no disbursement timestamp exists, use start date at
+         * midnight as a legacy fallback.
          */
         if (
                 loan.getStartDate() != null
         ) {
 
-            return loan.getStartDate();
+            return loan.getStartDate()
+                    .atStartOfDay();
         }
 
 
         /*
          * Final fallback.
          */
-        return today;
+        return now;
     }
 
 
@@ -1626,9 +1680,13 @@ public class PaymentService {
         /*
          * MONTHLY:
          *
+         * Example:
+         *
          * 10% monthly
          *
          * 10 / 100 / 30
+         *
+         * = 0.0033333333 daily
          */
         if (
                 "MONTHLY".equalsIgnoreCase(
@@ -1645,7 +1703,7 @@ public class PaymentService {
         /*
          * ANNUAL:
          *
-         * Annual percentage
+         * annual percentage
          * -> monthly percentage
          * -> daily 30-day rate
          */
@@ -1666,7 +1724,7 @@ public class PaymentService {
          * Unknown rate type:
          *
          * Preserve backward-compatible behavior by treating the
-         * configured rate as monthly.
+         * configured rate as MONTHLY.
          */
         log.warn(
                 "Unknown interestRateType '{}' for loan {}. Treating rate as MONTHLY.",

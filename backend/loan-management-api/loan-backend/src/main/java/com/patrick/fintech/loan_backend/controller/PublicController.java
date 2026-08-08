@@ -2963,17 +2963,15 @@ public class PublicController {
                     )
             );
         }
+if (loan.getDisbursedAt() != null) {
 
-        if (loan.getDisbursedAt() != null) {
-
-            raw.add(
-                    Map.entry(
-                            loan.getDisbursedAt()
-                                    .atStartOfDay(),
-                            "Loan disbursed"
-                    )
-            );
-        }
+    raw.add(
+            Map.entry(
+                    loan.getDisbursedAt(),
+                    "Loan disbursed"
+            )
+    );
+}
 
         return raw.stream()
                 .sorted(

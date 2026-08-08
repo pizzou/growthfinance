@@ -75,7 +75,11 @@ public class PaymentScheduleService {
 
         schedule.setLoan(loan);
         schedule.setInstallmentNumber(1);
-        schedule.setDueDate(loan.getDisbursedAt().plusMonths(1));
+        schedule.setDueDate(
+        loan.getDisbursedAt()
+                .plusMonths(1)
+                .toLocalDate()
+);
         schedule.setInstallmentAmount(total);
         schedule.setPrincipalAmount(principal);
         schedule.setInterestAmount(interest);
@@ -120,7 +124,11 @@ public class PaymentScheduleService {
 
         schedule.setLoan(loan);
         schedule.setInstallmentNumber(i);
-        schedule.setDueDate(loan.getDisbursedAt().plusMonths(i));
+        schedule.setDueDate(
+        loan.getDisbursedAt()
+                .plusMonths(i)
+                .toLocalDate()
+);
         schedule.setInstallmentAmount(monthlyPayment);
         schedule.setPrincipalAmount(principalPart);
         schedule.setInterestAmount(interest);
