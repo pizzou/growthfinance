@@ -27,25 +27,29 @@ public class ReportingController {
     }
 
     // ============================================================
-    // REPORT DATA
+    // LOAN STATUS REPORT
     // ============================================================
 
     @GetMapping("/loans/{orgId}")
     public ResponseEntity<Map<String, Long>> loanStatusReport(
             @PathVariable Long orgId) {
 
-        verifyOrganization(orgId);
+        validateOrganization(orgId);
 
         return ResponseEntity.ok(
                 reportingService.loanStatusReport(orgId)
         );
     }
 
+    // ============================================================
+    // PAYMENT REPORT
+    // ============================================================
+
     @GetMapping("/payments/{orgId}")
     public ResponseEntity<Map<String, Double>> paymentReport(
             @PathVariable Long orgId) {
 
-        verifyOrganization(orgId);
+        validateOrganization(orgId);
 
         return ResponseEntity.ok(
                 reportingService.paymentReport(orgId)
@@ -53,7 +57,7 @@ public class ReportingController {
     }
 
     // ============================================================
-    // CSV EXPORTS
+    // CSV - LOANS
     // ============================================================
 
     @GetMapping("/export/loans")
@@ -63,49 +67,15 @@ public class ReportingController {
                 currentUserUtil.getCurrentOrganizationId();
 
         return csvResponse(
-                reportingService.exportLoansCsv(organizationId),
+                reportingService.exportLoansCsv(
+                        organizationId
+                ),
                 "loans"
         );
     }
 
-    @GetMapping("/export/payments")
-    public ResponseEntity<String> exportPaymentsCsv() {
-
-        Long organizationId =
-                currentUserUtil.getCurrentOrganizationId();
-
-        return csvResponse(
-                reportingService.exportPaymentsCsv(organizationId),
-                "payments"
-        );
-    }
-
-    @GetMapping("/export/overdue")
-    public ResponseEntity<String> exportOverdueCsv() {
-
-        Long organizationId =
-                currentUserUtil.getCurrentOrganizationId();
-
-        return csvResponse(
-                reportingService.exportOverdueCsv(organizationId),
-                "overdue-payments"
-        );
-    }
-
-    @GetMapping("/export/summary")
-    public ResponseEntity<String> exportSummaryCsv() {
-
-        Long organizationId =
-                currentUserUtil.getCurrentOrganizationId();
-
-        return csvResponse(
-                reportingService.exportPortfolioSummaryCsv(organizationId),
-                "portfolio-summary"
-        );
-    }
-
     // ============================================================
-    // EXCEL EXPORTS
+    // EXCEL - LOANS
     // ============================================================
 
     @GetMapping("/export/loans/excel")
@@ -115,10 +85,34 @@ public class ReportingController {
                 currentUserUtil.getCurrentOrganizationId();
 
         return excelResponse(
-                reportingService.exportLoansExcel(organizationId),
+                reportingService.exportLoansExcel(
+                        organizationId
+                ),
                 "loans"
         );
     }
+
+    // ============================================================
+    // CSV - PAYMENTS
+    // ============================================================
+
+    @GetMapping("/export/payments")
+    public ResponseEntity<String> exportPaymentsCsv() {
+
+        Long organizationId =
+                currentUserUtil.getCurrentOrganizationId();
+
+        return csvResponse(
+                reportingService.exportPaymentsCsv(
+                        organizationId
+                ),
+                "payments"
+        );
+    }
+
+    // ============================================================
+    // EXCEL - PAYMENTS
+    // ============================================================
 
     @GetMapping("/export/payments/excel")
     public ResponseEntity<byte[]> exportPaymentsExcel() {
@@ -127,10 +121,34 @@ public class ReportingController {
                 currentUserUtil.getCurrentOrganizationId();
 
         return excelResponse(
-                reportingService.exportPaymentsExcel(organizationId),
+                reportingService.exportPaymentsExcel(
+                        organizationId
+                ),
                 "payments"
         );
     }
+
+    // ============================================================
+    // CSV - OVERDUE
+    // ============================================================
+
+    @GetMapping("/export/overdue")
+    public ResponseEntity<String> exportOverdueCsv() {
+
+        Long organizationId =
+                currentUserUtil.getCurrentOrganizationId();
+
+        return csvResponse(
+                reportingService.exportOverdueCsv(
+                        organizationId
+                ),
+                "overdue-payments"
+        );
+    }
+
+    // ============================================================
+    // EXCEL - OVERDUE
+    // ============================================================
 
     @GetMapping("/export/overdue/excel")
     public ResponseEntity<byte[]> exportOverdueExcel() {
@@ -139,10 +157,34 @@ public class ReportingController {
                 currentUserUtil.getCurrentOrganizationId();
 
         return excelResponse(
-                reportingService.exportOverdueExcel(organizationId),
+                reportingService.exportOverdueExcel(
+                        organizationId
+                ),
                 "overdue-payments"
         );
     }
+
+    // ============================================================
+    // CSV - SUMMARY
+    // ============================================================
+
+    @GetMapping("/export/summary")
+    public ResponseEntity<String> exportSummaryCsv() {
+
+        Long organizationId =
+                currentUserUtil.getCurrentOrganizationId();
+
+        return csvResponse(
+                reportingService.exportPortfolioSummaryCsv(
+                        organizationId
+                ),
+                "portfolio-summary"
+        );
+    }
+
+    // ============================================================
+    // EXCEL - SUMMARY
+    // ============================================================
 
     @GetMapping("/export/summary/excel")
     public ResponseEntity<byte[]> exportSummaryExcel() {
@@ -151,16 +193,19 @@ public class ReportingController {
                 currentUserUtil.getCurrentOrganizationId();
 
         return excelResponse(
-                reportingService.exportPortfolioSummaryExcel(organizationId),
+                reportingService.exportPortfolioSummaryExcel(
+                        organizationId
+                ),
                 "portfolio-summary"
         );
     }
 
     // ============================================================
-    // SECURITY
+    // ORGANIZATION SECURITY
     // ============================================================
 
-    private void verifyOrganization(Long organizationId) {
+    private void validateOrganization(
+            Long organizationId) {
 
         Long currentOrganizationId =
                 currentUserUtil.getCurrentOrganizationId();
@@ -168,17 +213,25 @@ public class ReportingController {
         if (currentOrganizationId == null
                 || !organizationId.equals(currentOrganizationId)) {
 
-            throw new RuntimeException("Access denied");
+            throw new RuntimeException(
+                    "Access denied"
+            );
         }
     }
 
     // ============================================================
-    // RESPONSE HELPERS
+    // CSV RESPONSE
     // ============================================================
 
     private ResponseEntity<String> csvResponse(
             String csv,
             String filename) {
+
+        String finalFilename =
+                filename
+                        + "-"
+                        + LocalDate.now()
+                        + ".csv";
 
         return ResponseEntity.ok()
                 .header(
@@ -188,30 +241,37 @@ public class ReportingController {
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\""
-                                + filename
-                                + "-"
-                                + LocalDate.now()
-                                + ".csv\""
+                                + finalFilename
+                                + "\""
                 )
                 .body(csv);
     }
+
+    // ============================================================
+    // EXCEL RESPONSE
+    // ============================================================
 
     private ResponseEntity<byte[]> excelResponse(
             byte[] excel,
             String filename) {
 
+        String finalFilename =
+                filename
+                        + "-"
+                        + LocalDate.now()
+                        + ".xlsx";
+
         return ResponseEntity.ok()
-                .header(
-                        HttpHeaders.CONTENT_TYPE,
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                .contentType(
+                        MediaType.parseMediaType(
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
                 )
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\""
-                                + filename
-                                + "-"
-                                + LocalDate.now()
-                                + ".xlsx\""
+                                + finalFilename
+                                + "\""
                 )
                 .body(excel);
     }
