@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useTenant } from '../layout';
-import { API, publicApi } from '@/services/api';
+import { publicApi } from '@/services/api';
 import { toast } from '@/hooks/useToast';
 
 interface StatusStep {
@@ -364,64 +364,166 @@ try {
 };
 
 const handleDownloadDoc = async (
-doc: 'agreement' | 'schedule' | 'receipt',
-label: string
+  doc: 'agreement' | 'schedule' | 'receipt',
+  label: string
 ) => {
-if (!result) return;
+  if (!result) {
+    return;
+  }
 
-const ref =
-  (result.referenceNumber || result.reference || '').trim();
-const ph = phone.trim();
+  const ref = (
+    result.referenceNumber ||
+    result.reference ||
+    reference
+  )
+    .trim()
+    .toUpperCase();
 
-if (!ref || !ph) {
-  toast(
-    'error',
-    'Your application reference and phone number are required to download this document.'
-  );
-  return;
-}
+  const ph = phone.trim();
 
-setDownloadingDoc(doc);
+  if (!ref || !ph) {
+    toast(
+      'error',
+      'Your application reference and phone number are required to download this document.'
+    );
+    return;
+  }
 
-try {
-  // The public Track endpoints return the PDF with
-  // Content-Disposition: attachment. Let the browser request
-  // the PDF directly instead of converting it to a Blob URL.
-  const baseUrl =
-    API.defaults.baseURL ||
-    (typeof window !== 'undefined'
-      ? window.location.origin
-      : '');
+  setDownloadingDoc(doc);
 
-  const path =
-    `/public/applications/${encodeURIComponent(ref)}/documents/${doc}.pdf` +
-    `?phone=${encodeURIComponent(ph)}`;
+  try {
+    /*
+     * IMPORTANT:
+     *
+     * Do not use a normal <a href="..."> request here.
+     * The shared Axios client adds X-Tenant-Domain through its
+     * request interceptor. A normal browser link cannot add that
+     * header, so tenant resolution can fail on the PDF endpoint.
+     *
+     * Request the PDF through publicApi and then create a local
+     * Blob URL for the browser download.
+     */
+    const response = await publicApi.downloadDocument(
+      ref,
+      ph,
+      doc
+    );
 
-  const downloadUrl =
-    new URL(path, baseUrl).toString();
+    const rawContentType =
+      response.headers?.['content-type'] ??
+      response.headers?.['Content-Type'];
 
-  const anchor =
-    document.createElement('a');
+    // Axios header values can be string | number | boolean | string[] | AxiosHeaders.
+    // BlobPropertyBag.type and String.prototype.toLowerCase() require a string.
+    const contentType =
+      typeof rawContentType === 'string'
+        ? rawContentType
+        : '';
 
-  anchor.href = downloadUrl;
-  anchor.download =
-    `${label}-${ref}.pdf`;
-  anchor.style.display = 'none';
-  anchor.rel = 'noopener';
+    const blob =
+      response.data instanceof Blob
+        ? response.data
+        : new Blob(
+            [response.data],
+            {
+              type: contentType || 'application/pdf',
+            }
+          );
 
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-} catch (err: any) {
-  toast(
-    'error',
-    err?.response?.data?.error ||
-    err?.message ||
-    `Could not download ${label}.`
-  );
-} finally {
-  setDownloadingDoc(null);
-}
+    /*
+     * Do not silently save a JSON/text error response as a PDF.
+     * Convert the response to text and expose the real backend
+     * error to the applicant.
+     */
+    if (
+      contentType &&
+      !contentType.toLowerCase().includes('application/pdf')
+    ) {
+      let message =
+        `The server did not return a PDF for ${label}.`;
+
+      try {
+        const text = await blob.text();
+
+        if (text.trim()) {
+          try {
+            const parsed = JSON.parse(text);
+
+            message =
+              parsed?.error ||
+              parsed?.message ||
+              parsed?.detail ||
+              message;
+          } catch {
+            message = text.trim();
+          }
+        }
+      } catch {
+        // Keep the default message.
+      }
+
+      throw new Error(message);
+    }
+
+    if (blob.size === 0) {
+      throw new Error(
+        `The server returned an empty PDF for ${label}.`
+      );
+    }
+
+    const objectUrl =
+      URL.createObjectURL(blob);
+
+    const anchor =
+      document.createElement('a');
+
+    anchor.href = objectUrl;
+    anchor.download =
+      `${label}-${ref}.pdf`;
+    anchor.style.display = 'none';
+
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    window.setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+    }, 60000);
+
+    toast(
+      'success',
+      `${label} downloaded successfully.`
+    );
+  } catch (err: unknown) {
+    console.error(
+      '[DOCUMENT] Download failed:',
+      err
+    );
+
+    const apiErr = err as any;
+
+    let message =
+      apiErr?.message ||
+      `Could not download ${label}.`;
+
+    if (apiErr?.data) {
+      const data = apiErr.data;
+
+      if (typeof data === 'string') {
+        message = data;
+      } else if (data?.error) {
+        message = String(data.error);
+      } else if (data?.message) {
+        message = String(data.message);
+      } else if (data?.detail) {
+        message = String(data.detail);
+      }
+    }
+
+    toast('error', message);
+  } finally {
+    setDownloadingDoc(null);
+  }
 };
 
 const handleUpload = async (
@@ -1841,218 +1943,289 @@ return ( <div className="min-h-screen bg-[#F6F8F7] text-gray-900">
 
   {/* =====================================================
       PAYMENT MODAL
+      IMPORTANT:
+      - The payment modal keeps its own vertical scroll.
+      - The page behind the modal remains available as a backdrop.
+      - The payment header stays fixed while the form content scrolls.
+      - Works on short desktop screens and mobile screens.
   ===================================================== */}
 
   {showPaySheet && result && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-
-      <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-sm p-3 sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="payment-modal-title"
+    >
+      <div className="min-h-full w-full flex items-center justify-center">
 
         <div
-          className="px-6 py-5 text-white"
-          style={{
-            background:
-              'linear-gradient(135deg, #063B25, #0F1B3D)',
-          }}
+          className="bg-white rounded-3xl max-w-md w-full max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] shadow-2xl overflow-hidden flex flex-col"
         >
 
-          <div className="flex items-start justify-between">
+          {/* ==================================================
+              PAYMENT HEADER
+          ================================================== */}
 
-            <div>
+          <div
+            className="px-6 py-5 text-white shrink-0"
+            style={{
+              background:
+                'linear-gradient(135deg, #063B25, #0F1B3D)',
+            }}
+          >
 
-              <div className="text-[9px] uppercase tracking-[0.18em] font-black text-white/50">
-                Secure Payment
+            <div className="flex items-start justify-between">
+
+              <div>
+
+                <div className="text-[9px] uppercase tracking-[0.18em] font-black text-white/50">
+                  Secure Payment
+                </div>
+
+                <h3
+                  id="payment-modal-title"
+                  className="text-lg font-black mt-1"
+                >
+                  Make a payment
+                </h3>
+
               </div>
 
-              <h3 className="text-lg font-black mt-1">
-                Make a payment
-              </h3>
+              <button
+                type="button"
+                onClick={() =>
+                  setShowPaySheet(false)
+                }
+                aria-label="Close payment window"
+                className="w-8 h-8 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 text-lg transition flex items-center justify-center"
+              >
+                ×
+              </button>
 
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setShowPaySheet(false)
-              }
-              className="w-8 h-8 rounded-full bg-white/10 text-white/70 hover:text-white text-lg"
-            >
-              ×
-            </button>
+            <div className="mt-5 bg-white/10 border border-white/10 rounded-2xl p-4">
 
-          </div>
+              <div className="text-[9px] uppercase tracking-wider font-black text-white/50">
+                Amount Due
+              </div>
 
-          <div className="mt-5 bg-white/10 border border-white/10 rounded-2xl p-4">
+              <div className="text-2xl font-black mt-1">
+                {result.currency}{' '}
+                {fmt(dueNow)}
+              </div>
 
-            <div className="text-[9px] uppercase tracking-wider font-black text-white/50">
-              Amount Due
-            </div>
-
-            <div className="text-2xl font-black mt-1">
-              {result.currency}{' '}
-              {fmt(dueNow)}
-            </div>
-
-            <div className="text-[10px] text-white/50 mt-1">
-              Reference {result.referenceNumber || result.reference}
-            </div>
-
-          </div>
-
-        </div>
-
-        <div className="p-6 space-y-5">
-
-          <div>
-
-            <div className="text-[10px] uppercase tracking-wider font-black text-gray-400 mb-2">
-              Payment Method
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-
-              {PAY_METHODS.map(
-                (method, i) => (
-                  <button
-                    key={`${method.label}-${i}`}
-                    type="button"
-                    onClick={() =>
-                      setPayChoice(i)
-                    }
-                    className={`p-3 rounded-2xl border text-left transition-all ${
-                      payChoice === i
-                        ? 'border-emerald-500 bg-emerald-50'
-                        : 'border-gray-100 bg-gray-50 hover:bg-white'
-                    }`}
-                  >
-
-                    <div className="text-lg">
-                      {method.icon}
-                    </div>
-
-                    <div className="text-[10px] font-black text-gray-800 mt-2">
-                      {method.label}
-                    </div>
-
-                  </button>
-                )
-              )}
+              <div className="text-[10px] text-white/50 mt-1">
+                Reference {result.referenceNumber || result.reference}
+              </div>
 
             </div>
 
           </div>
 
-          {PAY_METHODS[payChoice].key ===
-            'MOBILE_MONEY' && (
+          {/* ==================================================
+              SCROLLABLE PAYMENT CONTENT
+
+              DO NOT REMOVE overflow-y-auto.
+              min-h-0 is required because this content is a flex
+              child and must be allowed to shrink below its content
+              height so the browser can create the scroll area.
+          ================================================== */}
+
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 space-y-5"
+            style={{
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
+
+            {/* ==================================================
+                PAYMENT METHOD
+            ================================================== */}
+
             <div>
 
-              <label className="text-[10px] uppercase tracking-wider font-black text-gray-400">
-                Mobile Money Number
-              </label>
+              <div className="text-[10px] uppercase tracking-wider font-black text-gray-400 mb-2">
+                Payment Method
+              </div>
 
-              <input
-                type="tel"
-                value={momoPhone}
-                onChange={e =>
-                  setMomoPhone(
-                    e.target.value
+              <div className="grid grid-cols-2 gap-2">
+
+                {PAY_METHODS.map(
+                  (method, i) => (
+                    <button
+                      key={`${method.label}-${i}`}
+                      type="button"
+                      onClick={() =>
+                        setPayChoice(i)
+                      }
+                      className={`p-3 rounded-2xl border text-left transition-all ${
+                        payChoice === i
+                          ? 'border-emerald-500 bg-emerald-50'
+                          : 'border-gray-100 bg-gray-50 hover:bg-white'
+                      }`}
+                    >
+
+                      <div className="text-lg">
+                        {method.icon}
+                      </div>
+
+                      <div className="text-[10px] font-black text-gray-800 mt-2">
+                        {method.label}
+                      </div>
+
+                    </button>
                   )
-                }
-                placeholder="07XXXXXXXX"
-                className="w-full h-12 mt-2 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
-              />
+                )}
+
+              </div>
 
             </div>
-          )}
 
-          {PAY_METHODS[payChoice].key ===
-            'BANK_TRANSFER' && (
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-800 leading-5">
-              After confirming, you will receive the bank transfer instructions required to settle this payment.
-            </div>
-          )}
+            {/* ==================================================
+                MOBILE MONEY
+            ================================================== */}
 
-          {PAY_METHODS[payChoice].key ===
-            'CARD' && (
-            <div className="space-y-3">
+            {PAY_METHODS[payChoice]?.key ===
+              'MOBILE_MONEY' && (
+              <div>
 
-              <input
-                type="text"
-                value={cardNumber}
-                onChange={e =>
-                  setCardNumber(
-                    e.target.value
-                  )
-                }
-                placeholder="Card number"
-                className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
-              />
+                <label className="text-[10px] uppercase tracking-wider font-black text-gray-400">
+                  Mobile Money Number
+                </label>
 
-              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="tel"
+                  value={momoPhone}
+                  onChange={e =>
+                    setMomoPhone(
+                      e.target.value
+                    )
+                  }
+                  placeholder="07XXXXXXXX"
+                  autoComplete="tel"
+                  className="w-full h-12 mt-2 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
+                />
+
+              </div>
+            )}
+
+            {/* ==================================================
+                BANK TRANSFER
+            ================================================== */}
+
+            {PAY_METHODS[payChoice]?.key ===
+              'BANK_TRANSFER' && (
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-800 leading-5">
+                After confirming, you will receive the bank transfer instructions required to settle this payment.
+              </div>
+            )}
+
+            {/* ==================================================
+                CARD
+            ================================================== */}
+
+            {PAY_METHODS[payChoice]?.key ===
+              'CARD' && (
+              <div className="space-y-3">
 
                 <input
                   type="text"
-                  value={cardExpiry}
+                  value={cardNumber}
                   onChange={e =>
-                    setCardExpiry(
+                    setCardNumber(
                       e.target.value
                     )
                   }
-                  placeholder="MM/YY"
+                  placeholder="Card number"
+                  autoComplete="cc-number"
+                  inputMode="numeric"
                   className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
                 />
 
-                <input
-                  type="password"
-                  value={cardCvv}
-                  onChange={e =>
-                    setCardCvv(
-                      e.target.value
-                    )
-                  }
-                  placeholder="CVV"
-                  className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
-                />
+                <div className="grid grid-cols-2 gap-3">
+
+                  <input
+                    type="text"
+                    value={cardExpiry}
+                    onChange={e =>
+                      setCardExpiry(
+                        e.target.value
+                      )
+                    }
+                    placeholder="MM/YY"
+                    autoComplete="cc-exp"
+                    inputMode="numeric"
+                    className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
+                  />
+
+                  <input
+                    type="password"
+                    value={cardCvv}
+                    onChange={e =>
+                      setCardCvv(
+                        e.target.value
+                      )
+                    }
+                    placeholder="CVV"
+                    autoComplete="cc-csc"
+                    inputMode="numeric"
+                    className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
+                  />
+
+                </div>
 
               </div>
+            )}
 
+            {/* ==================================================
+                PAYMENT SUCCESS
+            ================================================== */}
+
+            {paySuccess && (
+              <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-xl p-4 text-xs font-bold">
+                ✓ {payMessage}
+              </div>
+            )}
+
+            {/* ==================================================
+                PAYMENT ERROR
+            ================================================== */}
+
+            {error && (
+              <div className="bg-red-50 border border-red-100 text-red-700 rounded-xl p-4 text-xs font-semibold">
+                {error}
+              </div>
+            )}
+
+            {/* ==================================================
+                CONFIRM PAYMENT
+            ================================================== */}
+
+            <button
+              type="button"
+              onClick={handlePayment}
+              disabled={paying}
+              className="w-full h-12 rounded-xl text-[#183D28] font-black text-xs shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+              style={{
+                backgroundColor: accent,
+              }}
+            >
+              {paying
+                ? 'Processing payment…'
+                : `Confirm Payment · ${result.currency} ${fmt(dueNow)}`}
+            </button>
+
+            <div className="text-center text-[9px] text-gray-400 pb-2">
+              Payments are processed securely. Never share your PIN or OTP with anyone.
             </div>
-          )}
 
-          {paySuccess && (
-            <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-xl p-4 text-xs font-bold">
-              ✓ {payMessage}
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 border border-red-100 text-red-700 rounded-xl p-4 text-xs font-semibold">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={handlePayment}
-            disabled={paying}
-            className="w-full h-12 rounded-xl text-[#183D28] font-black text-xs shadow-lg disabled:opacity-50"
-            style={{
-              backgroundColor: accent,
-            }}
-          >
-            {paying
-              ? 'Processing payment…'
-              : `Confirm Payment · ${result.currency} ${fmt(dueNow)}`}
-          </button>
-
-          <div className="text-center text-[9px] text-gray-400">
-            Payments are processed securely. Never share your PIN or OTP with anyone.
           </div>
 
         </div>
 
       </div>
-
     </div>
   )}
 
