@@ -30,302 +30,351 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceTest {
-@Mock
-PaymentRepository paymentRepository;
 
-@Mock
-LoanRepository loanRepository;
+    @Mock
+    PaymentRepository paymentRepository;
 
-@Mock
-AuditLogRepository auditLogRepository;
+    @Mock
+    LoanRepository loanRepository;
 
-@Mock
-UserRepository userRepository;
+    @Mock
+    AuditLogRepository auditLogRepository;
 
-@Mock
-NotificationService notificationService;
+    @Mock
+    AuditService auditService;
 
-@Mock
-WebhookService webhookService;
+    @Mock
+    UserRepository userRepository;
 
-@Mock
-AccountingService accountingService;
+    @Mock
+    NotificationService notificationService;
 
-@Mock
-AuditService auditService;
+    @Mock
+    MailService mailService;
 
-@Mock
-MailService mailService;
+    @Mock
+    SmsService smsService;
 
-@Mock
-SmsService smsService;
+    @Mock
+    WebhookService webhookService;
 
-@InjectMocks
-PaymentService paymentService;
+    @Mock
+    AccountingService accountingService;
 
-private Organization org;
-private Loan loan;
-private User teller;
+    @InjectMocks
+    PaymentService paymentService;
 
-@BeforeEach
-void setUp() {
+    private Organization org;
+    private Loan loan;
+    private User teller;
 
-    org = new Organization();
-    org.setId(1L);
-    org.setName("TestOrg");
-    org.setDefaultCurrency("USD");
+    @BeforeEach
+    void setUp() {
 
-    loan = new Loan();
-    loan.setId(1L);
-    loan.setStatus(LoanStatus.ACTIVE);
+        org = new Organization();
+        org.setId(1L);
+        org.setName("TestOrg");
+        org.setDefaultCurrency("USD");
 
-    loan.setAmount(
-            BigDecimal.valueOf(12000.0)
-    );
+        loan = new Loan();
+        loan.setId(1L);
 
-    loan.setInterestRate(
-            BigDecimal.valueOf(12.0)
-    );
+        loan.setStatus(
+                LoanStatus.ACTIVE
+        );
 
-    loan.setDurationMonths(12);
+        /*
+         * IMPORTANT:
+         * Use the setters that actually exist in Loan.
+         * Do NOT use setAmountDecimal(),
+         * setInterestRateDecimal(), etc.
+         */
+        loan.setAmount(
+                12000.0
+        );
 
-    loan.setTotalRepayable(
-            BigDecimal.valueOf(12800.0)
-    );
+        loan.setInterestRate(
+                12.0
+        );
 
-    loan.setOutstandingBalance(
-            BigDecimal.valueOf(12800.0)
-    );
+        loan.setDurationMonths(
+                12
+        );
 
-    loan.setTotalPaid(
-            BigDecimal.ZERO
-    );
+        loan.setTotalRepayable(
+                12800.0
+        );
 
-    loan.setOrganization(org);
-
-    teller = new User();
-    teller.setId(1L);
-    teller.setName("Test Teller");
-    teller.setOrganization(org);
-}
-
-@Test
-void recordPayment_shouldMarkInstallmentPaid_andUpdateLoanBalance() {
-
-    Payment installment = new Payment();
-
-    installment.setId(1L);
-    installment.setPaid(false);
-
-    installment.setAmount(
-            BigDecimal.valueOf(1066.67)
-    );
-
-    installment.setAmountPaid(
-            BigDecimal.ZERO
-    );
-
-    installment.setPrincipalComponent(
-            BigDecimal.ZERO
-    );
-
-    installment.setInterestComponent(
-            BigDecimal.ZERO
-    );
-
-    installment.setPenalty(
-            BigDecimal.ZERO
-    );
-
-    installment.setCycleInterestDue(
-            BigDecimal.ZERO
-    );
-
-    installment.setCycleInterestRemaining(
-            BigDecimal.ZERO
-    );
-
-    installment.setDueDate(
-            LocalDate.now().plusDays(5)
-    );
-
-    installment.setLoan(loan);
-    installment.setOrganization(org);
-
-    when(
-            loanRepository.findById(1L)
-    ).thenReturn(
-            Optional.of(loan)
-    );
-
-    when(
-            paymentRepository.findByLoanId(1L)
-    ).thenReturn(
-            List.of(installment)
-    );
-
-    when(
-            paymentRepository.save(any(Payment.class))
-    ).thenAnswer(
-            invocation -> invocation.getArgument(0)
-    );
-
-    when(
-            loanRepository.save(any(Loan.class))
-    ).thenReturn(loan);
-
-    Payment result =
-            paymentService.recordPayment(
-                    1L,
-                    BigDecimal.valueOf(1066.67),
-                    "CASH",
-                    null,
-                    null,
-                    null,
-                    teller
-            );
-
-    assertThat(result).isNotNull();
-
-    assertThat(
-            result.getPaid()
-    ).isTrue();
-
-    assertThat(
-            result.getPaidDate()
-    ).isEqualTo(
-            LocalDate.now()
-    );
-
-    assertThat(
-            result.getPenalty()
-    ).isEqualTo(
-            0.0
-    );
-}
-
-@Test
-void recordPayment_shouldApplyPenalty_whenInstallmentOverdue() {
-
-    Payment installment = new Payment();
-
-    installment.setId(1L);
-    installment.setPaid(false);
-
-    installment.setAmount(
-            BigDecimal.valueOf(1066.67)
-    );
-
-    installment.setAmountPaid(
-            BigDecimal.ZERO
-    );
-
-    installment.setPrincipalComponent(
-            BigDecimal.ZERO
-    );
-
-    installment.setInterestComponent(
-            BigDecimal.ZERO
-    );
-
-    installment.setPenalty(
-            BigDecimal.ZERO
-    );
-
-    installment.setCycleInterestDue(
-            BigDecimal.ZERO
-    );
-
-    installment.setCycleInterestRemaining(
-            BigDecimal.ZERO
-    );
-
-    installment.setDueDate(
-            LocalDate.now().minusDays(10)
-    );
-
-    installment.setLoan(loan);
-    installment.setOrganization(org);
-
-    when(
-            loanRepository.findById(1L)
-    ).thenReturn(
-            Optional.of(loan)
-    );
-
-    when(
-            paymentRepository.findByLoanId(1L)
-    ).thenReturn(
-            List.of(installment)
-    );
-
-    when(
-            paymentRepository.save(any(Payment.class))
-    ).thenAnswer(
-            invocation -> invocation.getArgument(0)
-    );
-
-    when(
-            loanRepository.save(any(Loan.class))
-    ).thenReturn(loan);
-
-    Payment result =
-            paymentService.recordPayment(
-                    1L,
-                    BigDecimal.valueOf(1066.67),
-                    "BANK_TRANSFER",
-                    null,
-                    null,
-                    "Late payment",
-                    teller
-            );
-
-    assertThat(result).isNotNull();
-
-    assertThat(
-            result.getPaid()
-    ).isTrue();
-
-    assertThat(
-            result.isLate()
-    ).isTrue();
-
-    assertThat(
-            result.getDaysLate()
-    ).isGreaterThan(0);
-}
-
-@Test
-void recordPayment_shouldThrow_whenLoanNotActive() {
-
-    loan.setStatus(
-            LoanStatus.PENDING
-    );
-
-    when(
-            loanRepository.findById(1L)
-    ).thenReturn(
-            Optional.of(loan)
-    );
-
-    assertThatThrownBy(
-            () ->
-                    paymentService.recordPayment(
-                            1L,
-                            BigDecimal.valueOf(500.0),
-                            "CASH",
-                            null,
-                            null,
-                            null,
-                            teller
-                    )
-    )
-            .isInstanceOf(
-                    RuntimeException.class
-            )
-            .hasMessageContaining(
-                    "not active"
-            );
-}
-
+        loan.setOutstandingBalance(
+                12800.0
+        );
+
+        loan.setTotalPaid(
+                0.0
+        );
+
+        loan.setOrganization(
+                org
+        );
+
+        teller = new User();
+        teller.setId(1L);
+        teller.setName("Test Teller");
+        teller.setOrganization(org);
+    }
+
+    @Test
+    void recordPayment_shouldMarkInstallmentPaid_andUpdateLoanBalance() {
+
+        Payment installment = new Payment();
+
+        installment.setId(1L);
+
+        installment.setPaid(
+                false
+        );
+
+        installment.setAmount(
+                1066.67
+        );
+
+        installment.setPenalty(
+                0.0
+        );
+
+        installment.setDueDate(
+                LocalDate.now().plusDays(5)
+        );
+
+        installment.setLoan(
+                loan
+        );
+
+        installment.setOrganization(
+                org
+        );
+
+        installment.setAmountPaid(
+                BigDecimal.ZERO
+        );
+
+        installment.setPrincipalComponent(
+                0.0
+        );
+
+        installment.setInterestComponent(
+                0.0
+        );
+
+        installment.setCycleInterestDue(
+                0.0
+        );
+
+        installment.setCycleInterestRemaining(
+                0.0
+        );
+
+        installment.setOutstandingAfter(
+                12800.0
+        );
+
+        when(
+                loanRepository.findById(1L)
+        ).thenReturn(
+                Optional.of(loan)
+        );
+
+        when(
+                paymentRepository.findByLoanId(1L)
+        ).thenReturn(
+                List.of(installment)
+        );
+
+        when(
+                paymentRepository.save(any(Payment.class))
+        ).thenAnswer(
+                invocation -> invocation.getArgument(0)
+        );
+
+        when(
+                loanRepository.save(any(Loan.class))
+        ).thenAnswer(
+                invocation -> invocation.getArgument(0)
+        );
+
+        Payment result =
+                paymentService.recordPayment(
+                        1L,
+                        BigDecimal.valueOf(1066.67),
+                        "CASH",
+                        null,
+                        null,
+                        null,
+                        teller
+                );
+
+        assertThat(result)
+                .isNotNull();
+
+        assertThat(result.getPaid())
+                .isTrue();
+
+        assertThat(result.getPaidDate())
+                .isEqualTo(
+                        LocalDate.now()
+                );
+
+        /*
+         * getPenalty() is a legacy Double getter.
+         * Therefore compare it with a Double,
+         * NOT BigDecimal.
+         */
+        assertThat(result.getPenalty())
+                .isEqualByComparingTo(
+                        0.0
+                );
+    }
+
+    @Test
+    void recordPayment_shouldApplyPenalty_whenInstallmentOverdue() {
+
+        Payment installment = new Payment();
+
+        installment.setId(1L);
+
+        installment.setPaid(
+                false
+        );
+
+        installment.setAmount(
+                1066.67
+        );
+
+        installment.setPenalty(
+                0.0
+        );
+
+        installment.setDueDate(
+                LocalDate.now().minusDays(10)
+        );
+
+        installment.setLoan(
+                loan
+        );
+
+        installment.setOrganization(
+                org
+        );
+
+        installment.setAmountPaid(
+                BigDecimal.ZERO
+        );
+
+        installment.setPrincipalComponent(
+                0.0
+        );
+
+        installment.setInterestComponent(
+                0.0
+        );
+
+        installment.setCycleInterestDue(
+                0.0
+        );
+
+        installment.setCycleInterestRemaining(
+                0.0
+        );
+
+        installment.setOutstandingAfter(
+                12800.0
+        );
+
+        when(
+                loanRepository.findById(1L)
+        ).thenReturn(
+                Optional.of(loan)
+        );
+
+        when(
+                paymentRepository.findByLoanId(1L)
+        ).thenReturn(
+                List.of(installment)
+        );
+
+        when(
+                paymentRepository.save(any(Payment.class))
+        ).thenAnswer(
+                invocation -> invocation.getArgument(0)
+        );
+
+        when(
+                loanRepository.save(any(Loan.class))
+        ).thenAnswer(
+                invocation -> invocation.getArgument(0)
+        );
+
+        Payment result =
+                paymentService.recordPayment(
+                        1L,
+                        BigDecimal.valueOf(1066.67),
+                        "BANK_TRANSFER",
+                        null,
+                        null,
+                        "Late payment",
+                        teller
+                );
+
+        assertThat(result)
+                .isNotNull();
+
+        assertThat(result.getPaid())
+                .isTrue();
+
+        assertThat(result.isLate())
+                .isTrue();
+
+        assertThat(result.getDaysLate())
+                .isGreaterThan(0);
+
+        /*
+         * getPenalty() returns Double in your current
+         * Payment entity, so compare using Double.
+         */
+        assertThat(result.getPenalty())
+                .isGreaterThan(0.0);
+    }
+
+    @Test
+    void recordPayment_shouldThrow_whenLoanNotActive() {
+
+        loan.setStatus(
+                LoanStatus.PENDING
+        );
+
+        when(
+                loanRepository.findById(1L)
+        ).thenReturn(
+                Optional.of(loan)
+        );
+
+        assertThatThrownBy(
+                () ->
+                        paymentService.recordPayment(
+                                1L,
+                                BigDecimal.valueOf(500.0),
+                                "CASH",
+                                null,
+                                null,
+                                null,
+                                teller
+                        )
+        )
+                .isInstanceOf(
+                        RuntimeException.class
+                )
+                .hasMessageContaining(
+                        "not active"
+                );
+    }
 }

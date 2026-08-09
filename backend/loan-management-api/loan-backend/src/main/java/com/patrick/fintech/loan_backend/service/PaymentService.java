@@ -32,883 +32,101 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Slf4j
 public class PaymentService {
-private final PaymentRepository paymentRepo;
-private final LoanRepository loanRepo;
-private final AuditLogRepository auditRepo;
-private final AuditService auditService;
-private final UserRepository userRepo;
-private final NotificationService notifService;
-private final MailService mailService;
-private final SmsService smsService;
-private final WebhookService webhookService;
-private final AccountingService accountingService;
 
-// ================================================================
-// RECORD PAYMENT
-// ================================================================
+    private final PaymentRepository paymentRepo;
+    private final LoanRepository loanRepo;
+    private final AuditLogRepository auditRepo;
+    private final AuditService auditService;
+    private final UserRepository userRepo;
+    private final NotificationService notifService;
+    private final MailService mailService;
+    private final SmsService smsService;
+    private final WebhookService webhookService;
+    private final AccountingService accountingService;
 
-@Transactional
-public Payment recordPayment(
-        Long loanId,
-        BigDecimal amount,
-        String method,
-        String txnId,
-        String channel,
-        String notes,
-        User recordedBy
-) {
+    // ================================================================
+    // RECORD PAYMENT
+    // ================================================================
 
-    if (loanId == null) {
-        throw new IllegalArgumentException("Loan ID is required");
-    }
-
-    if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-        throw new IllegalArgumentException(
-                "Payment amount must be greater than zero"
-        );
-    }
-
-    amount = roundMoney(amount);
-
-    String normalizedTxnId =
-            normalizeTransactionId(txnId);
-
-    // ============================================================
-    // FIND LOAN
-    // ============================================================
-
-    Loan loan =
-            loanRepo.findById(loanId)
-                    .orElseThrow(
-                            () -> new RuntimeException(
-                                    "Loan not found: " + loanId
-                            )
-                    );
-
-    // ============================================================
-    // ORGANIZATION SECURITY
-    // ============================================================
-
-    if (
-            recordedBy != null
-                    && loan.getOrganization() != null
-                    && recordedBy.getOrganization() != null
-                    && loan.getOrganization().getId() != null
-                    && recordedBy.getOrganization().getId() != null
-                    && !loan.getOrganization()
-                    .getId()
-                    .equals(
-                            recordedBy.getOrganization().getId()
-                    )
+    @Transactional
+    public Payment recordPayment(
+            Long loanId,
+            BigDecimal amount,
+            String method,
+            String txnId,
+            String channel,
+            String notes,
+            User recordedBy
     ) {
 
-        throw new RuntimeException("Access denied");
-    }
+        if (loanId == null) {
+            throw new IllegalArgumentException("Loan ID is required");
+        }
 
-    // ============================================================
-    // IDEMPOTENCY
-    // ============================================================
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
+                    "Payment amount must be greater than zero"
+            );
+        }
 
-    if (normalizedTxnId != null) {
+        amount = roundMoney(amount);
+
+        String normalizedTxnId = normalizeTransactionId(txnId);
+
+        // ============================================================
+        // FIND LOAN
+        // ============================================================
+
+        Loan loan = loanRepo.findById(loanId)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "Loan not found: " + loanId
+                        )
+                );
+
+        // ============================================================
+        // ORGANIZATION SECURITY
+        // ============================================================
 
         if (
-                loan.getOrganization() == null
-                        || loan.getOrganization().getId() == null
+                recordedBy != null
+                        && loan.getOrganization() != null
+                        && recordedBy.getOrganization() != null
+                        && loan.getOrganization().getId() != null
+                        && recordedBy.getOrganization().getId() != null
+                        && !loan.getOrganization()
+                        .getId()
+                        .equals(recordedBy.getOrganization().getId())
         ) {
-            throw new IllegalStateException(
-                    "Loan organization is required for transaction validation."
-            );
+
+            throw new RuntimeException("Access denied");
         }
 
-        Optional<Payment> existingPayment =
-                paymentRepo
-                        .findByOrganization_IdAndTransactionId(
-                                loan.getOrganization().getId(),
-                                normalizedTxnId
-                        );
-
-        if (existingPayment.isPresent()) {
-
-            Payment existing =
-                    existingPayment.get();
-
-            if (
-                    existing.getLoan() != null
-                            && existing.getLoan()
-                            .getId()
-                            .equals(loanId)
-            ) {
-
-                log.info(
-                        "Duplicate payment transaction detected. transactionId={}, loanId={}, paymentId={}",
-                        normalizedTxnId,
-                        loanId,
-                        existing.getId()
-                );
-
-                return existing;
-            }
-
-            throw new IllegalStateException(
-                    "Transaction ID "
-                            + normalizedTxnId
-                            + " has already been used for another loan."
-            );
-        }
-    }
-
-    // ============================================================
-    // LOAN STATUS
-    // ============================================================
-
-    if (
-            loan.getStatus() != LoanStatus.ACTIVE
-                    && loan.getStatus() != LoanStatus.OVERDUE
-    ) {
-
-        throw new RuntimeException(
-                "Loan is not active (status: "
-                        + loan.getStatus()
-                        + ")"
-        );
-    }
-
-    // ============================================================
-    // CURRENT DATE AND EXACT TIME
-    // ============================================================
-
-    LocalDate today =
-            LocalDate.now();
-
-    LocalDateTime now =
-            LocalDateTime.now();
-
-    // ============================================================
-    // FIND EXISTING PAYMENT RECORDS
-    // ============================================================
-
-    List<Payment> loanPayments =
-            paymentRepo.findByLoanId(loanId);
-
-    // ============================================================
-    // FIND CURRENT PARTIAL INSTALLMENT
-    // ============================================================
-
-    Optional<Payment> existingCurrentCycle =
-            loanPayments.stream()
-                    .filter(
-                            p ->
-                                    !Boolean.TRUE.equals(
-                                            p.getPaid()
-                                    )
-                                            && safe(
-                                            p.getAmountPaid()
-                                    ).compareTo(BigDecimal.ZERO) > 0
-                    )
-                    .min(
-                            Comparator.comparing(
-                                    Payment::getDueDate,
-                                    Comparator.nullsLast(
-                                            Comparator.naturalOrder()
-                                    )
-                            )
-                    );
-
-    // ============================================================
-    // FIND NEXT UNPAID INSTALLMENT
-    // ============================================================
-
-    Optional<Payment> unpaidInstallment =
-            loanPayments.stream()
-                    .filter(
-                            p ->
-                                    !Boolean.TRUE.equals(
-                                            p.getPaid()
-                                    )
-                    )
-                    .min(
-                            Comparator.comparing(
-                                    Payment::getDueDate,
-                                    Comparator.nullsLast(
-                                            Comparator.naturalOrder()
-                                    )
-                            )
-                    );
-
-    Payment installment;
-
-    // ============================================================
-    // SELECT INSTALLMENT
-    // ============================================================
-
-    if (existingCurrentCycle.isPresent()) {
-
-        installment =
-                existingCurrentCycle.get();
-
-        log.info(
-                "Continuing existing payment cycle. loanId={}, installment={}, paymentId={}",
-                loanId,
-                installment.getInstallmentNumber(),
-                installment.getId()
-        );
-
-    } else if (unpaidInstallment.isPresent()) {
-
-        installment =
-                unpaidInstallment.get();
-
-        log.info(
-                "Using unpaid scheduled installment. loanId={}, installment={}, paymentId={}",
-                loanId,
-                installment.getInstallmentNumber(),
-                installment.getId()
-        );
-
-    } else {
-
-        LocalDate dueDate =
-                loan.getNextDueDate() != null
-                        ? loan.getNextDueDate()
-                        : today;
-
-        int nextNumber =
-        loanPayments.stream()
-                .map(Payment::getInstallmentNumber)
-                .filter(n -> n != null)
-                .max(Integer::compareTo)
-                .orElse(0)
-                + 1;
-
-        LocalDateTime previousInterestTimestamp =
-                findLatestInterestCalculationTimestamp(
-                        loanPayments,
-                        loan
-                );
-
-        installment =
-                Payment.builder()
-                        .loan(loan)
-                        .organization(
-                                loan.getOrganization()
-                        )
-                        .installmentNumber(
-                                nextNumber
-                        )
-                        .dueDate(
-                                dueDate
-                        )
-                        .amount(
-                                loan.getNextInstallmentAmount()
-                        )
-                        .amountPaid(
-                                BigDecimal.ZERO
-                        )
-                        .principalComponent(
-                                BigDecimal.ZERO
-                        )
-                        .interestComponent(
-                                BigDecimal.ZERO
-                        )
-                        .penalty(
-                                BigDecimal.ZERO
-                        )
-                        .cycleInterestDue(
-                                BigDecimal.ZERO
-                        )
-                        .cycleInterestRemaining(
-                                BigDecimal.ZERO
-                        )
-                        .interestCalculationDate(
-                                previousInterestTimestamp
-                        )
-                        .paid(
-                                false
-                        )
-                        .status(
-                                Payment.PaymentStatus.PENDING
-                        )
-                        .build();
-
-        log.info(
-                "Creating new payment cycle. loanId={}, installment={}, inheritedInterestTimestamp={}",
-                loanId,
-                nextNumber,
-                previousInterestTimestamp
-        );
-    }
-
-    // ================================================================
-    // PAYMENT DUE DATE
-    // ================================================================
-
-    LocalDate cycleDueDate =
-            installment.getDueDate() != null
-                    ? installment.getDueDate()
-                    : (
-                    loan.getNextDueDate() != null
-                            ? loan.getNextDueDate()
-                            : today
-            );
-
-    long daysLateLong =
-            ChronoUnit.DAYS.between(
-                    cycleDueDate,
-                    today
-            );
-
-    int daysLate =
-            (int)
-                    Math.max(
-                            0L,
-                            daysLateLong
-                    );
-
-    boolean isLate =
-            daysLate > 0;
-
-    // ================================================================
-    // EXISTING VALUES
-    // ================================================================
-
-    BigDecimal amountPaidSoFar =
-            safe(
-                    installment.getAmountPaid()
-            );
-
-    BigDecimal interestAlreadyPaid =
-            safe(
-                    installment.getInterestComponent()
-            );
-
-    interestAlreadyPaid =
-            interestAlreadyPaid.max(
-                    BigDecimal.ZERO
-            );
-
-    interestAlreadyPaid =
-            roundMoney(
-                    interestAlreadyPaid
-            );
-
-    BigDecimal penaltyAlreadyRecorded =
-            safe(
-                    installment.getPenalty()
-            );
-
-    penaltyAlreadyRecorded =
-            penaltyAlreadyRecorded.max(
-                    BigDecimal.ZERO
-            );
-
-    penaltyAlreadyRecorded =
-            roundMoney(
-                    penaltyAlreadyRecorded
-            );
-
-    BigDecimal existingCycleInterestDue =
-            safe(
-                    installment.getCycleInterestDue()
-            );
-
-    existingCycleInterestDue =
-            existingCycleInterestDue.max(
-                    BigDecimal.ZERO
-            );
-
-    existingCycleInterestDue =
-            roundMoney(
-                    existingCycleInterestDue
-            );
-
-    // ================================================================
-    // CURRENT PRINCIPAL
-    // ================================================================
-
-    BigDecimal currentBalance =
-            safe(
-                    loan.getOutstandingBalance()
-            );
-
-    currentBalance =
-            currentBalance.max(
-                    BigDecimal.ZERO
-            );
-
-    currentBalance =
-            roundMoney(
-                    currentBalance
-            );
-
-    if (currentBalance.compareTo(BigDecimal.ZERO) <= 0) {
-
-        throw new IllegalStateException(
-                "Loan has no outstanding principal balance."
-        );
-    }
-
-    // ================================================================
-    // INTEREST START TIMESTAMP
-    // ================================================================
-
-    LocalDateTime interestStartDateTime =
-            determineInterestStartDateTime(
-                    installment,
-                    loan,
-                    loanPayments,
-                    now
-            );
-
-    if (interestStartDateTime.isAfter(now)) {
-        interestStartDateTime = now;
-    }
-
-    // ================================================================
-    // EXACT ELAPSED HOURS
-    // ================================================================
-
-    long elapsedHours =
-            ChronoUnit.HOURS.between(
-                    interestStartDateTime,
-                    now
-            );
-
-    if (elapsedHours < 0) {
-        elapsedHours = 0;
-    }
-
-    // ================================================================
-    // INTEREST DAYS
-    // ================================================================
-
-    /*
-     * FIRST PAYMENT:
-     *
-     * Loan disbursed today at 10:00
-     * Borrower pays today at 10:10
-     *
-     * Interest = 1 day
-     *
-     * NOT a full month.
-     *
-     * After that:
-     *
-     * Payment at 10:10
-     * Another payment at 10:20
-     *
-     * Additional interest = 0 days.
-     *
-     * Payment at 10:10 next day
-     *
-     * Additional interest = 1 day.
-     */
-
-    boolean firstInterestCalculation =
-            installment.getInterestCalculationDate() == null
-                    && amountPaidSoFar.compareTo(BigDecimal.ZERO) <= 0
-                    && interestAlreadyPaid.compareTo(BigDecimal.ZERO) <= 0
-                    && existingCycleInterestDue.compareTo(BigDecimal.ZERO) <= 0;
-
-    long elapsedDays;
-
-    if (firstInterestCalculation) {
-
-        elapsedDays =
-                Math.max(
-                        1L,
-                        elapsedHours / 24L
-                );
-
-    } else {
-
-        elapsedDays =
-                elapsedHours / 24L;
-    }
-
-    // ================================================================
-    // DAILY INTEREST RATE
-    // ================================================================
-
-    BigDecimal dailyRate =
-            calculateDailyRate(
-                    loan
-            );
-
-    // ================================================================
-    // NEW INTEREST
-    // ================================================================
-
-    BigDecimal newlyAccruedInterest =
-            roundMoney(
-                    currentBalance
-                            .multiply(dailyRate)
-                            .multiply(
-                                    BigDecimal.valueOf(
-                                            elapsedDays
-                                    )
-                            )
-            );
-
-    newlyAccruedInterest =
-            newlyAccruedInterest.max(
-                    BigDecimal.ZERO
-            );
-
-    log.info(
-            "INTEREST: loanId={}, principal={}, rate={}, rateType={}, dailyRate={}, start={}, now={}, elapsedHours={}, interestDays={}, newInterest={}",
-            loan.getId(),
-            currentBalance,
-            loan.getInterestRate(),
-            loan.getInterestRateType(),
-            dailyRate,
-            interestStartDateTime,
-            now,
-            elapsedHours,
-            elapsedDays,
-            newlyAccruedInterest
-    );
-
-    // ================================================================
-    // TOTAL INTEREST
-    // ================================================================
-
-    BigDecimal totalCycleInterestDue =
-            roundMoney(
-                    existingCycleInterestDue
-                            .add(
-                                    newlyAccruedInterest
-                            )
-            );
-
-    totalCycleInterestDue =
-            totalCycleInterestDue.max(
-                    BigDecimal.ZERO
-            );
-
-    BigDecimal remainingInterestBeforePayment =
-            roundMoney(
-                    totalCycleInterestDue
-                            .subtract(
-                                    interestAlreadyPaid
-                            )
-                            .max(
-                                    BigDecimal.ZERO
-                            )
-            );
-
-    // ================================================================
-    // DAILY PENALTY
-    // ================================================================
-
-    BigDecimal dailyPenaltyRate =
-            BigDecimal.valueOf(0.02)
-                    .divide(
-                            BigDecimal.valueOf(30),
-                            12,
-                            RoundingMode.HALF_UP
-                    );
-
-    BigDecimal calculatedPenalty =
-            BigDecimal.ZERO;
-
-    if (daysLate > 0) {
-
-        calculatedPenalty =
-                roundMoney(
-                        currentBalance
-                                .multiply(
-                                        dailyPenaltyRate
-                                )
-                                .multiply(
-                                        BigDecimal.valueOf(
-                                                daysLate
-                                        )
-                                )
-                );
-    }
-
-    BigDecimal newPenalty =
-            roundMoney(
-                    calculatedPenalty
-                            .subtract(
-                                    penaltyAlreadyRecorded
-                            )
-                            .max(
-                                    BigDecimal.ZERO
-                            )
-            );
-
-    BigDecimal totalPenalty =
-            roundMoney(
-                    penaltyAlreadyRecorded
-                            .add(
-                                    newPenalty
-                            )
-            );
-
-    // ================================================================
-    // PAYMENT ALLOCATION
-    // ================================================================
-
-    /*
-     * PAYMENT ORDER:
-     *
-     * 1. Penalty
-     * 2. Interest
-     * 3. Principal
-     */
-
-    BigDecimal amountAfterPenalty =
-            roundMoney(
-                    amount
-                            .subtract(
-                                    newPenalty
-                            )
-                            .max(
-                                    BigDecimal.ZERO
-                            )
-            );
-
-    BigDecimal interestPaid =
-            roundMoney(
-                    amountAfterPenalty.min(
-                            remainingInterestBeforePayment
-                    )
-            );
-
-    BigDecimal amountAvailableForPrincipal =
-            roundMoney(
-                    amountAfterPenalty
-                            .subtract(
-                                    interestPaid
-                            )
-                            .max(
-                                    BigDecimal.ZERO
-                            )
-            );
-
-    BigDecimal principalPaid =
-            roundMoney(
-                    amountAvailableForPrincipal.min(
-                            currentBalance
-                    )
-            );
-
-    // ================================================================
-    // NEW PRINCIPAL BALANCE
-    // ================================================================
-
-    BigDecimal newBalance =
-            roundMoney(
-                    currentBalance
-                            .subtract(
-                                    principalPaid
-                            )
-                            .max(
-                                    BigDecimal.ZERO
-                            )
-            );
-
-    // ================================================================
-    // CUMULATIVE VALUES
-    // ================================================================
-
-    BigDecimal totalInterestPaid =
-            roundMoney(
-                    interestAlreadyPaid
-                            .add(
-                                    interestPaid
-                            )
-            );
-
-    BigDecimal existingPrincipalPaid =
-            safe(
-                    installment.getPrincipalComponent()
-            );
-
-    BigDecimal totalPrincipalPaid =
-            roundMoney(
-                    existingPrincipalPaid
-                            .add(
-                                    principalPaid
-                            )
-            );
-
-    BigDecimal remainingInterestAfterPayment =
-            roundMoney(
-                    totalCycleInterestDue
-                            .subtract(
-                                    totalInterestPaid
-                            )
-                            .max(
-                                    BigDecimal.ZERO
-                            )
-            );
-
-    // ================================================================
-    // COMPLETION
-    // ================================================================
-
-    boolean interestCovered =
-            remainingInterestAfterPayment
-                    .compareTo(
-                            new BigDecimal("0.01")
-                    ) <= 0;
-
-    boolean fullyPaidOff =
-            newBalance
-                    .compareTo(
-                            new BigDecimal("0.01")
-                    ) <= 0;
-
-    boolean cycleCompleted =
-            interestCovered
-                    || fullyPaidOff;
-
-    // ================================================================
-    // UPDATE PAYMENT
-    // ================================================================
-
-    BigDecimal newAmountPaid =
-            roundMoney(
-                    amountPaidSoFar
-                            .add(
-                                    amount
-                            )
-            );
-
-    installment.setAmountPaid(
-            newAmountPaid
-    );
-
-    installment.setInterestComponent(
-            totalInterestPaid
-    );
-
-    installment.setPrincipalComponent(
-            totalPrincipalPaid
-    );
-
-    installment.setPenalty(
-            totalPenalty
-    );
-
-    installment.setOutstandingAfter(
-            newBalance
-    );
-
-    installment.setCycleInterestDue(
-            totalCycleInterestDue
-    );
-
-    installment.setCycleInterestRemaining(
-            remainingInterestAfterPayment
-    );
-
-    installment.setLate(
-            isLate
-                    || installment.isLate()
-    );
-
-    installment.setDaysLate(
-            Math.max(
-                    installment.getDaysLate() != null
-                            ? installment.getDaysLate()
-                            : 0,
-                    daysLate
-            )
-    );
-
-    installment.setPaymentMethod(
-            method
-    );
-
-    installment.setTransactionId(
-            normalizedTxnId
-    );
-
-    installment.setChannel(
-            channel
-    );
-
-    installment.setNotes(
-            notes
-    );
-
-    if (recordedBy != null) {
-
-        installment.setRecordedBy(
-                recordedBy
-        );
-    }
-
-    installment.setPaidDate(
-            today
-    );
-
-    /*
-     * CRITICAL:
-     *
-     * Reset the 24-hour interest clock from the exact
-     * payment timestamp.
-     */
-    installment.setInterestCalculationDate(
-            now
-    );
-
-    installment.setPaid(
-            cycleCompleted
-    );
-
-    installment.setStatus(
-            cycleCompleted
-                    ? Payment.PaymentStatus.COMPLETED
-                    : Payment.PaymentStatus.PARTIALLY_PAID
-    );
-
-    // ================================================================
-    // PAYMENT REFERENCE
-    // ================================================================
-
-    if (
-            installment.getPaymentReference() == null
-                    || installment.getPaymentReference()
-                    .isBlank()
-    ) {
-
-        installment.setPaymentReference(
-                generateRef(
-                        loan
-                )
-        );
-    }
-
-    // ================================================================
-    // SAVE PAYMENT
-    // ================================================================
-
-    try {
-
-        installment =
-                paymentRepo.save(
-                        installment
-                );
-
-    } catch (DataIntegrityViolationException e) {
+        // ============================================================
+        // IDEMPOTENCY
+        // ============================================================
 
         if (normalizedTxnId != null) {
 
-            Optional<Payment> concurrentPayment =
-                    paymentRepo
-                            .findByOrganization_IdAndTransactionId(
-                                    loan.getOrganization().getId(),
-                                    normalizedTxnId
-                            );
+            if (
+                    loan.getOrganization() == null
+                            || loan.getOrganization().getId() == null
+            ) {
 
-            if (concurrentPayment.isPresent()) {
+                throw new IllegalStateException(
+                        "Loan organization is required for transaction validation."
+                );
+            }
 
-                Payment existing =
-                        concurrentPayment.get();
+            Optional<Payment> existingPayment =
+                    paymentRepo.findByOrganization_IdAndTransactionId(
+                            loan.getOrganization().getId(),
+                            normalizedTxnId
+                    );
+
+            if (existingPayment.isPresent()) {
+
+                Payment existing = existingPayment.get();
 
                 if (
                         existing.getLoan() != null
@@ -918,7 +136,7 @@ public Payment recordPayment(
                 ) {
 
                     log.info(
-                            "Concurrent duplicate payment detected. transactionId={}, loanId={}, paymentId={}",
+                            "Duplicate payment transaction detected. transactionId={}, loanId={}, paymentId={}",
                             normalizedTxnId,
                             loanId,
                             existing.getId()
@@ -926,971 +144,1743 @@ public Payment recordPayment(
 
                     return existing;
                 }
+
+                throw new IllegalStateException(
+                        "Transaction ID "
+                                + normalizedTxnId
+                                + " has already been used for another loan."
+                );
             }
         }
 
-        throw e;
-    }
+        // ============================================================
+        // LOAN STATUS
+        // ============================================================
 
-    // ================================================================
-    // UPDATE LOAN
-    // ================================================================
+        if (
+                loan.getStatus() != LoanStatus.ACTIVE
+                        && loan.getStatus() != LoanStatus.OVERDUE
+        ) {
 
-    BigDecimal oldTotalPaid =
-            safe(
-                    loan.getTotalPaid()
-            );
-
-    loan.setTotalPaid(
-            toDouble(
-                    roundMoney(
-                            oldTotalPaid
-                                    .add(
-                                            amount
-                                    )
-                    )
-            )
-    );
-
-    loan.setOutstandingBalance(
-            toDouble(
-                    newBalance
-            )
-    );
-
-    loan.setLastPaymentDate(
-            today
-    );
-
-    // ================================================================
-    // LOAN STATUS
-    // ================================================================
-
-    if (fullyPaidOff) {
-
-        loan.setStatus(
-                LoanStatus.PAID
-        );
-
-        Long currentInstallmentId =
-                installment.getId();
-
-        List<Payment> stillPending =
-                paymentRepo
-                        .findByLoanId(
-                                loanId
-                        )
-                        .stream()
-                        .filter(
-                                p ->
-                                        !Boolean.TRUE.equals(
-                                                p.getPaid()
-                                        )
-                                                && (
-                                                p.getId() == null
-                                                        || !p.getId()
-                                                        .equals(
-                                                                currentInstallmentId
-                                                        )
-                                        )
-                        )
-                        .toList();
-
-        if (!stillPending.isEmpty()) {
-
-            paymentRepo.deleteAll(
-                    stillPending
+            throw new RuntimeException(
+                    "Loan is not active (status: "
+                            + loan.getStatus()
+                            + ")"
             );
         }
 
-        loan.setNextDueDate(
-                null
-        );
+        // ============================================================
+        // CURRENT DATE/TIME
+        // ============================================================
 
-        loan.setNextPaymentDate(
-                null
-        );
+        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
 
-        loan.setNextInstallmentAmount(
-                0.0
-        );
+        // ============================================================
+        // FIND EXISTING PAYMENT RECORDS
+        // ============================================================
 
-    } else {
+        List<Payment> loanPayments =
+                paymentRepo.findByLoanId(loanId);
 
-        /*
-         * A payment does NOT stop daily interest.
-         *
-         * The reduced principal continues accruing interest
-         * from the new interestCalculationDate.
-         */
-        loan.setStatus(
-                isLate
-                        ? LoanStatus.OVERDUE
-                        : LoanStatus.ACTIVE
-        );
+        // ============================================================
+        // FIND EXISTING PARTIALLY PAID INSTALLMENT
+        // ============================================================
 
-        if (
-                cycleCompleted
-                        || interestCovered
-        ) {
+        Optional<Payment> existingCurrentCycle =
+                loanPayments.stream()
+                        .filter(
+                                p ->
+                                        !Boolean.TRUE.equals(p.getPaid())
+                                                && safe(p.getAmountPaid())
+                                                .compareTo(BigDecimal.ZERO) > 0
+                        )
+                        .min(
+                                Comparator.comparing(
+                                        Payment::getDueDate,
+                                        Comparator.nullsLast(
+                                                Comparator.naturalOrder()
+                                        )
+                                )
+                        );
 
-            LocalDate nextDue =
-                    cycleDueDate.plusMonths(
-                            1
-                    );
+        // ============================================================
+        // FIND NEXT UNPAID INSTALLMENT
+        // ============================================================
 
-            loan.setNextDueDate(
-                    nextDue
+        Optional<Payment> unpaidInstallment =
+                loanPayments.stream()
+                        .filter(
+                                p ->
+                                        !Boolean.TRUE.equals(p.getPaid())
+                        )
+                        .min(
+                                Comparator.comparing(
+                                        Payment::getDueDate,
+                                        Comparator.nullsLast(
+                                                Comparator.naturalOrder()
+                                        )
+                                )
+                        );
+
+        Payment installment;
+
+        // ============================================================
+        // SELECT PAYMENT CYCLE
+        // ============================================================
+
+        if (existingCurrentCycle.isPresent()) {
+
+            installment = existingCurrentCycle.get();
+
+            log.info(
+                    "Continuing existing monthly payment cycle. loanId={}, installment={}, paymentId={}",
+                    loanId,
+                    installment.getInstallmentNumber(),
+                    installment.getId()
             );
 
-            loan.setNextPaymentDate(
-                    nextDue
+        } else if (unpaidInstallment.isPresent()) {
+
+            installment = unpaidInstallment.get();
+
+            log.info(
+                    "Using unpaid scheduled installment. loanId={}, installment={}, paymentId={}",
+                    loanId,
+                    installment.getInstallmentNumber(),
+                    installment.getId()
             );
 
         } else {
 
-            loan.setNextDueDate(
-                    cycleDueDate
-            );
+            LocalDate dueDate =
+                    loan.getNextDueDate() != null
+                            ? loan.getNextDueDate()
+                            : today;
 
-            loan.setNextPaymentDate(
-                    cycleDueDate
+            int nextNumber =
+                    loanPayments.stream()
+                            .map(Payment::getInstallmentNumber)
+                            .filter(n -> n != null)
+                            .max(Integer::compareTo)
+                            .orElse(0)
+                            + 1;
+
+            LocalDateTime previousInterestTimestamp =
+                    findLatestInterestCalculationTimestamp(
+                            loanPayments,
+                            loan
+                    );
+
+            installment =
+                    Payment.builder()
+                            .loan(loan)
+                            .organization(loan.getOrganization())
+                            .installmentNumber(nextNumber)
+                            .dueDate(dueDate)
+                            .amount(loan.getNextInstallmentAmount())
+                            .amountPaid(BigDecimal.ZERO)
+                            .principalComponent(BigDecimal.ZERO)
+                            .interestComponent(BigDecimal.ZERO)
+                            .penalty(BigDecimal.ZERO)
+                            .cycleInterestDue(BigDecimal.ZERO)
+                            .cycleInterestRemaining(BigDecimal.ZERO)
+                            .interestCalculationDate(
+                                    previousInterestTimestamp
+                            )
+                            .paid(false)
+                            .status(
+                                    Payment.PaymentStatus.PENDING
+                            )
+                            .build();
+
+            log.info(
+                    "Creating new monthly payment cycle. loanId={}, installment={}, previousInterestTimestamp={}",
+                    loanId,
+                    nextNumber,
+                    previousInterestTimestamp
             );
         }
-    }
 
-    loanRepo.save(
-            loan
-    );
+        // ================================================================
+        // PAYMENT DUE DATE
+        // ================================================================
 
-    // ================================================================
-    // AUDIT
-    // ================================================================
+        LocalDate cycleDueDate =
+                installment.getDueDate() != null
+                        ? installment.getDueDate()
+                        : (
+                        loan.getNextDueDate() != null
+                                ? loan.getNextDueDate()
+                                : today
+                );
 
-    audit(
-            loan.getOrganization(),
-            recordedBy,
-            "PAYMENT_RECORDED",
-            "PAYMENT",
-            installment.getId() != null
-                    ? installment.getId().toString()
-                    : "UNKNOWN",
-            "Payment of "
-                    + amount
-                    + " on loan "
-                    + loan.getReferenceNumber()
-                    + " — interest start: "
-                    + interestStartDateTime
-                    + ", payment time: "
-                    + now
-                    + ", elapsed hours: "
-                    + elapsedHours
-                    + ", interest days: "
-                    + elapsedDays
-                    + ", daily interest: "
-                    + roundMoney(
-                    currentBalance.multiply(dailyRate)
-            )
-                    + ", newly accrued interest: "
-                    + newlyAccruedInterest
-                    + ", interest paid: "
-                    + interestPaid
-                    + ", principal: "
-                    + principalPaid
-                    + ", penalty days: "
-                    + daysLate
-                    + ", daily penalty rate: "
-                    + dailyPenaltyRate
-                    + ", new penalty: "
-                    + newPenalty
-                    + ", total penalty: "
-                    + totalPenalty
-                    + ", remaining interest: "
-                    + remainingInterestAfterPayment
-                    + ", transactionId: "
-                    + normalizedTxnId
-    );
+        long daysLateLong =
+                ChronoUnit.DAYS.between(
+                        cycleDueDate,
+                        today
+                );
 
-    // ================================================================
-    // EMAIL
-    // ================================================================
+        int daysLate =
+                (int) Math.max(
+                        0L,
+                        daysLateLong
+                );
 
-    try {
+        boolean isLate = daysLate > 0;
 
-        mailService.sendPaymentConfirmation(
-                loan,
-                toDouble(amount)
-        );
+        // ================================================================
+        // EXISTING PAYMENT VALUES
+        // ================================================================
 
-    } catch (Exception e) {
+        BigDecimal amountPaidSoFar =
+                roundMoney(
+                        safe(
+                                installment.getAmountPaid()
+                        )
+                );
 
-        log.warn(
-                "Payment email notification failed",
-                e
-        );
-    }
+        BigDecimal interestAlreadyPaid =
+                roundMoney(
+                        safe(
+                                installment.getInterestComponent()
+                        )
+                );
 
-    // ================================================================
-    // SMS
-    // ================================================================
+        interestAlreadyPaid =
+                interestAlreadyPaid.max(
+                        BigDecimal.ZERO
+                );
 
-    try {
+        BigDecimal penaltyAlreadyRecorded =
+                roundMoney(
+                        safe(
+                                installment.getPenalty()
+                        )
+                );
+
+        penaltyAlreadyRecorded =
+                penaltyAlreadyRecorded.max(
+                        BigDecimal.ZERO
+                );
+
+        BigDecimal existingCycleInterestDue =
+                roundMoney(
+                        safe(
+                                installment.getCycleInterestDue()
+                        )
+                );
+
+        existingCycleInterestDue =
+                existingCycleInterestDue.max(
+                        BigDecimal.ZERO
+                );
+
+        BigDecimal existingCycleInterestRemaining =
+                roundMoney(
+                        safe(
+                                installment.getCycleInterestRemaining()
+                        )
+                );
+
+        existingCycleInterestRemaining =
+                existingCycleInterestRemaining.max(
+                        BigDecimal.ZERO
+                );
+
+        // ================================================================
+        // CURRENT PRINCIPAL
+        // ================================================================
+
+        BigDecimal currentBalance =
+                roundMoney(
+                        safe(
+                                loan.getOutstandingBalance()
+                        )
+                );
+
+        currentBalance =
+                currentBalance.max(
+                        BigDecimal.ZERO
+                );
+
+        if (
+                currentBalance.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0
+        ) {
+
+            throw new IllegalStateException(
+                    "Loan has no outstanding principal balance."
+            );
+        }
+
+        // ================================================================
+        // MONTHLY INTEREST
+        // ================================================================
 
         /*
-         * SmsService currently expects:
+         * IMPORTANT BUSINESS RULE
          *
-         * sendPaymentConfirmed(Loan loan, double amount)
+         * Interest is calculated ONCE for the current monthly
+         * payment cycle.
          *
-         * Therefore BigDecimal is converted only at this
-         * service boundary.
+         * Example:
+         *
+         * Principal = 12,800
+         * Monthly interest = 12%
+         *
+         * Monthly interest:
+         *
+         * 12,800 × 12 / 100 = 1,536.00
+         *
+         * First payment:
+         *
+         * Payment = 500
+         * Interest = 500
+         * Principal = 0
+         *
+         * Second payment during SAME cycle:
+         *
+         * No new 12% interest calculation.
+         * Remaining interest is still 1,036.
+         *
+         * Once the monthly cycle is completed, the next cycle
+         * receives a new interest calculation based on the
+         * reduced outstanding principal.
          */
-        smsService.sendPaymentConfirmed(
-                loan,
-                toDouble(amount)
-        );
 
-    } catch (Exception e) {
+        boolean interestAlreadyCalculatedForCycle =
+                existingCycleInterestDue.compareTo(
+                        BigDecimal.ZERO
+                ) > 0
+                        || installment.getInterestCalculationDate() != null;
 
-        log.warn(
-                "Payment SMS notification failed",
-                e
-        );
-    }
+        BigDecimal newlyAccruedInterest =
+                BigDecimal.ZERO;
 
-    // ================================================================
-    // OFFICER NOTIFICATION
-    // ================================================================
+        if (!interestAlreadyCalculatedForCycle) {
 
-    if (
-            loan.getLoanOfficer() != null
-                    && (
-                    recordedBy == null
-                            || loan.getLoanOfficer()
-                            .getId() == null
-                            || recordedBy.getId() == null
-                            || !loan.getLoanOfficer()
-                            .getId()
-                            .equals(
-                                    recordedBy.getId()
-                            )
-            )
-    ) {
+            newlyAccruedInterest =
+                    calculateMonthlyInterest(
+                            currentBalance,
+                            loan
+                    );
 
-        try {
+            newlyAccruedInterest =
+                    roundMoney(
+                            newlyAccruedInterest
+                    );
 
-            notifService.notifyUsers(
-                    List.of(
-                            loan.getLoanOfficer()
-                    ),
-                    "Payment Received",
-                    "A payment of "
-                            + loan.getCurrency()
-                            + " "
-                            + amount
-                            + " was recorded on loan "
-                            + loan.getReferenceNumber()
-                            + (
-                            recordedBy != null
-                                    ? " by "
-                                    + recordedBy.getName()
-                                    : " (automatic)"
-                    )
-                            + ".",
-                    "success",
-                    "/dashboard/loans/"
-                            + loan.getId()
+            installment.setInterestCalculationDate(
+                    now
             );
 
-        } catch (Exception e) {
-
-            log.warn(
-                    "In-app payment notification failed",
-                    e
+            log.info(
+                    "MONTHLY INTEREST CALCULATED: loanId={}, principal={}, rate={}, rateType={}, monthlyInterest={}, calculationDate={}",
+                    loan.getId(),
+                    currentBalance,
+                    loan.getInterestRate(),
+                    loan.getInterestRateType(),
+                    newlyAccruedInterest,
+                    now
             );
-        }
-    }
 
-    // ================================================================
-    // WEBHOOK
-    // ================================================================
+        } else {
 
-    try {
-
-        Map<String, Object> paymentWebhook =
-                new HashMap<>();
-
-        paymentWebhook.put(
-                "paymentId",
-                installment.getId()
-        );
-
-        paymentWebhook.put(
-                "loanId",
-                loan.getId()
-        );
-
-        paymentWebhook.put(
-                "loanReference",
-                loan.getReferenceNumber()
-        );
-
-        if (loan.getBorrower() != null) {
-
-            paymentWebhook.put(
-                    "borrowerId",
-                    loan.getBorrower().getId()
+            log.info(
+                    "MONTHLY INTEREST ALREADY CALCULATED FOR CURRENT CYCLE: loanId={}, existingInterestDue={}, interestCalculationDate={}",
+                    loan.getId(),
+                    existingCycleInterestDue,
+                    installment.getInterestCalculationDate()
             );
         }
 
-        paymentWebhook.put(
-                "amount",
-                amount
+        // ================================================================
+        // TOTAL CYCLE INTEREST
+        // ================================================================
+
+        BigDecimal totalCycleInterestDue;
+
+        if (interestAlreadyCalculatedForCycle) {
+
+            totalCycleInterestDue =
+                    existingCycleInterestDue;
+
+        } else {
+
+            totalCycleInterestDue =
+                    roundMoney(
+                            existingCycleInterestDue
+                                    .add(
+                                            newlyAccruedInterest
+                                    )
+                    );
+        }
+
+        totalCycleInterestDue =
+                totalCycleInterestDue.max(
+                        BigDecimal.ZERO
+                );
+
+        // ================================================================
+        // INTEREST REMAINING BEFORE PAYMENT
+        // ================================================================
+
+        BigDecimal remainingInterestBeforePayment =
+                roundMoney(
+                        totalCycleInterestDue
+                                .subtract(
+                                        interestAlreadyPaid
+                                )
+                                .max(
+                                        BigDecimal.ZERO
+                                )
+                );
+
+        // ================================================================
+        // PENALTY
+        // ================================================================
+
+        BigDecimal dailyPenaltyRate =
+                BigDecimal.valueOf(0.02)
+                        .divide(
+                                BigDecimal.valueOf(30),
+                                12,
+                                RoundingMode.HALF_UP
+                        );
+
+        BigDecimal calculatedPenalty =
+                BigDecimal.ZERO;
+
+        if (daysLate > 0) {
+
+            calculatedPenalty =
+                    roundMoney(
+                            currentBalance
+                                    .multiply(
+                                            dailyPenaltyRate
+                                    )
+                                    .multiply(
+                                            BigDecimal.valueOf(
+                                                    daysLate
+                                            )
+                                    )
+                    );
+        }
+
+        BigDecimal newPenalty =
+                roundMoney(
+                        calculatedPenalty
+                                .subtract(
+                                        penaltyAlreadyRecorded
+                                )
+                                .max(
+                                        BigDecimal.ZERO
+                                )
+                );
+
+        BigDecimal totalPenalty =
+                roundMoney(
+                        penaltyAlreadyRecorded
+                                .add(
+                                        newPenalty
+                                )
+                );
+
+        // ================================================================
+        // PAYMENT ALLOCATION
+        // ================================================================
+
+        /*
+         * PAYMENT PRIORITY:
+         *
+         * 1. PENALTY
+         * 2. INTEREST
+         * 3. PRINCIPAL
+         *
+         * This guarantees interest is charged/collected BEFORE
+         * principal is reduced.
+         */
+
+        BigDecimal amountAfterPenalty =
+                roundMoney(
+                        amount
+                                .subtract(
+                                        newPenalty
+                                )
+                                .max(
+                                        BigDecimal.ZERO
+                                )
+                );
+
+        BigDecimal interestPaid =
+                roundMoney(
+                        amountAfterPenalty.min(
+                                remainingInterestBeforePayment
+                        )
+                );
+
+        BigDecimal amountAvailableForPrincipal =
+                roundMoney(
+                        amountAfterPenalty
+                                .subtract(
+                                        interestPaid
+                                )
+                                .max(
+                                        BigDecimal.ZERO
+                                )
+                );
+
+        BigDecimal principalPaid =
+                roundMoney(
+                        amountAvailableForPrincipal.min(
+                                currentBalance
+                        )
+                );
+
+        // ================================================================
+        // NEW PRINCIPAL BALANCE
+        // ================================================================
+
+        BigDecimal newBalance =
+                roundMoney(
+                        currentBalance
+                                .subtract(
+                                        principalPaid
+                                )
+                                .max(
+                                        BigDecimal.ZERO
+                                )
+                );
+
+        // ================================================================
+        // CUMULATIVE INTEREST
+        // ================================================================
+
+        BigDecimal totalInterestPaid =
+                roundMoney(
+                        interestAlreadyPaid
+                                .add(
+                                        interestPaid
+                                )
+                );
+
+        // ================================================================
+        // CUMULATIVE PRINCIPAL
+        // ================================================================
+
+        BigDecimal existingPrincipalPaid =
+                roundMoney(
+                        safe(
+                                installment.getPrincipalComponent()
+                        )
+                );
+
+        BigDecimal totalPrincipalPaid =
+                roundMoney(
+                        existingPrincipalPaid
+                                .add(
+                                        principalPaid
+                                )
+                );
+
+        // ================================================================
+        // REMAINING INTEREST
+        // ================================================================
+
+        BigDecimal remainingInterestAfterPayment =
+                roundMoney(
+                        totalCycleInterestDue
+                                .subtract(
+                                        totalInterestPaid
+                                )
+                                .max(
+                                        BigDecimal.ZERO
+                                )
+                );
+
+        // ================================================================
+        // AMOUNT REMAINING ON INSTALLMENT
+        // ================================================================
+
+        BigDecimal scheduledInstallmentAmount =
+                roundMoney(
+                        safe(
+                                installment.getAmount()
+                        )
+                );
+
+        BigDecimal newAmountPaid =
+                roundMoney(
+                        amountPaidSoFar
+                                .add(
+                                        amount
+                                )
+                );
+
+        BigDecimal remainingScheduledAmount =
+                roundMoney(
+                        scheduledInstallmentAmount
+                                .subtract(
+                                        newAmountPaid
+                                )
+                                .max(
+                                        BigDecimal.ZERO
+                                )
+                );
+
+        // ================================================================
+        // CYCLE COMPLETION
+        // ================================================================
+
+        boolean interestCovered =
+                remainingInterestAfterPayment.compareTo(
+                        new BigDecimal("0.01")
+                ) <= 0;
+
+        boolean scheduledAmountCovered =
+                remainingScheduledAmount.compareTo(
+                        new BigDecimal("0.01")
+                ) <= 0;
+
+        boolean fullyPaidOff =
+                newBalance.compareTo(
+                        new BigDecimal("0.01")
+                ) <= 0;
+
+        /*
+         * IMPORTANT:
+         *
+         * Interest being paid does NOT automatically mean the
+         * monthly installment is completed.
+         *
+         * The cycle is completed when:
+         *
+         * - the scheduled amount is satisfied, OR
+         * - the entire loan is paid off.
+         *
+         * Interest being covered alone is NOT enough.
+         */
+
+        boolean cycleCompleted =
+                scheduledAmountCovered
+                        || fullyPaidOff;
+
+        // ================================================================
+        // LOG PAYMENT ALLOCATION
+        // ================================================================
+
+        log.info(
+                "PAYMENT ALLOCATION: loanId={}, payment={}, penalty={}, interestPaid={}, principalPaid={}, oldBalance={}, newBalance={}, cycleInterestDue={}, interestRemaining={}, cycleCompleted={}",
+                loan.getId(),
+                amount,
+                newPenalty,
+                interestPaid,
+                principalPaid,
+                currentBalance,
+                newBalance,
+                totalCycleInterestDue,
+                remainingInterestAfterPayment,
+                cycleCompleted
         );
 
-        paymentWebhook.put(
-                "principalPaid",
-                principalPaid
+        // ================================================================
+        // UPDATE PAYMENT
+        // ================================================================
+
+        installment.setAmountPaid(
+                newAmountPaid
         );
 
-        paymentWebhook.put(
-                "interestPaid",
-                interestPaid
-        );
-
-        paymentWebhook.put(
-                "penalty",
-                newPenalty
-        );
-
-        paymentWebhook.put(
-                "totalPenalty",
-                totalPenalty
-        );
-
-        paymentWebhook.put(
-                "penaltyDays",
-                daysLate
-        );
-
-        paymentWebhook.put(
-                "dailyPenaltyRate",
-                dailyPenaltyRate
-        );
-
-        paymentWebhook.put(
-                "totalInterestPaid",
+        installment.setInterestComponent(
                 totalInterestPaid
         );
 
-        paymentWebhook.put(
-                "totalInterestDue",
-                totalCycleInterestDue
-        );
-
-        paymentWebhook.put(
-                "remainingInterest",
-                remainingInterestAfterPayment
-        );
-
-        paymentWebhook.put(
-                "totalPrincipalPaid",
+        installment.setPrincipalComponent(
                 totalPrincipalPaid
         );
 
-        paymentWebhook.put(
-                "outstandingBalance",
+        installment.setPenalty(
+                totalPenalty
+        );
+
+        installment.setOutstandingAfter(
                 newBalance
         );
 
-        paymentWebhook.put(
-                "interestDays",
-                elapsedDays
+        installment.setCycleInterestDue(
+                totalCycleInterestDue
         );
 
-        paymentWebhook.put(
-                "interestHours",
-                elapsedHours
+        installment.setCycleInterestRemaining(
+                remainingInterestAfterPayment
         );
 
-        paymentWebhook.put(
-                "dailyInterestRate",
-                dailyRate
+        installment.setLate(
+                isLate
+                        || installment.isLate()
         );
 
-        paymentWebhook.put(
-                "paymentMethod",
+        installment.setDaysLate(
+                Math.max(
+                        installment.getDaysLate() != null
+                                ? installment.getDaysLate()
+                                : 0,
+                        daysLate
+                )
+        );
+
+        installment.setPaymentMethod(
                 method
         );
 
-        paymentWebhook.put(
-                "channel",
+        installment.setTransactionId(
+                normalizedTxnId
+        );
+
+        installment.setChannel(
                 channel
         );
 
-        paymentWebhook.put(
-                "transactionId",
-                normalizedTxnId
+        installment.setNotes(
+                notes
         );
 
-        paymentWebhook.put(
-                "paymentReference",
-                installment.getPaymentReference()
+        if (recordedBy != null) {
+
+            installment.setRecordedBy(
+                    recordedBy
+            );
+        }
+
+        installment.setPaidDate(
+                today
         );
-
-        paymentWebhook.put(
-                "paymentDate",
-                today.toString()
-        );
-
-        paymentWebhook.put(
-                "paymentTimestamp",
-                now.toString()
-        );
-
-        paymentWebhook.put(
-                "interestCalculationStart",
-                interestStartDateTime.toString()
-        );
-
-        paymentWebhook.put(
-                "interestCalculationDate",
-                installment.getInterestCalculationDate() != null
-                        ? installment
-                        .getInterestCalculationDate()
-                        .toString()
-                        : null
-        );
-
-        paymentWebhook.put(
-                "installmentNumber",
-                installment.getInstallmentNumber()
-        );
-
-        paymentWebhook.put(
-                "paymentStatus",
-                installment.getStatus() != null
-                        ? installment.getStatus().name()
-                        : null
-        );
-
-        paymentWebhook.put(
-                "loanStatus",
-                loan.getStatus() != null
-                        ? loan.getStatus().name()
-                        : null
-        );
-
-        log.info(
-                "[PAYMENT WEBHOOK] Dispatching PAYMENT_MADE. loanId={}, paymentId={}, amount={}, transactionId={}",
-                loan.getId(),
-                installment.getId(),
-                amount,
-                normalizedTxnId
-        );
-
-        webhookService.dispatch(
-                loan.getOrganization(),
-                "PAYMENT_MADE",
-                paymentWebhook
-        );
-
-    } catch (Exception e) {
-
-        log.error(
-                "[PAYMENT WEBHOOK] Failed to dispatch PAYMENT_MADE. loanId={}, paymentId={}",
-                loan.getId(),
-                installment.getId(),
-                e
-        );
-    }
-
-    // ================================================================
-    // ACCOUNTING
-    // ================================================================
-
-    try {
 
         /*
-         * AccountingService currently uses the existing numeric
-         * signature, so convert BigDecimal only at this boundary.
+         * Store the exact timestamp of this payment.
+         *
+         * IMPORTANT:
+         *
+         * We do NOT use this timestamp to calculate another
+         * monthly interest amount inside the same cycle.
          */
-        accountingService.postPaymentReceived(
-                installment,
-                toDouble(amount),
-                toDouble(principalPaid),
-                toDouble(interestPaid),
-                toDouble(newPenalty)
+        installment.setInterestCalculationDate(
+                installment.getInterestCalculationDate() != null
+                        ? installment.getInterestCalculationDate()
+                        : now
         );
 
-    } catch (Exception e) {
-
-        log.error(
-                "Accounting posting failed for payment {}",
-                installment.getId(),
-                e
+        installment.setPaid(
+                cycleCompleted
         );
-    }
 
-    return installment;
-}
-
-// ================================================================
-// GET LOAN SCHEDULE
-// ================================================================
-
-public List<Payment> getLoanSchedule(
-        Long loanId,
-        Long orgId
-) {
-
-    Loan loan =
-            loanRepo.findById(
-                    loanId
-            )
-                    .orElseThrow(
-                            () ->
-                                    new RuntimeException(
-                                            "Loan not found"
-                                    )
-                    );
-
-    if (
-            loan.getOrganization() == null
-                    || loan.getOrganization().getId() == null
-                    || orgId == null
-                    || !loan.getOrganization()
-                    .getId()
-                    .equals(
-                            orgId
-                    )
-    ) {
-
-        throw new RuntimeException(
-                "Access denied"
+        installment.setStatus(
+                cycleCompleted
+                        ? Payment.PaymentStatus.COMPLETED
+                        : Payment.PaymentStatus.PARTIALLY_PAID
         );
-    }
 
-    return paymentRepo.findByLoanId(
-            loanId
-    );
-}
-
-// ================================================================
-// MARK OVERDUE
-// ================================================================
-
-@Transactional
-public void markOverdueLoans(
-        Long orgId
-) {
-
-    List<Payment> overduePayments =
-            paymentRepo
-                    .findByOrganization_IdAndPaidFalseAndDueDateBefore(
-                            orgId,
-                            LocalDate.now()
-                    );
-
-    for (Payment payment :
-            overduePayments) {
-
-        Loan loan =
-                payment.getLoan();
-
-        if (loan == null) {
-            continue;
-        }
+        // ================================================================
+        // PAYMENT REFERENCE
+        // ================================================================
 
         if (
-                loan.getStatus()
-                        == LoanStatus.ACTIVE
+                installment.getPaymentReference() == null
+                        || installment.getPaymentReference().isBlank()
         ) {
 
-            loan.setStatus(
-                    LoanStatus.OVERDUE
+            installment.setPaymentReference(
+                    generateRef(
+                            loan
+                    )
             );
         }
 
-        if (payment.getDueDate() != null) {
+        // ================================================================
+        // SAVE PAYMENT
+        // ================================================================
 
-            int days =
-                    Math.max(
-                            0,
-                            (int)
-                                    ChronoUnit.DAYS.between(
-                                            payment.getDueDate(),
-                                            LocalDate.now()
-                                    )
+        try {
+
+            installment =
+                    paymentRepo.save(
+                            installment
                     );
 
-            loan.setDaysOverdue(
-                    Math.max(
-                            loan.getDaysOverdue() != null
-                                    ? loan.getDaysOverdue()
-                                    : 0,
-                            days
-                    )
+        } catch (DataIntegrityViolationException e) {
+
+            if (normalizedTxnId != null) {
+
+                Optional<Payment> concurrentPayment =
+                        paymentRepo
+                                .findByOrganization_IdAndTransactionId(
+                                        loan.getOrganization().getId(),
+                                        normalizedTxnId
+                                );
+
+                if (concurrentPayment.isPresent()) {
+
+                    Payment existing =
+                            concurrentPayment.get();
+
+                    if (
+                            existing.getLoan() != null
+                                    && existing.getLoan()
+                                    .getId()
+                                    .equals(loanId)
+                    ) {
+
+                        log.info(
+                                "Concurrent duplicate payment detected. transactionId={}, loanId={}, paymentId={}",
+                                normalizedTxnId,
+                                loanId,
+                                existing.getId()
+                        );
+
+                        return existing;
+                    }
+                }
+            }
+
+            throw e;
+        }
+
+        // ================================================================
+        // UPDATE LOAN
+        // ================================================================
+
+        BigDecimal oldTotalPaid =
+                roundMoney(
+                        safe(
+                                loan.getTotalPaid()
+                        )
+                );
+
+        loan.setTotalPaid(
+                toDouble(
+                        roundMoney(
+                                oldTotalPaid
+                                        .add(
+                                                amount
+                                        )
+                        )
+                )
+        );
+
+        loan.setOutstandingBalance(
+                toDouble(
+                        newBalance
+                )
+        );
+
+        loan.setLastPaymentDate(
+                today
+        );
+
+        // ================================================================
+        // LOAN STATUS
+        // ================================================================
+
+        if (fullyPaidOff) {
+
+            loan.setStatus(
+                    LoanStatus.PAID
             );
+
+            Long currentInstallmentId =
+                    installment.getId();
+
+            List<Payment> stillPending =
+                    paymentRepo
+                            .findByLoanId(
+                                    loanId
+                            )
+                            .stream()
+                            .filter(
+                                    p ->
+                                            !Boolean.TRUE.equals(
+                                                    p.getPaid()
+                                            )
+                                                    && (
+                                                    p.getId() == null
+                                                            || !p.getId()
+                                                            .equals(
+                                                                    currentInstallmentId
+                                                            )
+                                            )
+                            )
+                            .toList();
+
+            if (!stillPending.isEmpty()) {
+
+                paymentRepo.deleteAll(
+                        stillPending
+                );
+            }
+
+            loan.setNextDueDate(
+                    null
+            );
+
+            loan.setNextPaymentDate(
+                    null
+            );
+
+            loan.setNextInstallmentAmount(
+                    0.0
+            );
+
+        } else {
+
+            loan.setStatus(
+                    isLate
+                            ? LoanStatus.OVERDUE
+                            : LoanStatus.ACTIVE
+            );
+
+            /*
+             * Only move to the next monthly cycle when the current
+             * scheduled installment has actually been completed.
+             */
+            if (cycleCompleted) {
+
+                LocalDate nextDue =
+                        cycleDueDate.plusMonths(1);
+
+                loan.setNextDueDate(
+                        nextDue
+                );
+
+                loan.setNextPaymentDate(
+                        nextDue
+                );
+
+            } else {
+
+                /*
+                 * Keep the current cycle open.
+                 *
+                 * This is especially important when the borrower
+                 * pays interest first and still has principal due.
+                 */
+                loan.setNextDueDate(
+                        cycleDueDate
+                );
+
+                loan.setNextPaymentDate(
+                        cycleDueDate
+                );
+            }
         }
 
         loanRepo.save(
                 loan
         );
-    }
-}
 
-// ================================================================
-// DETERMINE INTEREST START TIMESTAMP
-// ================================================================
+        // ================================================================
+        // AUDIT
+        // ================================================================
 
-private LocalDateTime determineInterestStartDateTime(
-        Payment installment,
-        Loan loan,
-        List<Payment> loanPayments,
-        LocalDateTime now
-) {
+        audit(
+                loan.getOrganization(),
+                recordedBy,
+                "PAYMENT_RECORDED",
+                "PAYMENT",
+                installment.getId() != null
+                        ? installment.getId().toString()
+                        : "UNKNOWN",
+                "Payment of "
+                        + amount
+                        + " on loan "
+                        + loan.getReferenceNumber()
+                        + " — monthly interest due: "
+                        + totalCycleInterestDue
+                        + ", interest paid: "
+                        + interestPaid
+                        + ", interest remaining: "
+                        + remainingInterestAfterPayment
+                        + ", principal paid: "
+                        + principalPaid
+                        + ", previous principal: "
+                        + currentBalance
+                        + ", new principal: "
+                        + newBalance
+                        + ", penalty: "
+                        + totalPenalty
+                        + ", monthly interest calculated: "
+                        + (!interestAlreadyCalculatedForCycle)
+                        + ", interest calculation date: "
+                        + installment.getInterestCalculationDate()
+                        + ", transactionId: "
+                        + normalizedTxnId
+        );
 
-    /*
-     * FIRST:
-     *
-     * Existing installment already has an interest clock.
-     */
-    if (
-            installment.getInterestCalculationDate() != null
-    ) {
+        // ================================================================
+        // EMAIL
+        // ================================================================
 
-        return installment.getInterestCalculationDate();
-    }
+        try {
 
-    /*
-     * SECOND:
-     *
-     * Find the latest exact payment timestamp.
-     */
-    LocalDateTime latestTimestamp =
-            findLatestInterestCalculationTimestamp(
-                    loanPayments,
-                    null
+            mailService.sendPaymentConfirmation(
+                    loan,
+                    toDouble(amount)
             );
 
-    if (latestTimestamp != null) {
+        } catch (Exception e) {
 
-        return latestTimestamp;
+            log.warn(
+                    "Payment email notification failed",
+                    e
+            );
+        }
+
+        // ================================================================
+        // SMS
+        // ================================================================
+
+        try {
+
+            smsService.sendPaymentConfirmed(
+                    loan,
+                    toDouble(amount)
+            );
+
+        } catch (Exception e) {
+
+            log.warn(
+                    "Payment SMS notification failed",
+                    e
+            );
+        }
+
+        // ================================================================
+        // OFFICER NOTIFICATION
+        // ================================================================
+
+        if (
+                loan.getLoanOfficer() != null
+                        && (
+                        recordedBy == null
+                                || loan.getLoanOfficer().getId() == null
+                                || recordedBy.getId() == null
+                                || !loan.getLoanOfficer()
+                                .getId()
+                                .equals(
+                                        recordedBy.getId()
+                                )
+                )
+        ) {
+
+            try {
+
+                notifService.notifyUsers(
+                        List.of(
+                                loan.getLoanOfficer()
+                        ),
+                        "Payment Received",
+                        "A payment of "
+                                + loan.getCurrency()
+                                + " "
+                                + amount
+                                + " was recorded on loan "
+                                + loan.getReferenceNumber()
+                                + (
+                                recordedBy != null
+                                        ? " by "
+                                        + recordedBy.getName()
+                                        : " (automatic)"
+                        )
+                                + ". Interest paid: "
+                                + interestPaid
+                                + ". Principal paid: "
+                                + principalPaid
+                                + ".",
+                        "success",
+                        "/dashboard/loans/"
+                                + loan.getId()
+                );
+
+            } catch (Exception e) {
+
+                log.warn(
+                        "In-app payment notification failed",
+                        e
+                );
+            }
+        }
+
+        // ================================================================
+        // WEBHOOK
+        // ================================================================
+
+        try {
+
+            Map<String, Object> paymentWebhook =
+                    new HashMap<>();
+
+            paymentWebhook.put(
+                    "paymentId",
+                    installment.getId()
+            );
+
+            paymentWebhook.put(
+                    "loanId",
+                    loan.getId()
+            );
+
+            paymentWebhook.put(
+                    "loanReference",
+                    loan.getReferenceNumber()
+            );
+
+            if (loan.getBorrower() != null) {
+
+                paymentWebhook.put(
+                        "borrowerId",
+                        loan.getBorrower().getId()
+                );
+            }
+
+            paymentWebhook.put(
+                    "amount",
+                    amount
+            );
+
+            paymentWebhook.put(
+                    "principalPaid",
+                    principalPaid
+            );
+
+            paymentWebhook.put(
+                    "interestPaid",
+                    interestPaid
+            );
+
+            paymentWebhook.put(
+                    "penalty",
+                    newPenalty
+            );
+
+            paymentWebhook.put(
+                    "totalPenalty",
+                    totalPenalty
+            );
+
+            paymentWebhook.put(
+                    "penaltyDays",
+                    daysLate
+            );
+
+            paymentWebhook.put(
+                    "dailyPenaltyRate",
+                    dailyPenaltyRate
+            );
+
+            paymentWebhook.put(
+                    "totalInterestPaid",
+                    totalInterestPaid
+            );
+
+            paymentWebhook.put(
+                    "totalInterestDue",
+                    totalCycleInterestDue
+            );
+
+            paymentWebhook.put(
+                    "remainingInterest",
+                    remainingInterestAfterPayment
+            );
+
+            paymentWebhook.put(
+                    "totalPrincipalPaid",
+                    totalPrincipalPaid
+            );
+
+            paymentWebhook.put(
+                    "outstandingBalance",
+                    newBalance
+            );
+
+            paymentWebhook.put(
+                    "monthlyInterestCalculated",
+                    !interestAlreadyCalculatedForCycle
+            );
+
+            paymentWebhook.put(
+                    "interestCalculationDate",
+                    installment.getInterestCalculationDate() != null
+                            ? installment
+                            .getInterestCalculationDate()
+                            .toString()
+                            : null
+            );
+
+            paymentWebhook.put(
+                    "paymentMethod",
+                    method
+            );
+
+            paymentWebhook.put(
+                    "channel",
+                    channel
+            );
+
+            paymentWebhook.put(
+                    "transactionId",
+                    normalizedTxnId
+            );
+
+            paymentWebhook.put(
+                    "paymentReference",
+                    installment.getPaymentReference()
+            );
+
+            paymentWebhook.put(
+                    "paymentDate",
+                    today.toString()
+            );
+
+            paymentWebhook.put(
+                    "paymentTimestamp",
+                    now.toString()
+            );
+
+            paymentWebhook.put(
+                    "installmentNumber",
+                    installment.getInstallmentNumber()
+            );
+
+            paymentWebhook.put(
+                    "paymentStatus",
+                    installment.getStatus() != null
+                            ? installment.getStatus().name()
+                            : null
+            );
+
+            paymentWebhook.put(
+                    "loanStatus",
+                    loan.getStatus() != null
+                            ? loan.getStatus().name()
+                            : null
+            );
+
+            log.info(
+                    "[PAYMENT WEBHOOK] Dispatching PAYMENT_MADE. loanId={}, paymentId={}, amount={}, interestPaid={}, principalPaid={}, transactionId={}",
+                    loan.getId(),
+                    installment.getId(),
+                    amount,
+                    interestPaid,
+                    principalPaid,
+                    normalizedTxnId
+            );
+
+            webhookService.dispatch(
+                    loan.getOrganization(),
+                    "PAYMENT_MADE",
+                    paymentWebhook
+            );
+
+        } catch (Exception e) {
+
+            log.error(
+                    "[PAYMENT WEBHOOK] Failed to dispatch PAYMENT_MADE. loanId={}, paymentId={}",
+                    loan.getId(),
+                    installment.getId(),
+                    e
+            );
+        }
+
+        // ================================================================
+        // ACCOUNTING
+        // ================================================================
+
+        try {
+
+            accountingService.postPaymentReceived(
+                    installment,
+                    toDouble(amount),
+                    toDouble(principalPaid),
+                    toDouble(interestPaid),
+                    toDouble(newPenalty)
+            );
+
+        } catch (Exception e) {
+
+            log.error(
+                    "Accounting posting failed for payment {}",
+                    installment.getId(),
+                    e
+            );
+        }
+
+        return installment;
     }
 
-    /*
-     * THIRD:
-     *
-     * New loan starts from exact disbursement timestamp.
-     */
-    if (
-            loan.getDisbursedAt() != null
+    // ================================================================
+    // GET LOAN SCHEDULE
+    // ================================================================
+
+    public List<Payment> getLoanSchedule(
+            Long loanId,
+            Long orgId
     ) {
 
-        return loan.getDisbursedAt();
+        Loan loan =
+                loanRepo.findById(
+                        loanId
+                )
+                        .orElseThrow(
+                                () ->
+                                        new RuntimeException(
+                                                "Loan not found"
+                                        )
+                        );
+
+        if (
+                loan.getOrganization() == null
+                        || loan.getOrganization().getId() == null
+                        || orgId == null
+                        || !loan.getOrganization()
+                        .getId()
+                        .equals(
+                                orgId
+                        )
+        ) {
+
+            throw new RuntimeException(
+                    "Access denied"
+            );
+        }
+
+        return paymentRepo.findByLoanId(
+                loanId
+        );
     }
 
-    /*
-     * LEGACY FALLBACK
-     */
-    if (
-            installment.getCreatedAt() != null
+    // ================================================================
+    // MARK OVERDUE
+    // ================================================================
+
+    @Transactional
+    public void markOverdueLoans(
+            Long orgId
     ) {
 
-        return installment.getCreatedAt();
+        List<Payment> overduePayments =
+                paymentRepo
+                        .findByOrganization_IdAndPaidFalseAndDueDateBefore(
+                                orgId,
+                                LocalDate.now()
+                        );
+
+        for (Payment payment :
+                overduePayments) {
+
+            Loan loan =
+                    payment.getLoan();
+
+            if (loan == null) {
+                continue;
+            }
+
+            if (
+                    loan.getStatus()
+                            == LoanStatus.ACTIVE
+            ) {
+
+                loan.setStatus(
+                        LoanStatus.OVERDUE
+                );
+            }
+
+            if (payment.getDueDate() != null) {
+
+                int days =
+                        Math.max(
+                                0,
+                                (int)
+                                        ChronoUnit.DAYS.between(
+                                                payment.getDueDate(),
+                                                LocalDate.now()
+                                        )
+                        );
+
+                loan.setDaysOverdue(
+                        Math.max(
+                                loan.getDaysOverdue() != null
+                                        ? loan.getDaysOverdue()
+                                        : 0,
+                                days
+                        )
+                );
+            }
+
+            loanRepo.save(
+                    loan
+            );
+        }
     }
 
-    /*
-     * FINAL FALLBACK
-     */
-    if (
-            loan.getStartDate() != null
+    // ================================================================
+    // CALCULATE MONTHLY INTEREST
+    // ================================================================
+
+    private BigDecimal calculateMonthlyInterest(
+            BigDecimal principal,
+            Loan loan
     ) {
 
-        return loan.getStartDate()
-                .atStartOfDay();
-    }
+        if (principal == null) {
+            return BigDecimal.ZERO;
+        }
 
-    return now;
-}
+        principal =
+                principal.max(
+                        BigDecimal.ZERO
+                );
 
-// ================================================================
-// FIND LATEST INTEREST TIMESTAMP
-// ================================================================
+        BigDecimal rate =
+                safe(
+                        loan.getInterestRate()
+                );
 
-private LocalDateTime findLatestInterestCalculationTimestamp(
-        List<Payment> payments,
-        Loan loan
-) {
+        if (
+                rate.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0
+        ) {
 
-    Optional<LocalDateTime> latest =
-            payments.stream()
-                    .map(
-                            Payment::getInterestCalculationDate
-                    )
-                    .filter(
-                            timestamp ->
-                                    timestamp != null
-                    )
-                    .max(
-                            LocalDateTime::compareTo
-                    );
-
-    if (latest.isPresent()) {
-
-        return latest.get();
-    }
-
-    /*
-     * No previous payment timestamp exists.
-     *
-     * Start from exact loan disbursement timestamp.
-     */
-    if (
-            loan != null
-                    && loan.getDisbursedAt() != null
-    ) {
-
-        return loan.getDisbursedAt();
-    }
-
-    return null;
-}
-
-// ================================================================
-// DAILY INTEREST RATE
-// ================================================================
-
-private BigDecimal calculateDailyRate(
-        Loan loan
-) {
-
-    BigDecimal rate =
-            safe(
+            log.warn(
+                    "Loan {} has zero or missing interest rate. interestRate={}",
+                    loan.getId(),
                     loan.getInterestRate()
             );
 
-    if (
-            rate.compareTo(
-                    BigDecimal.ZERO
-            ) <= 0
-    ) {
+            return BigDecimal.ZERO;
+        }
+
+        String rateType =
+                loan.getInterestRateType() != null
+                        ? loan.getInterestRateType().trim()
+                        : "MONTHLY";
+
+        // ============================================================
+        // MONTHLY RATE
+        // ============================================================
+
+        if (
+                "MONTHLY".equalsIgnoreCase(
+                        rateType
+                )
+        ) {
+
+            return roundMoney(
+                    principal
+                            .multiply(rate)
+                            .divide(
+                                    BigDecimal.valueOf(100),
+                                    12,
+                                    RoundingMode.HALF_UP
+                            )
+            );
+        }
+
+        // ============================================================
+        // ANNUAL RATE
+        // ============================================================
+
+        if (
+                "ANNUAL".equalsIgnoreCase(
+                        rateType
+                )
+        ) {
+
+            /*
+             * Annual rate converted to one monthly cycle.
+             *
+             * Example:
+             *
+             * 24% annual
+             *
+             * 24 / 12 = 2% monthly
+             */
+
+            BigDecimal monthlyRate =
+                    rate
+                            .divide(
+                                    BigDecimal.valueOf(12),
+                                    12,
+                                    RoundingMode.HALF_UP
+                            );
+
+            return roundMoney(
+                    principal
+                            .multiply(monthlyRate)
+                            .divide(
+                                    BigDecimal.valueOf(100),
+                                    12,
+                                    RoundingMode.HALF_UP
+                            )
+            );
+        }
+
+        // ============================================================
+        // UNKNOWN TYPE
+        // ============================================================
 
         log.warn(
-                "Loan {} has zero or missing interest rate. interestRate={}",
-                loan.getId(),
-                loan.getInterestRate()
+                "Unknown interestRateType '{}' for loan {}. Treating rate as MONTHLY.",
+                rateType,
+                loan.getId()
         );
 
-        return BigDecimal.ZERO;
+        return roundMoney(
+                principal
+                        .multiply(rate)
+                        .divide(
+                                BigDecimal.valueOf(100),
+                                12,
+                                RoundingMode.HALF_UP
+                        )
+        );
     }
 
-    String rateType =
-            loan.getInterestRateType() != null
-                    ? loan.getInterestRateType().trim()
-                    : "MONTHLY";
+    // ================================================================
+    // DETERMINE INTEREST START TIMESTAMP
+    // ================================================================
 
-    // ============================================================
-    // MONTHLY RATE
-    // ============================================================
-
-    /*
-     * Example:
-     *
-     * Interest rate = 10% MONTHLY
-     *
-     * 10 / 100 / 30
-     *
-     * = 0.0033333333 daily rate
-     */
-    if (
-            "MONTHLY".equalsIgnoreCase(
-                    rateType
-            )
+    private LocalDateTime determineInterestStartDateTime(
+            Payment installment,
+            Loan loan,
+            List<Payment> loanPayments,
+            LocalDateTime now
     ) {
 
-        return rate
-                .divide(
-                        BigDecimal.valueOf(100),
-                        12,
-                        RoundingMode.HALF_UP
-                )
-                .divide(
-                        BigDecimal.valueOf(30),
-                        12,
-                        RoundingMode.HALF_UP
+        if (
+                installment.getInterestCalculationDate() != null
+        ) {
+
+            return installment.getInterestCalculationDate();
+        }
+
+        LocalDateTime latestTimestamp =
+                findLatestInterestCalculationTimestamp(
+                        loanPayments,
+                        null
                 );
+
+        if (latestTimestamp != null) {
+            return latestTimestamp;
+        }
+
+        if (
+                loan.getDisbursedAt() != null
+        ) {
+
+            return loan.getDisbursedAt();
+        }
+
+        if (
+                installment.getCreatedAt() != null
+        ) {
+
+            return installment.getCreatedAt();
+        }
+
+        if (
+                loan.getStartDate() != null
+        ) {
+
+            return loan.getStartDate()
+                    .atStartOfDay();
+        }
+
+        return now;
     }
 
-    // ============================================================
-    // ANNUAL RATE
-    // ============================================================
+    // ================================================================
+    // FIND LATEST INTEREST TIMESTAMP
+    // ================================================================
 
-    if (
-            "ANNUAL".equalsIgnoreCase(
-                    rateType
-            )
+    private LocalDateTime findLatestInterestCalculationTimestamp(
+            List<Payment> payments,
+            Loan loan
     ) {
 
-        return rate
-                .divide(
-                        BigDecimal.valueOf(100),
-                        12,
-                        RoundingMode.HALF_UP
-                )
-                .divide(
-                        BigDecimal.valueOf(12),
-                        12,
-                        RoundingMode.HALF_UP
-                )
-                .divide(
-                        BigDecimal.valueOf(30),
-                        12,
-                        RoundingMode.HALF_UP
-                );
-    }
+        if (payments == null || payments.isEmpty()) {
 
-    log.warn(
-            "Unknown interestRateType '{}' for loan {}. Treating rate as MONTHLY.",
-            rateType,
-            loan.getId()
-    );
+            if (
+                    loan != null
+                            && loan.getDisbursedAt() != null
+            ) {
 
-    return rate
-            .divide(
-                    BigDecimal.valueOf(100),
-                    12,
-                    RoundingMode.HALF_UP
-            )
-            .divide(
-                    BigDecimal.valueOf(30),
-                    12,
-                    RoundingMode.HALF_UP
-            );
-}
+                return loan.getDisbursedAt();
+            }
 
-// ================================================================
-// HELPERS
-// ================================================================
+            return null;
+        }
 
-private String normalizeTransactionId(
-        String txnId
-) {
+        Optional<LocalDateTime> latest =
+                payments.stream()
+                        .map(
+                                Payment::getInterestCalculationDate
+                        )
+                        .filter(
+                                timestamp ->
+                                        timestamp != null
+                        )
+                        .max(
+                                LocalDateTime::compareTo
+                        );
 
-    if (txnId == null) {
+        if (latest.isPresent()) {
+            return latest.get();
+        }
+
+        if (
+                loan != null
+                        && loan.getDisbursedAt() != null
+        ) {
+
+            return loan.getDisbursedAt();
+        }
+
         return null;
     }
 
-    String normalized =
-            txnId.trim();
+    // ================================================================
+    // NORMALIZE TRANSACTION ID
+    // ================================================================
 
-    return normalized.isBlank()
-            ? null
-            : normalized;
-}
-
-/*
- * BigDecimal version.
- */
-private BigDecimal safe(
-        BigDecimal value
-) {
-
-    if (value == null) {
-        return BigDecimal.ZERO;
-    }
-
-    return value;
-}
-
-/*
- * Double version.
- *
- * Your Loan/Payment entities still contain some Double
- * fields, so this overload is required.
- */
-private BigDecimal safe(
-        Double value
-) {
-
-    if (
-            value == null
-                    || Double.isNaN(value)
-                    || Double.isInfinite(value)
+    private String normalizeTransactionId(
+            String txnId
     ) {
 
-        return BigDecimal.ZERO;
+        if (txnId == null) {
+            return null;
+        }
+
+        String normalized =
+                txnId.trim();
+
+        return normalized.isBlank()
+                ? null
+                : normalized;
     }
 
-    return BigDecimal.valueOf(
-            value
-    );
-}
+    // ================================================================
+    // SAFE BIGDECIMAL
+    // ================================================================
 
-private BigDecimal roundMoney(
-        BigDecimal value
-) {
+    private BigDecimal safe(
+            BigDecimal value
+    ) {
 
-    if (value == null) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
 
-        return BigDecimal.ZERO.setScale(
+        return value;
+    }
+
+    // ================================================================
+    // SAFE DOUBLE
+    // ================================================================
+
+    private BigDecimal safe(
+            Double value
+    ) {
+
+        if (
+                value == null
+                        || Double.isNaN(value)
+                        || Double.isInfinite(value)
+        ) {
+
+            return BigDecimal.ZERO;
+        }
+
+        return BigDecimal.valueOf(
+                value
+        );
+    }
+
+    // ================================================================
+    // ROUND MONEY
+    // ================================================================
+
+    private BigDecimal roundMoney(
+            BigDecimal value
+    ) {
+
+        if (value == null) {
+
+            return BigDecimal.ZERO.setScale(
+                    2,
+                    RoundingMode.HALF_UP
+            );
+        }
+
+        return value.setScale(
                 2,
                 RoundingMode.HALF_UP
         );
     }
 
-    return value.setScale(
-            2,
-            RoundingMode.HALF_UP
-    );
-}
+    // ================================================================
+    // BIGDECIMAL -> DOUBLE
+    // ================================================================
 
-/*
- * Convert BigDecimal back to Double only when calling
- * existing model/service methods that still require Double.
- */
-private double toDouble(
-        BigDecimal value
-) {
+    private double toDouble(
+            BigDecimal value
+    ) {
 
-    if (value == null) {
-        return 0.0;
+        if (value == null) {
+            return 0.0;
+        }
+
+        return value.doubleValue();
     }
 
-    return value.doubleValue();
-}
+    // ================================================================
+    // GENERATE PAYMENT REFERENCE
+    // ================================================================
 
-private String generateRef(
-        Loan loan
-) {
+    private String generateRef(
+            Loan loan
+    ) {
 
-    return "PAY-"
-            + loan.getReferenceNumber()
-            + "-"
-            + (
-            System.currentTimeMillis()
-                    % 100000
-    );
-}
+        return "PAY-"
+                + loan.getReferenceNumber()
+                + "-"
+                + (
+                System.currentTimeMillis()
+                        % 100000
+        );
+    }
 
-private void audit(
-        Organization org,
-        User user,
-        String action,
-        String entityType,
-        String entityId,
-        String desc
-) {
+    // ================================================================
+    // AUDIT
+    // ================================================================
 
-    auditService.log(
-            org,
-            user,
-            action,
-            entityType,
-            entityId,
-            desc
-    );
-}
+    private void audit(
+            Organization org,
+            User user,
+            String action,
+            String entityType,
+            String entityId,
+            String desc
+    ) {
 
-
+        auditService.log(
+                org,
+                user,
+                action,
+                entityType,
+                entityId,
+                desc
+        );
+    }
 }
