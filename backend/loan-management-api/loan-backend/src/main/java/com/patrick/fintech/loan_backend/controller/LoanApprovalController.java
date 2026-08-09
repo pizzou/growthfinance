@@ -11,13 +11,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Maker-checker approval chain — replaces a single "click approve" with a
- * proper multi-person sign-off for larger loans (see LoanApprovalService for
- * how many steps a given loan needs). The decider is always taken from the
- * authenticated session (never a client-supplied ID) so this can't be spoofed
- * to approve on someone else's behalf.
- */
 @RestController
 @RequestMapping("/api/loans/{loanId}/approval-chain")
 @RequiredArgsConstructor
