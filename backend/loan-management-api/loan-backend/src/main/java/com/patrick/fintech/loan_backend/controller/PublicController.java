@@ -787,7 +787,7 @@ public class PublicController {
                             ? gatewayResponse.getAmount()
                             : dueAmount;
 
-           paymentService.recordPayment(
+         paymentService.recordPayment(
         loan.getId(),
         BigDecimal.valueOf(confirmedAmount),
         method,

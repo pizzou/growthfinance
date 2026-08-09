@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.Map;
 
 @RestController
@@ -382,14 +383,14 @@ public class PaymentWebhookController {
              * - create another accounting transaction
              */
             paymentService.recordPayment(
-                    loanId,
-                    amount,
-                    method,
-                    transactionId,
-                    "FLUTTERWAVE_WEBHOOK",
-                    "Confirmed via Flutterwave webhook",
-                    null
-            );
+        loanId,
+        BigDecimal.valueOf(amount),
+        method,
+        transactionId,
+        "FLUTTERWAVE_WEBHOOK",
+        "Confirmed via Flutterwave webhook",
+        null
+);
 
 
             log.info(
@@ -649,15 +650,15 @@ public class PaymentWebhookController {
             // RECORD PAYMENT
             // ====================================================
 
-            paymentService.recordPayment(
-                    loanId,
-                    amount,
-                    "MOBILE_MONEY",
-                    transactionId,
-                    "MTN_MOBILE_MONEY",
-                    "Confirmed via direct MTN Mobile Money",
-                    null
-            );
+           paymentService.recordPayment(
+        loanId,
+        BigDecimal.valueOf(amount),
+        "MOBILE_MONEY",
+        transactionId,
+        "MTN_MOBILE_MONEY",
+        "Confirmed via direct MTN Mobile Money",
+        null
+);
 
 
             log.info(
@@ -912,14 +913,14 @@ public class PaymentWebhookController {
             // ====================================================
 
             paymentService.recordPayment(
-                    loanId,
-                    amount,
-                    "MOBILE_MONEY",
-                    transactionId,
-                    "AIRTEL_MONEY",
-                    "Confirmed via direct Airtel Money",
-                    null
-            );
+        loanId,
+        BigDecimal.valueOf(amount),
+        "MOBILE_MONEY",
+        transactionId,
+        "AIRTEL_MONEY",
+        "Confirmed via direct Airtel Money",
+        null
+);
 
 
             log.info(

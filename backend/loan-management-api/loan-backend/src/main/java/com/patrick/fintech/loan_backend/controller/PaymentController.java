@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -185,17 +186,16 @@ public class PaymentController {
             // RECORD PAYMENT
             // ========================================================
 
-            Payment payment =
-                    paymentService.recordPayment(
-                            loanId,
-                            amount,
-                            method,
-                            txnId,
-                            channel,
-                            notes,
-                            currentUser
-                    );
-
+           Payment payment =
+        paymentService.recordPayment(
+                loanId,
+                BigDecimal.valueOf(amount),
+                method,
+                txnId,
+                channel,
+                notes,
+                currentUser
+        );
 
             // ========================================================
             // RECORD IDEMPOTENCY SUCCESS
