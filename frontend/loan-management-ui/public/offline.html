@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>You're offline — LoanSaaS Pro</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:#f9fafb; font-family:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif; }
+  .card { text-align:center; padding:2.5rem; max-width:26rem; }
+  .icon { font-size:2.75rem; margin-bottom:1rem; }
+  h1 { font-size:1.25rem; color:#111827; margin:0 0 .5rem; }
+  p { color:#6b7280; font-size:.9rem; line-height:1.6; margin:0 0 1.5rem; }
+  button { background:#0f766e; color:#fff; border:0; padding:.65rem 1.5rem; border-radius:.6rem;
+    font-size:.875rem; font-weight:600; cursor:pointer; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📡</div>
+    <h1>You're offline</h1>
+    <p>This page hasn't been loaded before, so there's nothing saved to show yet. Once you're
+       back online, revisit it and it'll be available offline from then on.</p>
+    <button onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+package com.patrick.fintech.loan_backend.model;
+
+public enum DocumentType {
+
+    NATIONAL_ID,
+
+    PASSPORT,
+
+    DRIVING_LICENSE,
+
+    VOTER_CARD,
+
+    RESIDENCE_PERMIT,
+
+    PROOF_OF_ADDRESS,
+
+    BANK_STATEMENT,
+
+    PAYSLIP,
+
+    EMPLOYMENT_LETTER,
+
+    BUSINESS_REGISTRATION,
+
+    TAX_CERTIFICATE,
+
+    COLLATERAL_DOCUMENT,
+
+    MARRIAGE_CERTIFICATE,
+
+    SINGLE_CERTIFICATE,
+
+    SELFIE,
+
+    SIGNATURE,
+
+    OTHER
+
+}
