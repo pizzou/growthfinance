@@ -34,7 +34,7 @@ public class BankAccountController {
 
     
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','ACCOUNTANT')")
+    @PreAuthorize("hasAnyRole('ADMIN','ACCOUNTANT','MANAGER')")
     public ResponseEntity<ApiResponse<BankAccount>> create(
             @RequestBody Map<String, Object> body
     ) {

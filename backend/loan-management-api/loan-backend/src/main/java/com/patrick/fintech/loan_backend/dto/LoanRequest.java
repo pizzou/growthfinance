@@ -30,13 +30,7 @@ public class LoanRequest {
     @JsonProperty("interestRate")
     private BigDecimal interestRate;
 
-    /**
-     * "MONTHLY" or "ANNUAL" — how to interpret interestRate
-     * when it is supplied.
-     *
-     * When interestRate is null, the loan product's configured
-     * interest rate type is used.
-     */
+   
     private String interestRateType;
 
     @NotNull

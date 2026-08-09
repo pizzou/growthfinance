@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.dto.LoanRequest;
@@ -204,19 +205,19 @@ public class LoanService {
                                 : null
                 )
                 .principal(
-                        loan.getAmount()
+                        loan.getAmountDecimal()
                 )
                 .outstandingBalance(
-                        loan.getOutstandingBalance()
+                        loan.getOutstandingBalanceDecimal()
                 )
                 .totalPaid(
-                        loan.getTotalPaid()
+                        loan.getTotalPaidDecimal()
                 )
                 .totalRepayable(
-                        loan.getTotalRepayable()
+                        loan.getTotalRepayableDecimal()
                 )
                 .nextInstallmentAmount(
-                        loan.getNextInstallmentAmount()
+                        loan.getNextInstallmentAmountDecimal()
                 )
                 .nextPaymentDate(
                         loan.getNextPaymentDate()
@@ -280,7 +281,7 @@ public class LoanService {
                     money(
                             totalBorrowed.add(
                                     moneyValue(
-                                            loan.getAmount()
+                                            loan.getAmountDecimal()
                                     )
                             )
                     );
@@ -289,7 +290,7 @@ public class LoanService {
                     money(
                             outstanding.add(
                                     moneyValue(
-                                            loan.getOutstandingBalance()
+                                            loan.getOutstandingBalanceDecimal()
                                     )
                             )
                     );
@@ -298,7 +299,7 @@ public class LoanService {
                     money(
                             totalPaid.add(
                                     moneyValue(
-                                            loan.getTotalPaid()
+                                            loan.getTotalPaidDecimal()
                                     )
                             )
                     );
@@ -335,7 +336,7 @@ public class LoanService {
                 .nextPaymentAmount(
                         nextLoan == null
                                 ? null
-                                : nextLoan.getNextInstallmentAmount()
+                                : nextLoan.getNextInstallmentAmountDecimal()
                 )
                 .nextPaymentDate(
                         nextLoan == null
@@ -834,7 +835,7 @@ public class LoanService {
 
         BigDecimal savedPrincipal =
                 moneyValue(
-                        saved.getAmount()
+                        saved.getAmountDecimal()
                 );
 
         if (
@@ -967,7 +968,7 @@ public class LoanService {
 
         BigDecimal previousRate =
                 moneyValue(
-                        loan.getInterestRate()
+                        loan.getInterestRateDecimal()
                 );
 
         if (newInterestRate != null) {
@@ -995,7 +996,7 @@ public class LoanService {
                 BigDecimal principal =
                         normalizePrincipal(
                                 moneyValue(
-                                        loan.getAmount()
+                                        loan.getAmountDecimal()
                                 )
                         );
 
@@ -1036,13 +1037,13 @@ public class LoanService {
         BigDecimal exactPrincipal =
                 normalizePrincipal(
                         moneyValue(
-                                loan.getAmount()
+                                loan.getAmountDecimal()
                         )
                 );
 
         loan.setAmount(exactPrincipal);
 
-        if (loan.getOutstandingBalance() == null) {
+        if (loan.getOutstandingBalanceDecimal() == null) {
             loan.setOutstandingBalance(
                     exactPrincipal
             );
@@ -1403,7 +1404,7 @@ public class LoanService {
         BigDecimal exactPrincipal =
                 normalizePrincipal(
                         moneyValue(
-                                loan.getAmount()
+                                loan.getAmountDecimal()
                         )
                 );
 
@@ -1419,8 +1420,23 @@ public class LoanService {
                 LoanStatus.ACTIVE
         );
 
+        /*
+         * IMPORTANT:
+         *
+         * This is the exact interest-clock timestamp.
+         *
+         * Example:
+         *
+         * 2026-08-09 10:00:00
+         *
+         * PaymentService uses loan.getDisbursedAt() as the
+         * starting point for daily interest.
+         */
+        LocalDateTime exactDisbursementTimestamp =
+                LocalDateTime.now();
+
         loan.setDisbursedAt(
-                LocalDateTime.now()
+                exactDisbursementTimestamp
         );
 
         loan.setDisbursedAmount(
@@ -1428,7 +1444,7 @@ public class LoanService {
         );
 
         LocalDate disbursementDate =
-                LocalDate.now();
+                exactDisbursementTimestamp.toLocalDate();
 
         Integer duration =
                 loan.getDurationMonths() != null
@@ -1450,6 +1466,16 @@ public class LoanService {
 
         Loan saved =
                 loanRepo.save(loan);
+
+        /*
+         * The exact disbursement timestamp has now been persisted.
+         * Do not replace it with LocalDate or startDate.
+         */
+        log.info(
+                "Loan {} disbursed at exact timestamp {}",
+                saved.getReferenceNumber(),
+                saved.getDisbursedAt()
+        );
 
         // ============================================================
         // GENERATE REPAYMENT SCHEDULE
@@ -1584,7 +1610,7 @@ public class LoanService {
                         + " ("
                         + saved.getCurrency()
                         + " "
-                        + saved.getDisbursedAmount()
+                        + saved.getDisbursedAmountDecimal()
                         + ") has been disbursed via "
                         + disbursementMethod
                         + ".",
@@ -1670,9 +1696,11 @@ public class LoanService {
             String notes
     ) {
 
-        if (user == null
-                || user.getOrganization() == null
-                || user.getOrganization().getId() == null) {
+        if (
+                user == null
+                        || user.getOrganization() == null
+                        || user.getOrganization().getId() == null
+        ) {
 
             throw new RuntimeException(
                     "User must belong to an organization"
@@ -2205,8 +2233,10 @@ public class LoanService {
             );
         }
 
-        if (loan.getOrganization() == null
-                || loan.getOrganization().getId() == null) {
+        if (
+                loan.getOrganization() == null
+                        || loan.getOrganization().getId() == null
+        ) {
 
             throw new IllegalArgumentException(
                     "Loan organization is required"
@@ -2216,13 +2246,13 @@ public class LoanService {
         BigDecimal principal =
                 normalizePrincipal(
                         moneyValue(
-                                loan.getAmount()
+                                loan.getAmountDecimal()
                         )
                 );
 
         BigDecimal rate =
                 moneyValue(
-                        loan.getInterestRate()
+                        loan.getInterestRateDecimal()
                 );
 
         String rateType =
