@@ -788,15 +788,15 @@ public class PublicController {
                             : dueAmount;
 
             paymentService.recordPayment(
-                    loan.getId(),
-                    confirmedAmount,
-                    method,
-                    transactionId,
-                    "GATEWAY",
-                    "Paid via " +
-                            gatewayResponse.getProvider(),
-                    null
-            );
+        loan.getId(),
+        BigDecimal.valueOf(confirmedAmount),
+        method,
+        transactionId,doo push
+        "GATEWAY",
+        "Paid via " +
+                gatewayResponse.getProvider(),
+        null
+);
 
             result.put("recorded", true);
             result.put("transactionId", transactionId);
