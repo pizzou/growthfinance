@@ -5,7 +5,9 @@ import com.patrick.fintech.loan_backend.model.Loan;
 import com.patrick.fintech.loan_backend.model.LoanApproval;
 import com.patrick.fintech.loan_backend.model.User;
 import com.patrick.fintech.loan_backend.repository.LoanApprovalRepository;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,164 +24,161 @@ public class LoanApprovalService {
     private final LoanService loanService;
     private final AuditService auditService;
 
+
     // ============================================================
-    // APPROVAL CHAIN
+    // ROLE NORMALIZATION
+    // ============================================================
+
+    private String normalizeRole(String role) {
+
+        if (role == null) {
+            return null;
+        }
+
+        String normalized = role.trim().toUpperCase();
+
+        if (normalized.startsWith("ROLE_")) {
+            normalized = normalized.substring(5);
+        }
+
+        return normalized;
+    }
+
+
+    private String getUserRole(User user) {
+
+        if (user == null || user.getRole() == null) {
+            return null;
+        }
+
+        return normalizeRole(user.getRole().getName());
+    }
+
+
+    // ============================================================
+    // REQUIRED APPROVAL ROLES
     // ============================================================
 
     /**
-     * Production maker-checker workflow.
+     * Determines the approval levels required by loan size.
      *
-     * The person who created/submitted the loan must NEVER be an
-     * approval step for their own loan.
+     * Important:
      *
-     * Current maker is represented by Loan.loanOfficer because the
-     * Loan entity already contains that field.
+     * The loan creator is NEVER allowed to approve their own loan.
      *
-     * Examples:
-     *
-     * LOAN_OFFICER creates:
-     *      MANAGER
-     *      ADMIN for larger exposure
-     *
-     * MANAGER creates:
-     *      ADMIN
-     *
-     * ADMIN creates:
-     *      ADMIN is not allowed to self-approve, therefore the system
-     *      requires another ADMIN user.
+     * Therefore, the creator's role is removed from the required
+     * approval chain.
      */
     private List<String> requiredRolesFor(Loan loan) {
 
-        List<String> roles = new ArrayList<>();
-
-        String makerRole = null;
-
-        if (loan.getLoanOfficer() != null
-                && loan.getLoanOfficer().getRole() != null) {
-
-            makerRole = loan.getLoanOfficer()
-                    .getRole()
-                    .getName();
+        if (loan == null) {
+            throw new IllegalArgumentException("Loan is required.");
         }
 
-        // --------------------------------------------------------
-        // Determine organization exposure ratio
-        // --------------------------------------------------------
+        if (loan.getOrganization() == null) {
+            throw new IllegalStateException(
+                    "Loan has no organization. Cannot determine approval policy."
+            );
+        }
 
-        double loanAmount = loan.getAmountDecimal() != null
-                ? loan.getAmountDecimal().doubleValue()
+        Double orgMaxLegacy = loan.getOrganization().getMaxLoanAmount();
+
+        double orgMax = orgMaxLegacy != null
+                ? orgMaxLegacy
                 : 0.0;
 
-        double organizationMaximum = 0.0;
-
-        if (loan.getOrganization() != null
-                && loan.getOrganization().getMaxLoanAmountDecimal() != null) {
-
-            organizationMaximum = loan.getOrganization()
-                    .getMaxLoanAmountDecimal()
-                    .doubleValue();
-        }
+        double amount = loan.getAmount() != null
+                ? loan.getAmount()
+                : 0.0;
 
         double ratio;
 
-        if (organizationMaximum > 0.0) {
-            ratio = loanAmount / organizationMaximum;
+        if (orgMax > 0.0) {
+            ratio = amount / orgMax;
         } else {
             ratio = 1.0;
         }
 
-        // --------------------------------------------------------
-        // Maker-checker hierarchy
-        // --------------------------------------------------------
+        List<String> roles = new ArrayList<>();
 
-        if ("LOAN_OFFICER".equalsIgnoreCase(makerRole)) {
+        if (ratio <= 0.20) {
 
-            /*
-             * Loan Officer created the application.
-             *
-             * The Loan Officer must NOT approve it.
-             *
-             * Manager is the first approval level.
-             */
+            roles.add("LOAN_OFFICER");
+
+        } else if (ratio <= 0.60) {
+
+            roles.add("LOAN_OFFICER");
             roles.add("MANAGER");
-
-            /*
-             * Larger exposures require an additional ADMIN/
-             * credit-committee level.
-             */
-            if (ratio > 0.60) {
-                roles.add("ADMIN");
-            }
-
-        } else if ("MANAGER".equalsIgnoreCase(makerRole)) {
-
-            /*
-             * Manager created the application.
-             *
-             * Manager cannot approve their own loan.
-             *
-             * ADMIN becomes the first approval level.
-             */
-            roles.add("ADMIN");
-
-        } else if ("ADMIN".equalsIgnoreCase(makerRole)) {
-
-            /*
-             * ADMIN created the application.
-             *
-             * Another ADMIN must approve it.
-             *
-             * This still enforces separation of duties because
-             * decide() below prevents the maker from approving.
-             */
-            roles.add("ADMIN");
 
         } else {
 
-            /*
-             * Unknown/missing maker role.
-             *
-             * Fail safely toward a senior approval level rather
-             * than allowing an unknown user to approve.
-             */
+            roles.add("LOAN_OFFICER");
             roles.add("MANAGER");
+            roles.add("ADMIN");
+        }
 
-            if (ratio > 0.60) {
+        /*
+         * Remove the creator's role from the chain.
+         *
+         * This is the important maker-checker rule.
+         */
+        User creator = loan.getCreatedBy();
+
+        if (creator != null) {
+
+            String creatorRole = getUserRole(creator);
+
+            if (creatorRole != null) {
+
+                roles.removeIf(
+                        role -> creatorRole.equals(normalizeRole(role))
+                );
+            }
+        }
+
+        /*
+         * Backward compatibility for older loans where createdBy
+         * was not stored.
+         *
+         * loanOfficer is used as the historical creator.
+         */
+        if (creator == null && loan.getLoanOfficer() != null) {
+
+            String creatorRole = getUserRole(loan.getLoanOfficer());
+
+            if (creatorRole != null) {
+
+                roles.removeIf(
+                        role -> creatorRole.equals(normalizeRole(role))
+                );
+            }
+        }
+
+        /*
+         * A valid loan must have at least one independent reviewer.
+         *
+         * If the normal policy becomes empty because the creator was
+         * the only required role, require MANAGER approval.
+         */
+        if (roles.isEmpty()) {
+
+            String creatorRole = creator != null
+                    ? getUserRole(creator)
+                    : loan.getLoanOfficer() != null
+                        ? getUserRole(loan.getLoanOfficer())
+                        : null;
+
+            if (!"MANAGER".equals(creatorRole)) {
+
+                roles.add("MANAGER");
+
+            } else {
+
                 roles.add("ADMIN");
             }
         }
 
         return roles;
-    }
-
-
-    // ============================================================
-    // STEP LABEL
-    // ============================================================
-
-    private String stepLabel(
-            String role,
-            int step,
-            int total) {
-
-        return switch (role) {
-
-            case "LOAN_OFFICER" ->
-                    "Loan Officer Review";
-
-            case "MANAGER" ->
-                    "Branch Manager Approval";
-
-            case "ADMIN" ->
-                    "Credit Committee / Senior Management Approval";
-
-            default ->
-                    role + " Approval (Step "
-                            + step
-                            + "/"
-                            + total
-                            + ")";
-        };
     }
 
 
@@ -190,62 +189,177 @@ public class LoanApprovalService {
     @Transactional
     public List<LoanApproval> initiateChain(Loan loan) {
 
-        if (loan == null) {
+        if (loan == null || loan.getId() == null) {
             throw new IllegalArgumentException(
-                    "Loan is required to initiate approval chain.");
+                    "A persisted loan is required to initiate approval."
+            );
         }
 
-        if (loan.getId() == null) {
-            throw new IllegalArgumentException(
-                    "Loan must be persisted before initiating approval chain.");
-        }
+        List<LoanApproval> existing =
+                approvalRepo.findByLoan_IdOrderByStepOrderAsc(loan.getId());
 
         /*
-         * Idempotent.
+         * Existing chains are never deleted.
          *
-         * Never create duplicate approval steps for the same loan.
+         * If the chain contains historical decisions, preserve them.
+         *
+         * If it contains only untouched PENDING steps, repair it so
+         * the maker-checker policy can be applied correctly.
          */
-        List<LoanApproval> existing =
-                approvalRepo.findByLoan_IdOrderByStepOrderAsc(
-                        loan.getId());
-
         if (!existing.isEmpty()) {
-            return existing;
+
+            boolean hasDecision = existing.stream()
+                    .anyMatch(a ->
+                            a.getStatus() != null
+                                    && !"PENDING".equalsIgnoreCase(a.getStatus())
+                    );
+
+            if (hasDecision) {
+                return existing;
+            }
+
+            return repairPendingChain(loan, existing);
         }
+
 
         List<String> roles = requiredRolesFor(loan);
 
-        if (roles.isEmpty()) {
-            throw new IllegalStateException(
-                    "No valid approval roles could be determined for loan "
-                            + loan.getId());
-        }
-
-        int step = 1;
+        int stepOrder = 1;
 
         for (String role : roles) {
 
-            LoanApproval approval =
-                    LoanApproval.builder()
-                            .loan(loan)
-                            .organization(loan.getOrganization())
-                            .stepOrder(step)
-                            .requiredRole(role)
-                            .stepName(
-                                    stepLabel(
-                                            role,
-                                            step,
-                                            roles.size()))
-                            .status("PENDING")
-                            .build();
+            LoanApproval approval = LoanApproval.builder()
+                    .loan(loan)
+                    .organization(loan.getOrganization())
+                    .stepOrder(stepOrder)
+                    .requiredRole(normalizeRole(role))
+                    .stepName(
+                            stepLabel(
+                                    normalizeRole(role),
+                                    stepOrder,
+                                    roles.size()
+                            )
+                    )
+                    .status("PENDING")
+                    .build();
 
             approvalRepo.save(approval);
 
-            step++;
+            stepOrder++;
         }
 
-        return approvalRepo.findByLoan_IdOrderByStepOrderAsc(
-                loan.getId());
+        return approvalRepo
+                .findByLoan_IdOrderByStepOrderAsc(loan.getId());
+    }
+
+
+    // ============================================================
+    // REPAIR LEGACY PENDING CHAIN
+    // ============================================================
+
+    /**
+     * Repairs an old chain without destroying its audit records.
+     *
+     * Example:
+     *
+     * OLD:
+     *
+     * LOAN_OFFICER PENDING
+     * MANAGER      PENDING
+     * ADMIN        PENDING
+     *
+     * If Loan Officer created the loan:
+     *
+     * NEW:
+     *
+     * LOAN_OFFICER SKIPPED
+     * MANAGER      PENDING
+     * ADMIN        PENDING
+     */
+    private List<LoanApproval> repairPendingChain(
+            Loan loan,
+            List<LoanApproval> existing
+    ) {
+
+        User creator = loan.getCreatedBy();
+
+        String creatorRole = null;
+
+        if (creator != null) {
+
+            creatorRole = getUserRole(creator);
+
+        } else if (loan.getLoanOfficer() != null) {
+
+            /*
+             * Legacy compatibility.
+             */
+            creatorRole = getUserRole(loan.getLoanOfficer());
+        }
+
+
+        if (creatorRole == null) {
+            return existing;
+        }
+
+
+        boolean changed = false;
+
+
+        for (LoanApproval approval : existing) {
+
+            if (!"PENDING".equalsIgnoreCase(approval.getStatus())) {
+                continue;
+            }
+
+            String requiredRole =
+                    normalizeRole(approval.getRequiredRole());
+
+            /*
+             * Only skip the creator's role.
+             *
+             * We never touch an already decided step.
+             */
+            if (creatorRole.equals(requiredRole)) {
+
+                approval.setStatus("SKIPPED");
+
+                approval.setComments(
+                        "Skipped automatically because the loan creator "
+                                + "cannot approve their own loan under the "
+                                + "maker-checker policy."
+                );
+
+                approval.setDecidedAt(LocalDateTime.now());
+
+                approvalRepo.save(approval);
+
+                changed = true;
+
+                auditService.log(
+                        loan.getOrganization(),
+                        creator,
+                        "LOAN_APPROVAL_STEP_SKIPPED",
+                        "LOAN",
+                        loan.getId().toString(),
+                        approval.getStepName()
+                                + " skipped because the loan creator "
+                                + "cannot approve their own loan.",
+                        null,
+                        null,
+                        "Loan Approval"
+                );
+            }
+        }
+
+
+        if (changed) {
+
+            return approvalRepo
+                    .findByLoan_IdOrderByStepOrderAsc(loan.getId());
+        }
+
+        return existing;
     }
 
 
@@ -257,8 +371,7 @@ public class LoanApprovalService {
     public List<LoanApproval> getChain(Long loanId) {
 
         if (loanId == null) {
-            throw new IllegalArgumentException(
-                    "Loan ID is required.");
+            throw new IllegalArgumentException("Loan ID is required.");
         }
 
         return approvalRepo
@@ -267,7 +380,7 @@ public class LoanApprovalService {
 
 
     // ============================================================
-    // STANDARD DECISION
+    // DECIDE
     // ============================================================
 
     @Transactional
@@ -275,381 +388,360 @@ public class LoanApprovalService {
             Long loanId,
             User decider,
             String decision,
-            String comments) {
+            String comments
+    ) {
 
         return decide(
                 loanId,
                 decider,
                 decision,
                 comments,
-                null);
+                null
+        );
     }
 
 
     // ============================================================
-    // DECISION WITH INTEREST RATE OVERRIDE
+    // DECIDE WITH INTEREST RATE
     // ============================================================
 
-    /**
-     * Approves or rejects the current approval step.
-     *
-     * newInterestRate is only used when the final approval step
-     * completes successfully.
-     */
     @Transactional
     public LoanApproval decide(
             Long loanId,
             User decider,
             String decision,
             String comments,
-            Double newInterestRate) {
-
-        // --------------------------------------------------------
-        // Basic validation
-        // --------------------------------------------------------
+            Double newInterestRate
+    ) {
 
         if (loanId == null) {
-            throw new IllegalArgumentException(
-                    "Loan ID is required.");
+            throw new IllegalArgumentException("Loan ID is required.");
         }
 
         if (decider == null) {
             throw new IllegalStateException(
-                    "Authenticated user is required.");
+                    "Authenticated user is required."
+            );
         }
 
-        if (decision == null
-                || decision.isBlank()) {
-
+        if (decision == null || decision.isBlank()) {
             throw new IllegalArgumentException(
-                    "Approval decision is required.");
+                    "Approval decision is required."
+            );
         }
+
 
         String normalizedDecision =
                 decision.trim().toUpperCase();
 
-        if (!normalizedDecision.equals("APPROVED")
-                && !normalizedDecision.equals("REJECTED")) {
+
+        if (!"APPROVED".equals(normalizedDecision)
+                && !"REJECTED".equals(normalizedDecision)) {
 
             throw new IllegalArgumentException(
-                    "Invalid approval decision. "
-                            + "Use APPROVED or REJECTED.");
+                    "Decision must be APPROVED or REJECTED."
+            );
         }
 
-        // --------------------------------------------------------
-        // Organization validation
-        // --------------------------------------------------------
 
         if (decider.getOrganization() == null
                 || decider.getOrganization().getId() == null) {
 
             throw new IllegalStateException(
-                    "The approving user is not associated with an organization.");
+                    "Authenticated user is not associated with an organization."
+            );
         }
+
 
         Long organizationId =
                 decider.getOrganization().getId();
 
-        // --------------------------------------------------------
-        // Load loan with organization ownership check
-        // --------------------------------------------------------
 
         Loan loan =
                 loanService.getLoanForOrg(
                         loanId,
-                        organizationId);
+                        organizationId
+                );
 
-        if (loan == null) {
-            throw new IllegalArgumentException(
-                    "Loan not found.");
-        }
 
-        // --------------------------------------------------------
-        // Ensure approval chain exists
-        // --------------------------------------------------------
-
+        /*
+         * Get the existing chain.
+         */
         List<LoanApproval> chain =
                 approvalRepo.findByLoan_IdOrderByStepOrderAsc(
-                        loanId);
+                        loanId
+                );
 
+
+        /*
+         * If no chain exists, create it.
+         */
         if (chain.isEmpty()) {
 
             chain = initiateChain(loan);
         }
 
-        if (chain == null || chain.isEmpty()) {
-
-            throw new IllegalStateException(
-                    "No approval chain exists for this loan.");
-        }
-
-        // --------------------------------------------------------
-        // Prevent approval of already completed loans
-        // --------------------------------------------------------
-
-        if (loan.getStatus() != null) {
-
-            String loanStatus =
-                    loan.getStatus().name();
-
-            if ("REJECTED".equalsIgnoreCase(loanStatus)) {
-
-                throw new IllegalStateException(
-                        "This loan has already been rejected.");
-            }
-
-            /*
-             * Do not block APPROVED here because an approval chain
-             * may have completed but LoanService could have changed
-             * the status slightly differently.
-             *
-             * The approval chain itself remains the source of truth
-             * for whether another approval step exists.
-             */
-        }
-
-        // --------------------------------------------------------
-        // Find current pending step
-        // --------------------------------------------------------
-
-        LoanApproval step =
-                chain.stream()
-                        .filter(Objects::nonNull)
-                        .filter(a ->
-                                "PENDING".equalsIgnoreCase(
-                                        a.getStatus()))
-                        .findFirst()
-                        .orElseThrow(() ->
-                                new IllegalStateException(
-                                        "This loan has no pending approval step. "
-                                                + "It may already be fully approved or rejected."));
-
-        // --------------------------------------------------------
-        // Decider role
-        // --------------------------------------------------------
-
-        String deciderRole = null;
-
-        if (decider.getRole() != null) {
-
-            deciderRole =
-                    decider.getRole().getName();
-        }
-
-        if (deciderRole == null
-                || deciderRole.isBlank()) {
-
-            throw new IllegalStateException(
-                    "Your user account has no assigned role. "
-                            + "An approval role is required.");
-        }
-
-        deciderRole =
-                deciderRole.trim().toUpperCase();
-
-        String requiredRole =
-                step.getRequiredRole() != null
-                        ? step.getRequiredRole()
-                        .trim()
-                        .toUpperCase()
-                        : null;
-
-        if (requiredRole == null
-                || requiredRole.isBlank()) {
-
-            throw new IllegalStateException(
-                    "The current approval step has no required role.");
-        }
-
-        // --------------------------------------------------------
-        // Maker-checker: maker can NEVER approve
-        // --------------------------------------------------------
-
-        User maker =
-                loan.getLoanOfficer();
-
-        if (maker != null
-                && maker.getId() != null
-                && decider.getId() != null
-                && maker.getId().equals(decider.getId())) {
-
-            throw new IllegalStateException(
-                    "You created this loan application. "
-                            + "Another authorized user must review it "
-                            + "under the maker-checker policy.");
-        }
-
-        // --------------------------------------------------------
-        // Prevent same person approving multiple steps
-        // --------------------------------------------------------
-
-        boolean alreadyDecidedByThisUser =
-                chain.stream()
-                        .filter(Objects::nonNull)
-                        .anyMatch(a ->
-                                a.getApprover() != null
-                                        && a.getApprover().getId() != null
-                                        && decider.getId() != null
-                                        && a.getApprover()
-                                        .getId()
-                                        .equals(decider.getId()));
-
-        if (alreadyDecidedByThisUser) {
-
-            throw new IllegalStateException(
-                    "You have already approved or rejected another "
-                            + "step on this loan. A different authorized "
-                            + "user must perform the next approval.");
-        }
-
-        // --------------------------------------------------------
-        // Role validation
-        // --------------------------------------------------------
-
-        boolean roleMatches =
-                requiredRole.equals(deciderRole);
 
         /*
-         * ADMIN can perform a MANAGER step only if your organization
-         * intentionally allows senior override.
-         *
-         * However, ADMIN must still be a different person from
-         * the maker and cannot have already decided another step.
+         * Repair an untouched legacy chain before finding the
+         * next pending step.
          */
-        boolean seniorOverride =
-                "ADMIN".equals(deciderRole)
-                        && (
-                        "MANAGER".equals(requiredRole)
-                                || "LOAN_OFFICER".equals(requiredRole)
+        boolean hasDecision = chain.stream()
+                .anyMatch(a ->
+                        a.getStatus() != null
+                                && !"PENDING".equalsIgnoreCase(a.getStatus())
                 );
 
-        if (!roleMatches && !seniorOverride) {
+
+        if (!hasDecision) {
+
+            chain = repairPendingChain(
+                    loan,
+                    chain
+            );
+        }
+
+
+        /*
+         * Find the next pending step.
+         */
+        LoanApproval step = chain.stream()
+                .filter(a ->
+                        "PENDING".equalsIgnoreCase(a.getStatus())
+                )
+                .findFirst()
+                .orElseThrow(() ->
+                        new IllegalStateException(
+                                "This loan has no pending approval step. "
+                                        + "It may already be fully approved, "
+                                        + "rejected, or awaiting another workflow."
+                        )
+                );
+
+
+        String deciderRole =
+                getUserRole(decider);
+
+
+        if (deciderRole == null) {
+
+            throw new IllegalStateException(
+                    "Your account does not have a valid role."
+            );
+        }
+
+
+        String requiredRole =
+                normalizeRole(step.getRequiredRole());
+
+
+        /*
+         * ADMIN is the escalation authority.
+         *
+         * Manager cannot approve a Loan Officer step.
+         *
+         * Loan Officer cannot approve a Manager step.
+         */
+        boolean roleMatches =
+                requiredRole.equals(deciderRole)
+                        || "ADMIN".equals(deciderRole);
+
+
+        if (!roleMatches) {
 
             throw new IllegalStateException(
                     "This approval step requires "
                             + requiredRole
                             + ". Your role is "
                             + deciderRole
-                            + ".");
+                            + "."
+            );
         }
 
-        // --------------------------------------------------------
-        // Final approval rate validation
-        // --------------------------------------------------------
 
-        if (newInterestRate != null) {
+        // ========================================================
+        // MAKER-CHECKER
+        // ========================================================
 
-            if (!Double.isFinite(newInterestRate)) {
+        User creator =
+                loan.getCreatedBy();
 
-                throw new IllegalArgumentException(
-                        "Interest rate must be a valid number.");
-            }
 
-            if (newInterestRate < 0.0) {
-
-                throw new IllegalArgumentException(
-                        "Interest rate cannot be negative.");
-            }
-
-            if (newInterestRate > 100.0) {
-
-                throw new IllegalArgumentException(
-                        "Interest rate cannot exceed 100%.");
-            }
+        /*
+         * Backward compatibility.
+         *
+         * Old loans may not have createdBy populated.
+         */
+        if (creator == null) {
+            creator = loan.getLoanOfficer();
         }
 
-        // --------------------------------------------------------
-        // Record decision
-        // --------------------------------------------------------
+
+        if (creator != null
+                && creator.getId() != null
+                && creator.getId().equals(decider.getId())) {
+
+            throw new IllegalStateException(
+                    "You created this loan application. "
+                            + "Another authorized user must review it "
+                            + "under the maker-checker policy."
+            );
+        }
+
+
+        /*
+         * A user cannot approve multiple steps of the same loan.
+         *
+         * This prevents one administrator from effectively approving
+         * every stage alone.
+         */
+        boolean alreadyDecidedByThisUser =
+                chain.stream()
+                        .filter(a ->
+                                !"PENDING".equalsIgnoreCase(
+                                        a.getStatus()
+                                ))
+                        .anyMatch(a ->
+                                a.getApprover() != null
+                                        && a.getApprover().getId() != null
+                                        && a.getApprover()
+                                            .getId()
+                                            .equals(decider.getId())
+                        );
+
+
+        if (alreadyDecidedByThisUser) {
+
+            throw new IllegalStateException(
+                    "You have already decided another step "
+                            + "for this loan. A different authorized "
+                            + "user must complete the next step."
+            );
+        }
+
+
+        // ========================================================
+        // RECORD DECISION
+        // ========================================================
 
         boolean approved =
                 "APPROVED".equals(normalizedDecision);
 
+
         step.setStatus(
                 approved
                         ? "APPROVED"
-                        : "REJECTED");
+                        : "REJECTED"
+        );
+
 
         step.setApprover(decider);
 
         step.setComments(
                 comments != null
                         ? comments.trim()
-                        : null);
+                        : null
+        );
 
         step.setDecidedAt(
-                LocalDateTime.now());
+                LocalDateTime.now()
+        );
+
 
         approvalRepo.save(step);
 
-        // --------------------------------------------------------
-        // Audit
-        // --------------------------------------------------------
 
-        String auditAction =
-                "LOAN_APPROVAL_STEP_"
-                        + step.getStatus();
-
-        String auditDescription =
-                step.getStepName()
-                        + " — "
-                        + step.getStatus();
-
-        if (comments != null
-                && !comments.isBlank()) {
-
-            auditDescription +=
-                    ": "
-                            + comments.trim();
-        }
+        // ========================================================
+        // AUDIT
+        // ========================================================
 
         auditService.log(
                 loan.getOrganization(),
                 decider,
-                auditAction,
+                "LOAN_APPROVAL_STEP_" + step.getStatus(),
                 "LOAN",
                 loanId.toString(),
-                auditDescription);
+                step.getStepName()
+                        + " — "
+                        + step.getStatus()
+                        + (
+                            comments != null
+                                    && !comments.isBlank()
+                                    ? ": " + comments.trim()
+                                    : ""
+                        ),
+                null,
+                null,
+                "Loan Approval"
+        );
 
-        // --------------------------------------------------------
-        // Rejection
-        // --------------------------------------------------------
+
+        // ========================================================
+        // REJECTION
+        // ========================================================
 
         if (!approved) {
-
-            String rejectionReason =
-                    comments != null
-                            && !comments.isBlank()
-                            ? comments.trim()
-                            : "Rejected at "
-                            + step.getStepName();
 
             loanService.rejectLoan(
                     loanId,
                     decider,
-                    rejectionReason);
+                    comments != null && !comments.isBlank()
+                            ? comments.trim()
+                            : "Rejected at "
+                                    + step.getStepName()
+            );
 
             return step;
         }
 
-        // --------------------------------------------------------
-        // Check whether every step has been approved
-        // --------------------------------------------------------
+
+        // ========================================================
+        // CHECK WHETHER ALL REQUIRED STEPS ARE COMPLETE
+        // ========================================================
 
         List<LoanApproval> updatedChain =
-                approvalRepo
-                        .findByLoan_IdOrderByStepOrderAsc(
-                                loanId);
+                approvalRepo.findByLoan_IdOrderByStepOrderAsc(
+                        loanId
+                );
+
+
+        boolean hasPending =
+                updatedChain.stream()
+                        .anyMatch(a ->
+                                "PENDING".equalsIgnoreCase(
+                                        a.getStatus()
+                                )
+                        );
+
+
+        boolean hasRejected =
+                updatedChain.stream()
+                        .anyMatch(a ->
+                                "REJECTED".equalsIgnoreCase(
+                                        a.getStatus()
+                                )
+                        );
+
 
         boolean allApproved =
-                updatedChain.stream()
-                        .allMatch(a ->
-                                "APPROVED".equalsIgnoreCase(
-                                        a.getStatus()));
+                !hasPending
+                        && !hasRejected
+                        && updatedChain.stream()
+                            .filter(a ->
+                                    !"SKIPPED".equalsIgnoreCase(
+                                            a.getStatus()
+                                    )
+                            )
+                            .allMatch(a ->
+                                    "APPROVED".equalsIgnoreCase(
+                                            a.getStatus()
+                                    )
+                            );
 
-        // --------------------------------------------------------
-        // Final approval
-        // --------------------------------------------------------
+
+        // ========================================================
+        // FINAL APPROVAL
+        // ========================================================
 
         if (allApproved) {
 
@@ -658,10 +750,44 @@ public class LoanApprovalService {
                     decider,
                     "Approved via "
                             + updatedChain.size()
-                            + "-step maker-checker approval chain",
-                    newInterestRate);
+                            + "-step maker-checker chain",
+                    newInterestRate
+            );
         }
 
+
         return step;
+    }
+
+
+    // ============================================================
+    // STEP LABEL
+    // ============================================================
+
+    private String stepLabel(
+            String role,
+            int step,
+            int total
+    ) {
+
+        return switch (normalizeRole(role)) {
+
+            case "LOAN_OFFICER" ->
+                    "Loan Officer Review";
+
+            case "MANAGER" ->
+                    "Branch Manager Approval";
+
+            case "ADMIN" ->
+                    "Credit Committee Sign-off";
+
+            default ->
+                    role
+                            + " Approval (Step "
+                            + step
+                            + "/"
+                            + total
+                            + ")";
+        };
     }
 }
