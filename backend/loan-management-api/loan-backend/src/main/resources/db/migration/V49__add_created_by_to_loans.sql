@@ -4,4 +4,4 @@ ALTER TABLE loans
 ALTER TABLE loans
     ADD CONSTRAINT fk_loan_created_by
     FOREIGN KEY (created_by)
-    REFERENCES users(id);
+    REFERENCES app_users(id);
