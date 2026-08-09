@@ -391,14 +391,17 @@ public List<LoanApproval> getChainForOrganization(
          * Only loans that are still awaiting approval may enter
          * this workflow.
          */
-        if (loan.getStatus() != LoanStatus.PENDING) {
+       LoanStatus currentStatus = loan.getStatus();
 
-            throw new IllegalStateException(
-                    "Loan " + loan.getReferenceNumber()
-                            + " is not pending approval. Current status: "
-                            + loan.getStatus()
-            );
-        }
+if (currentStatus != LoanStatus.PENDING
+        && currentStatus != LoanStatus.UNDER_REVIEW) {
+
+    throw new IllegalStateException(
+            "Loan " + loan.getReferenceNumber()
+                    + " cannot be approved from its current status: "
+                    + currentStatus
+    );
+}
 
         List<LoanApproval> chain =
                 approvalRepo
