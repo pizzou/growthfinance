@@ -3,12 +3,27 @@ package com.patrick.fintech.loan_backend.model;
 import java.math.BigDecimal;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @JsonIgnoreProperties({
         "hibernateLazyInitializer",
@@ -35,6 +50,10 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class JournalLine {
+
+    // ============================================================
+    // ID
+    // ============================================================
 
     @Id
     @GeneratedValue(
@@ -80,7 +99,11 @@ public class JournalLine {
     // ============================================================
 
     @Builder.Default
-    @Column(nullable = false, precision = 19, scale = 6)
+    @Column(
+            nullable = false,
+            precision = 19,
+            scale = 6
+    )
     @JsonProperty("debit")
     private BigDecimal debit = BigDecimal.ZERO;
 
@@ -90,7 +113,11 @@ public class JournalLine {
     // ============================================================
 
     @Builder.Default
-    @Column(nullable = false, precision = 19, scale = 6)
+    @Column(
+            nullable = false,
+            precision = 19,
+            scale = 6
+    )
     @JsonProperty("credit")
     private BigDecimal credit = BigDecimal.ZERO;
 
@@ -106,7 +133,7 @@ public class JournalLine {
 
 
     // ============================================================
-    // NORMALIZE
+    // ENTITY NORMALIZATION
     // ============================================================
 
     @PrePersist
@@ -120,6 +147,16 @@ public class JournalLine {
         if (credit == null) {
             credit = BigDecimal.ZERO;
         }
+
+        debit = debit.setScale(
+                6,
+                java.math.RoundingMode.HALF_UP
+        );
+
+        credit = credit.setScale(
+                6,
+                java.math.RoundingMode.HALF_UP
+        );
     }
 
 
@@ -147,99 +184,99 @@ public class JournalLine {
     }
 
 
-   
+    // ============================================================
+    // AMOUNT
+    // ============================================================
 
+    /**
+     * Returns the larger of debit or credit.
+     *
+     * This is useful for display/reporting where a journal line
+     * has exactly one populated side.
+     */
     @Transient
-    public double getAmount() {
+    public BigDecimal getAmount() {
 
-        double debitAmount =
+        BigDecimal debitAmount =
                 debit != null
-                        ? debit.doubleValue()
-                        : 0.0;
+                        ? debit
+                        : BigDecimal.ZERO;
 
-        double creditAmount =
+        BigDecimal creditAmount =
                 credit != null
-                        ? credit.doubleValue()
-                        : 0.0;
+                        ? credit
+                        : BigDecimal.ZERO;
 
-        return Math.max(
-                debitAmount,
+        return debitAmount.max(
                 creditAmount
         );
     }
+
+
+    // ============================================================
+    // SAFE DEBIT SETTER
+    // ============================================================
+
     /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getDebitDecimal().
+     * Keeps the financial value as BigDecimal.
+     *
+     * Do not introduce Double here. Monetary values must remain
+     * decimal throughout the accounting layer.
      */
-    @Deprecated
-    @JsonIgnore
-    public Double getDebit() {
-        return debit == null ? null : debit.doubleValue();
+    public void setDebit(BigDecimal value) {
+
+        this.debit =
+                value != null
+                        ? value
+                        : BigDecimal.ZERO;
     }
 
+
+    // ============================================================
+    // SAFE CREDIT SETTER
+    // ============================================================
+
+    /**
+     * Keeps the financial value as BigDecimal.
+     *
+     * Do not introduce Double here. Monetary values must remain
+     * decimal throughout the accounting layer.
+     */
+    public void setCredit(BigDecimal value) {
+
+        this.credit =
+                value != null
+                        ? value
+                        : BigDecimal.ZERO;
+    }
+
+
+    // ============================================================
+    // DECIMAL ACCESSORS
+    // ============================================================
+
+    /**
+     * Explicit decimal accessor for financial services.
+     */
+    @Transient
     @JsonIgnore
     public BigDecimal getDebitDecimal() {
-        return debit;
-    }
 
-    @Deprecated
-    public void setDebit(Double value) {
-        this.debit = value == null ? null : BigDecimal.valueOf(value);
-    }
-
-    public void setDebit(BigDecimal value) {
-        this.debit = value;
+        return debit != null
+                ? debit
+                : BigDecimal.ZERO;
     }
 
 
     /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getCreditDecimal().
+     * Explicit decimal accessor for financial services.
      */
-    @Deprecated
-    @JsonIgnore
-    public Double getCredit() {
-        return credit == null ? null : credit.doubleValue();
-    }
-
+    @Transient
     @JsonIgnore
     public BigDecimal getCreditDecimal() {
-        return credit;
+
+        return credit != null
+                ? credit
+                : BigDecimal.ZERO;
     }
-
-    @Deprecated
-    public void setCredit(Double value) {
-        this.credit = value == null ? null : BigDecimal.valueOf(value);
-    }
-
-    public void setCredit(BigDecimal value) {
-        this.credit = value;
-    }
-
-    /** Backward-compatible builder overloads for legacy Double callers.
-     *  Financial state is stored as BigDecimal.
-     */
-    public static class JournalLineBuilder {
-
-        private BigDecimal debit;
-        private BigDecimal credit;
-
-
-        public JournalLineBuilder debit(Double value) {
-            this.debit = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public JournalLineBuilder credit(Double value) {
-            this.credit = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }        public JournalLineBuilder debit(BigDecimal value) {
-            this.debit = value;
-            return this;
-        }
-        public JournalLineBuilder credit(BigDecimal value) {
-            this.credit = value;
-            return this;
-        }
-    }
-
 }
