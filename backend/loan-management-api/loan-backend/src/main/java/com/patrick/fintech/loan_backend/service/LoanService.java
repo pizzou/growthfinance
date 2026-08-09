@@ -1,6 +1,7 @@
 package com.patrick.fintech.loan_backend.service;
 
-import com.patrick.fintech.loan_backend.dto.*;
+import com.patrick.fintech.loan_backend.dto.LoanRequest;
+import com.patrick.fintech.loan_backend.dto.DashboardStats;
 import com.patrick.fintech.loan_backend.dto.publicportal.BorrowerDashboardResponse;
 import com.patrick.fintech.loan_backend.dto.publicportal.DashboardSummaryResponse;
 import com.patrick.fintech.loan_backend.model.*;
@@ -20,8 +21,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,10 +89,16 @@ public class LoanService {
             return DEFAULT_REQUIRED_DOCS;
         }
 
+        Long organizationId = loan.getOrganization().getId();
+
+        if (organizationId == null || loan.getLoanType() == null) {
+            return DEFAULT_REQUIRED_DOCS;
+        }
+
         LoanProduct product =
                 loanProductRepo
                         .findFirstByOrganization_IdAndLoanTypeAndActiveTrue(
-                                loan.getOrganization().getId(),
+                                organizationId,
                                 loan.getLoanType()
                         )
                         .orElse(null);
@@ -116,15 +123,19 @@ public class LoanService {
             }
 
             try {
+
                 documentTypes.add(
                         DocumentType.valueOf(
                                 type.trim().toUpperCase()
                         )
                 );
+
             } catch (IllegalArgumentException ex) {
+
                 throw new RuntimeException(
                         "Invalid document type configured for Loan Product: "
-                                + type
+                                + type,
+                        ex
                 );
             }
         }
@@ -143,6 +154,18 @@ public class LoanService {
             String phone
     ) {
 
+        if (reference == null || reference.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Loan reference is required"
+            );
+        }
+
+        if (phone == null || phone.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Phone number is required"
+            );
+        }
+
         String phoneHash = HmacIndexer.index(phone);
 
         Loan loan =
@@ -152,7 +175,9 @@ public class LoanService {
                                 phoneHash
                         )
                         .orElseThrow(
-                                () -> new RuntimeException("Loan not found")
+                                () -> new RuntimeException(
+                                        "Loan not found"
+                                )
                         );
 
         return BorrowerDashboardResponse.builder()
@@ -219,13 +244,21 @@ public class LoanService {
             String phone
     ) {
 
+        if (phone == null || phone.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Phone number is required"
+            );
+        }
+
         String phoneHash = HmacIndexer.index(phone);
 
         List<Loan> loans =
                 loanRepo.findByBorrower_PhoneHash(phoneHash);
 
         if (loans == null || loans.isEmpty()) {
-            throw new RuntimeException("Borrower not found");
+            throw new RuntimeException(
+                    "Borrower not found"
+            );
         }
 
         int activeLoans = 0;
@@ -246,7 +279,9 @@ public class LoanService {
             totalBorrowed =
                     money(
                             totalBorrowed.add(
-                                    moneyValue(loan.getAmount())
+                                    moneyValue(
+                                            loan.getAmount()
+                                    )
                             )
                     );
 
@@ -342,6 +377,12 @@ public class LoanService {
                                 )
                         );
 
+        if (createdBy == null) {
+            throw new IllegalArgumentException(
+                    "Creating user cannot be null"
+            );
+        }
+
         Borrower borrower =
                 borrowerRepo.findById(
                                 req.getBorrowerId()
@@ -402,24 +443,25 @@ public class LoanService {
         // PRINCIPAL
         // ============================================================
 
-        
-BigDecimal requestedAmount =
-        toBigDecimal(req.getAmount());
+        BigDecimal requestedAmount =
+                toBigDecimal(req.getAmount());
 
-if (
-        requestedAmount == null
-                || requestedAmount.compareTo(BigDecimal.ZERO) <= 0
-) {
+        if (
+                requestedAmount == null
+                        || requestedAmount.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0
+        ) {
 
-    throw new RuntimeException(
-            "Loan amount must be greater than zero"
-    );
-}
-
-
+            throw new RuntimeException(
+                    "Loan amount must be greater than zero"
+            );
+        }
 
         BigDecimal principal =
-                normalizePrincipal(requestedAmount);
+                normalizePrincipal(
+                        requestedAmount
+                );
 
         // ============================================================
         // PRODUCT LIMITS
@@ -428,24 +470,35 @@ if (
         if (product != null) {
 
             BigDecimal minimumAmount =
-                    toBigDecimal(product.getMinAmount());
+                    toBigDecimal(
+                            product.getMinAmount()
+                    );
 
             BigDecimal maximumAmount =
-                    toBigDecimal(product.getMaxAmount());
+                    toBigDecimal(
+                            product.getMaxAmount()
+                    );
 
             boolean tooLow =
                     minimumAmount != null
-                            && principal.compareTo(minimumAmount) < 0;
+                            && principal.compareTo(
+                            minimumAmount
+                    ) < 0;
 
             boolean tooHigh =
                     maximumAmount != null
-                            && principal.compareTo(maximumAmount) > 0;
+                            && principal.compareTo(
+                            maximumAmount
+                    ) > 0;
 
             if (tooLow || tooHigh) {
 
                 String range;
 
-                if (maximumAmount != null) {
+                if (
+                        minimumAmount != null
+                                && maximumAmount != null
+                ) {
 
                     range =
                             String.format(
@@ -454,13 +507,21 @@ if (
                                     maximumAmount.doubleValue()
                             );
 
-                } else {
+                } else if (minimumAmount != null) {
 
                     range =
                             String.format(
                                     "at least %,.0f",
-                                    minimumAmount != null
-                                            ? minimumAmount.doubleValue()
+                                    minimumAmount.doubleValue()
+                            );
+
+                } else {
+
+                    range =
+                            String.format(
+                                    "up to %,.0f",
+                                    maximumAmount != null
+                                            ? maximumAmount.doubleValue()
                                             : 0.0
                             );
                 }
@@ -479,6 +540,7 @@ if (
                     req.getDurationMonths();
 
             if (requestedMonths == null) {
+
                 throw new RuntimeException(
                         "Loan duration is required"
                 );
@@ -504,101 +566,121 @@ if (
         // RATE
         // ============================================================
 
-        
-BigDecimal rate;
+        BigDecimal rate;
 
-if (req.getInterestRate() != null) {
+        if (req.getInterestRate() != null) {
 
-    rate =
-            toBigDecimal(
-                    req.getInterestRate()
-            ).setScale(
-                    8,
-                    RoundingMode.HALF_UP
-            );
+            rate =
+                    toBigDecimal(
+                            req.getInterestRate()
+                    );
 
-} else if (product != null) {
+        } else if (product != null) {
 
-    rate =
-            toBigDecimal(
-                    product.getInterestRate()
-            );
+            rate =
+                    toBigDecimal(
+                            product.getInterestRate()
+                    );
 
-    if (rate == null) {
+            if (rate == null) {
+
+                rate =
+                        BASE_RATES.getOrDefault(
+                                requestedType,
+                                bd("15.0")
+                        );
+            }
+
+        } else {
+
+            rate =
+                    BASE_RATES.getOrDefault(
+                            requestedType,
+                            bd("15.0")
+                    );
+        }
+
+        if (rate == null) {
+            rate = bd("15.0");
+        }
+
         rate =
-                BASE_RATES.getOrDefault(
-                        requestedType,
-                        bd("15.0")
+                rate.setScale(
+                        8,
+                        RoundingMode.HALF_UP
                 );
-    }
 
-} else {
+        if (
+                rate.compareTo(
+                        BigDecimal.ZERO
+                ) < 0
+        ) {
 
-    rate =
-            BASE_RATES.getOrDefault(
-                    requestedType,
-                    bd("15.0")
+            throw new RuntimeException(
+                    "Interest rate cannot be negative"
             );
-}
+        }
 
-if (rate.compareTo(BigDecimal.ZERO) < 0) {
-    throw new RuntimeException(
-            "Interest rate cannot be negative"
-    );
-}
+        String rateType;
 
+        if (
+                req.getInterestRate() != null
+                        && req.getInterestRateType() != null
+                        && !req.getInterestRateType().isBlank()
+        ) {
 
-        
-String rateType;
+            rateType =
+                    req.getInterestRateType()
+                            .trim()
+                            .toUpperCase();
 
-if (
-        req.getInterestRate() != null
-                && req.getInterestRateType() != null
-                && !req.getInterestRateType().isBlank()
-) {
+        } else if (
+                product != null
+                        && product.getInterestRateType() != null
+                        && !product.getInterestRateType().isBlank()
+        ) {
 
-    rateType =
-            req.getInterestRateType()
-                    .trim()
-                    .toUpperCase();
+            rateType =
+                    product.getInterestRateType()
+                            .trim()
+                            .toUpperCase();
 
-} else if (
-        product != null
-                && product.getInterestRateType() != null
-                && !product.getInterestRateType().isBlank()
-) {
+        } else {
 
-    rateType =
-            product.getInterestRateType()
-                    .trim()
-                    .toUpperCase();
+            rateType = "ANNUAL";
+        }
 
-} else {
+        validateRateType(rateType);
 
-    rateType = "ANNUAL";
-}
+        if (borrower.getCreditScore() != null) {
 
-validateRateType(rateType);
-
-if (borrower.getCreditScore() != null) {
-
-    rate =
-            adjustRate(
-                    rate,
-                    borrower.getCreditScore(),
-                    rateType
-            );
-}
-
+            rate =
+                    adjustRate(
+                            rate,
+                            borrower.getCreditScore(),
+                            rateType
+                    );
+        }
 
         // ============================================================
         // LOAN CALCULATION
         // ============================================================
 
-        int months =
+        Integer requestedDuration =
                 req.getDurationMonths();
 
+        if (requestedDuration == null) {
+
+            throw new RuntimeException(
+                    "Loan duration is required"
+            );
+        }
+
+        int months =
+                requestedDuration;
+
         if (months <= 0) {
+
             throw new RuntimeException(
                     "Loan duration must be greater than zero"
             );
@@ -654,7 +736,9 @@ if (borrower.getCreditScore() != null) {
                 );
 
         BigDecimal dti =
-                monthlyIncome.compareTo(BigDecimal.ZERO) > 0
+                monthlyIncome.compareTo(
+                        BigDecimal.ZERO
+                ) > 0
                         ? money(
                         monthlyInstallment
                                 .divide(
@@ -672,20 +756,26 @@ if (borrower.getCreditScore() != null) {
         // COLLATERAL
         // ============================================================
 
-       
-BigDecimal collateralValue =
-        req.getCollateralValue() != null
-                ? money(
+        BigDecimal collateralValue =
+                req.getCollateralValue() != null
+                        ? money(
                         toBigDecimal(
                                 req.getCollateralValue()
                         )
                 )
-                : null;
-
+                        : null;
 
         // ============================================================
         // BUILD LOAN
         // ============================================================
+
+        LocalDate startDate =
+                req.getStartDate() != null
+                        && !req.getStartDate().isBlank()
+                        ? LocalDate.parse(
+                        req.getStartDate()
+                )
+                        : LocalDate.now();
 
         Loan loan =
                 Loan.builder()
@@ -722,17 +812,16 @@ BigDecimal collateralValue =
                                 req.getCollateralDescription()
                         )
                         .collateralValue(collateralValue)
-                        .startDate(
-                                req.getStartDate() != null
-                                        && !req.getStartDate().isBlank()
-                                        ? LocalDate.parse(
-                                        req.getStartDate()
-                                )
-                                        : LocalDate.now()
-                        )
+                        .startDate(startDate)
                         .debtToIncomeRatio(dti)
                         .creditScoreSnapshot(
                                 borrower.getCreditScore()
+                        )
+                        .nextDueDate(
+                                holidayService.adjustToBusinessDay(
+                                        organizationId,
+                                        startDate.plusMonths(1)
+                                )
                         )
                         .build();
 
@@ -749,7 +838,9 @@ BigDecimal collateralValue =
                 );
 
         if (
-                savedPrincipal.compareTo(principal) != 0
+                savedPrincipal.compareTo(
+                        principal
+                ) != 0
         ) {
 
             log.error(
@@ -885,7 +976,20 @@ BigDecimal collateralValue =
                     bd(newInterestRate);
 
             if (
-                    previousRate.compareTo(requestedRate) != 0
+                    requestedRate.compareTo(
+                            BigDecimal.ZERO
+                    ) < 0
+            ) {
+
+                throw new IllegalArgumentException(
+                        "Interest rate cannot be negative"
+                );
+            }
+
+            if (
+                    previousRate.compareTo(
+                            requestedRate
+                    ) != 0
             ) {
 
                 BigDecimal principal =
@@ -904,6 +1008,8 @@ BigDecimal collateralValue =
                         loan.getInterestRateType() != null
                                 ? loan.getInterestRateType()
                                 : "ANNUAL";
+
+                validateRateType(rateType);
 
                 BigDecimal[] calc =
                         calcLoan(
@@ -936,20 +1042,23 @@ BigDecimal collateralValue =
 
         loan.setAmount(exactPrincipal);
 
-        /*
-         * Do not reset outstanding balance to principal here.
-         *
-         * For a pending loan it should normally equal principal,
-         * but if this method is ever reused during another workflow,
-         * destroying an already reduced balance would be dangerous.
-         */
         if (loan.getOutstandingBalance() == null) {
-            loan.setOutstandingBalance(exactPrincipal);
+            loan.setOutstandingBalance(
+                    exactPrincipal
+            );
         }
 
-        loan.setStatus(LoanStatus.APPROVED);
-        loan.setApprovedBy(approvedBy);
-        loan.setApprovedAt(LocalDate.now());
+        loan.setStatus(
+                LoanStatus.APPROVED
+        );
+
+        loan.setApprovedBy(
+                approvedBy
+        );
+
+        loan.setApprovedAt(
+                LocalDate.now()
+        );
 
         if (notes != null && !notes.isBlank()) {
             loan.setInternalNotes(notes);
@@ -964,11 +1073,15 @@ BigDecimal collateralValue =
 
         if (
                 paymentRepo
-                        .findByLoanId(saved.getId())
+                        .findByLoanId(
+                                saved.getId()
+                        )
                         .isEmpty()
         ) {
 
-            generateRepaymentSchedule(saved);
+            generateRepaymentSchedule(
+                    saved
+            );
 
         } else {
 
@@ -983,13 +1096,13 @@ BigDecimal collateralValue =
         // ============================================================
 
         audit(
-                loan.getOrganization(),
+                saved.getOrganization(),
                 approvedBy,
                 "LOAN_APPROVED",
                 "LOAN",
                 loanId.toString(),
                 "Loan "
-                        + loan.getReferenceNumber()
+                        + saved.getReferenceNumber()
                         + " approved"
                         + (
                         newInterestRate != null
@@ -1008,7 +1121,9 @@ BigDecimal collateralValue =
 
         try {
 
-            mailService.sendLoanApproved(saved);
+            mailService.sendLoanApproved(
+                    saved
+            );
 
         } catch (Exception e) {
 
@@ -1024,7 +1139,9 @@ BigDecimal collateralValue =
 
         try {
 
-            smsService.sendLoanApproved(saved);
+            smsService.sendLoanApproved(
+                    saved
+            );
 
         } catch (Exception e) {
 
@@ -1110,6 +1227,17 @@ BigDecimal collateralValue =
             String reason
     ) {
 
+        if (
+                rejectedBy == null
+                        || rejectedBy.getOrganization() == null
+                        || rejectedBy.getOrganization().getId() == null
+        ) {
+
+            throw new RuntimeException(
+                    "Rejecting user must belong to an organization"
+            );
+        }
+
         Loan loan =
                 getLoanForOrg(
                         loanId,
@@ -1129,8 +1257,20 @@ BigDecimal collateralValue =
             );
         }
 
-        loan.setStatus(LoanStatus.REJECTED);
-        loan.setRejectionReason(reason);
+        if (reason == null || reason.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Rejection reason is required"
+            );
+        }
+
+        loan.setStatus(
+                LoanStatus.REJECTED
+        );
+
+        loan.setRejectionReason(
+                reason
+        );
 
         Loan saved =
                 loanRepo.save(loan);
@@ -1146,7 +1286,9 @@ BigDecimal collateralValue =
 
         try {
 
-            mailService.sendLoanRejected(saved);
+            mailService.sendLoanRejected(
+                    saved
+            );
 
         } catch (Exception e) {
 
@@ -1158,7 +1300,9 @@ BigDecimal collateralValue =
 
         try {
 
-            smsService.sendLoanRejected(saved);
+            smsService.sendLoanRejected(
+                    saved
+            );
 
         } catch (Exception e) {
 
@@ -1186,7 +1330,7 @@ BigDecimal collateralValue =
         );
 
         webhookService.dispatch(
-                loan.getOrganization(),
+                saved.getOrganization(),
                 "LOAN_REJECTED",
                 saved
         );
@@ -1204,6 +1348,17 @@ BigDecimal collateralValue =
             User officer,
             String disbursementMethod
     ) {
+
+        if (
+                officer == null
+                        || officer.getOrganization() == null
+                        || officer.getOrganization().getId() == null
+        ) {
+
+            throw new RuntimeException(
+                    "Disbursing officer must belong to an organization"
+            );
+        }
 
         Loan loan =
                 getLoanForOrg(
@@ -1245,10 +1400,6 @@ BigDecimal collateralValue =
             );
         }
 
-        // ============================================================
-        // PRINCIPAL
-        // ============================================================
-
         BigDecimal exactPrincipal =
                 normalizePrincipal(
                         moneyValue(
@@ -1256,11 +1407,25 @@ BigDecimal collateralValue =
                         )
                 );
 
-        loan.setAmount(exactPrincipal);
-        loan.setOutstandingBalance(exactPrincipal);
-        loan.setStatus(LoanStatus.ACTIVE);
-        loan.setDisbursedAt(LocalDateTime.now());
-        loan.setDisbursedAmount(exactPrincipal);
+        loan.setAmount(
+                exactPrincipal
+        );
+
+        loan.setOutstandingBalance(
+                exactPrincipal
+        );
+
+        loan.setStatus(
+                LoanStatus.ACTIVE
+        );
+
+        loan.setDisbursedAt(
+                LocalDateTime.now()
+        );
+
+        loan.setDisbursedAmount(
+                exactPrincipal
+        );
 
         LocalDate disbursementDate =
                 LocalDate.now();
@@ -1271,7 +1436,9 @@ BigDecimal collateralValue =
                         : 1;
 
         loan.setMaturityDate(
-                disbursementDate.plusMonths(duration)
+                disbursementDate.plusMonths(
+                        duration
+                )
         );
 
         loan.setNextDueDate(
@@ -1288,7 +1455,9 @@ BigDecimal collateralValue =
         // GENERATE REPAYMENT SCHEDULE
         // ============================================================
 
-        paymentScheduleService.generateSchedule(saved);
+        paymentScheduleService.generateSchedule(
+                saved
+        );
 
         PaymentSchedule first =
                 paymentScheduleService.getNextInstallment(
@@ -1349,14 +1518,20 @@ BigDecimal collateralValue =
                 "LOAN",
                 loanId.toString(),
                 "Disbursed via "
-                        + disbursementMethod
+                        + (
+                        disbursementMethod != null
+                                ? disbursementMethod
+                                : "unspecified"
+                )
         );
 
         // ============================================================
         // ACCOUNTING
         // ============================================================
 
-        accountingService.postDisbursement(saved);
+        accountingService.postDisbursement(
+                saved
+        );
 
         // ============================================================
         // EMAIL
@@ -1455,8 +1630,11 @@ BigDecimal collateralValue =
         if (
                 actor != null
                         && officer.getId() != null
-                        && officer.getId().equals(actor.getId())
+                        && officer.getId().equals(
+                        actor.getId()
+                )
         ) {
+
             return;
         }
 
@@ -1492,7 +1670,17 @@ BigDecimal collateralValue =
             String notes
     ) {
 
+        if (user == null
+                || user.getOrganization() == null
+                || user.getOrganization().getId() == null) {
+
+            throw new RuntimeException(
+                    "User must belong to an organization"
+            );
+        }
+
         if (newStatus == null) {
+
             throw new IllegalArgumentException(
                     "New loan status cannot be null"
             );
@@ -1564,7 +1752,9 @@ BigDecimal collateralValue =
                     );
         }
 
-        loan.setStatus(newStatus);
+        loan.setStatus(
+                newStatus
+        );
 
         if (notes != null && !notes.isBlank()) {
             loan.setInternalNotes(notes);
@@ -1611,31 +1801,66 @@ BigDecimal collateralValue =
             String type
     ) {
 
+        if (org == null || org.getId() == null) {
+            throw new IllegalArgumentException(
+                    "Organization is required"
+            );
+        }
+
+        if (page < 0) {
+            page = 0;
+        }
+
+        if (size <= 0) {
+            size = 20;
+        }
+
         LoanStatus ls = null;
 
         if (status != null && !status.isBlank()) {
 
-            ls =
-                    LoanStatus.valueOf(
-                            status.trim().toUpperCase()
-                    );
+            try {
+
+                ls =
+                        LoanStatus.valueOf(
+                                status.trim().toUpperCase()
+                        );
+
+            } catch (IllegalArgumentException e) {
+
+                throw new IllegalArgumentException(
+                        "Invalid loan status: " + status
+                );
+            }
         }
 
         Loan.LoanType lt = null;
 
         if (type != null && !type.isBlank()) {
 
-            lt =
-                    Loan.LoanType.valueOf(
-                            type.trim().toUpperCase()
-                    );
+            try {
+
+                lt =
+                        Loan.LoanType.valueOf(
+                                type.trim().toUpperCase()
+                        );
+
+            } catch (IllegalArgumentException e) {
+
+                throw new IllegalArgumentException(
+                        "Invalid loan type: " + type
+                );
+            }
         }
 
         return loanRepo.findByFilters(
                 org,
                 ls,
                 lt,
-                PageRequest.of(page, size)
+                PageRequest.of(
+                        page,
+                        size
+                )
         );
     }
 
@@ -1648,8 +1873,24 @@ BigDecimal collateralValue =
             Long orgId
     ) {
 
+        if (loanId == null) {
+
+            throw new IllegalArgumentException(
+                    "Loan ID cannot be null"
+            );
+        }
+
+        if (orgId == null) {
+
+            throw new IllegalArgumentException(
+                    "Organization ID cannot be null"
+            );
+        }
+
         Loan loan =
-                loanRepo.findById(loanId)
+                loanRepo.findById(
+                                loanId
+                        )
                         .orElseThrow(
                                 () -> new RuntimeException(
                                         "Loan not found: "
@@ -1660,7 +1901,6 @@ BigDecimal collateralValue =
         if (
                 loan.getOrganization() == null
                         || loan.getOrganization().getId() == null
-                        || orgId == null
                         || !loan.getOrganization()
                         .getId()
                         .equals(orgId)
@@ -1771,7 +2011,8 @@ BigDecimal collateralValue =
 
         result.put(
                 "readyToDisburse",
-                unverified.isEmpty()
+                missing.isEmpty()
+                        && unverified.isEmpty()
         );
 
         result.put(
@@ -1790,15 +2031,24 @@ BigDecimal collateralValue =
             Organization org
     ) {
 
+        if (org == null || org.getId() == null) {
+
+            throw new IllegalArgumentException(
+                    "Organization is required"
+            );
+        }
+
+        LocalDate today =
+                LocalDate.now();
+
         LocalDate firstOfMonth =
-                LocalDate.now()
-                        .withDayOfMonth(1);
+                today.withDayOfMonth(1);
 
         long overdueCount =
                 paymentRepo
                         .findByOrganization_IdAndPaidFalseAndDueDateBefore(
                                 org.getId(),
-                                LocalDate.now()
+                                today
                         )
                         .size();
 
@@ -1835,12 +2085,17 @@ BigDecimal collateralValue =
         List<Loan> recent =
                 loanRepo.findRecentByOrg(
                         org,
-                        PageRequest.of(0, 8)
+                        PageRequest.of(
+                                0,
+                                8
+                        )
                 );
 
         return DashboardStats.builder()
                 .totalLoans(
-                        loanRepo.countByOrganization(org)
+                        loanRepo.countByOrganization(
+                                org
+                        )
                 )
                 .pendingLoans(
                         loanRepo.countByOrganizationAndStatus(
@@ -1871,23 +2126,35 @@ BigDecimal collateralValue =
                 )
                 .totalDisbursed(
                         Optional.ofNullable(
-                                        loanRepo.sumActivePrincipal(org)
+                                        loanRepo.sumActivePrincipal(
+                                                org
+                                        )
                                 )
-                                .map(this::toDouble)
+                                .map(
+                                        this::toDouble
+                                )
                                 .orElse(0.0)
                 )
                 .totalCollected(
                         Optional.ofNullable(
-                                        loanRepo.sumTotalCollected(org)
+                                        loanRepo.sumTotalCollected(
+                                                org
+                                        )
                                 )
-                                .map(this::toDouble)
+                                .map(
+                                        this::toDouble
+                                )
                                 .orElse(0.0)
                 )
                 .outstandingBalance(
                         Optional.ofNullable(
-                                        loanRepo.sumOutstandingBalance(org)
+                                        loanRepo.sumOutstandingBalance(
+                                                org
+                                        )
                                 )
-                                .map(this::toDouble)
+                                .map(
+                                        this::toDouble
+                                )
                                 .orElse(0.0)
                 )
                 .collectedThisMonth(
@@ -1897,20 +2164,30 @@ BigDecimal collateralValue =
                                                 firstOfMonth
                                         )
                                 )
-                                .map(this::toDouble)
+                                .map(
+                                        this::toDouble
+                                )
                                 .orElse(0.0)
                 )
                 .totalBorrowers(
-                        borrowerRepo.countByOrganization(org)
+                        borrowerRepo.countByOrganization(
+                                org
+                        )
                 )
                 .latePaymentsCount(
                         Optional.ofNullable(
-                                        paymentRepo.countLatePayments(org)
+                                        paymentRepo.countLatePayments(
+                                                org
+                                        )
                                 )
                                 .orElse(0L)
                 )
-                .loanTypeBreakdown(typeBreakdown)
-                .recentLoans(recent)
+                .loanTypeBreakdown(
+                        typeBreakdown
+                )
+                .recentLoans(
+                        recent
+                )
                 .build();
     }
 
@@ -1921,6 +2198,20 @@ BigDecimal collateralValue =
     private void generateRepaymentSchedule(
             Loan loan
     ) {
+
+        if (loan == null) {
+            throw new IllegalArgumentException(
+                    "Loan cannot be null"
+            );
+        }
+
+        if (loan.getOrganization() == null
+                || loan.getOrganization().getId() == null) {
+
+            throw new IllegalArgumentException(
+                    "Loan organization is required"
+            );
+        }
 
         BigDecimal principal =
                 normalizePrincipal(
@@ -1939,10 +2230,16 @@ BigDecimal collateralValue =
                         ? loan.getInterestRateType()
                         : "ANNUAL";
 
+        validateRateType(rateType);
+
         int months =
                 loan.getDurationMonths() != null
                         ? loan.getDurationMonths()
                         : 1;
+
+        if (months <= 0) {
+            months = 1;
+        }
 
         BigDecimal monthlyPayment =
                 calcLoan(
@@ -1965,7 +2262,7 @@ BigDecimal collateralValue =
             monthlyRate =
                     rate.divide(
                             bd("100"),
-                            12,
+                            16,
                             RoundingMode.HALF_UP
                     );
 
@@ -1974,12 +2271,12 @@ BigDecimal collateralValue =
             monthlyRate =
                     rate.divide(
                             bd("100"),
-                            12,
+                            16,
                             RoundingMode.HALF_UP
                     )
                     .divide(
                             bd("12"),
-                            12,
+                            16,
                             RoundingMode.HALF_UP
                     );
         }
@@ -2020,10 +2317,6 @@ BigDecimal collateralValue =
 
             if (i == months) {
 
-                /*
-                 * Final installment clears the exact remaining
-                 * principal after rounding.
-                 */
                 principalComponent =
                         balance;
 
@@ -2050,9 +2343,9 @@ BigDecimal collateralValue =
                         );
 
                 if (
-                        principalComponent
-                                .compareTo(BigDecimal.ZERO)
-                                < 0
+                        principalComponent.compareTo(
+                                BigDecimal.ZERO
+                        ) < 0
                 ) {
 
                     principalComponent =
@@ -2060,8 +2353,9 @@ BigDecimal collateralValue =
                 }
 
                 if (
-                        principalComponent.compareTo(balance)
-                                > 0
+                        principalComponent.compareTo(
+                                balance
+                        ) > 0
                 ) {
 
                     principalComponent =
@@ -2137,9 +2431,13 @@ BigDecimal collateralValue =
                     );
         }
 
-        loan.setAmount(principal);
+        loan.setAmount(
+                principal
+        );
 
-        loan.setOutstandingBalance(principal);
+        loan.setOutstandingBalance(
+                principal
+        );
 
         loan.setNextDueDate(
                 holidayService.adjustToBusinessDay(
@@ -2162,8 +2460,16 @@ BigDecimal collateralValue =
 
         try {
 
+            if (loan == null) {
+                return;
+            }
+
             RiskScoringService.RiskResult risk =
                     riskService.score(loan);
+
+            if (risk == null) {
+                return;
+            }
 
             loan.setRiskScore(
                     risk.getScore()
@@ -2194,6 +2500,10 @@ BigDecimal collateralValue =
             String rateType
     ) {
 
+        if (base == null) {
+            base = bd("15.0");
+        }
+
         if (
                 "MONTHLY"
                         .equalsIgnoreCase(rateType)
@@ -2202,41 +2512,55 @@ BigDecimal collateralValue =
             if (creditScore >= 750) {
 
                 return base
-                        .subtract(bd("2.0"))
-                        .max(bd("6.0"));
+                        .subtract(
+                                bd("2.0")
+                        )
+                        .max(
+                                bd("6.0")
+                        );
             }
 
             if (creditScore >= 650) {
-
                 return base;
             }
 
             return base
-                    .add(bd("2.0"))
-                    .min(bd("10.0"));
+                    .add(
+                            bd("2.0")
+                    )
+                    .min(
+                            bd("10.0")
+                    );
         }
 
         if (creditScore >= 800) {
 
-            return base.subtract(bd("2.0"));
+            return base.subtract(
+                    bd("2.0")
+            );
         }
 
         if (creditScore >= 750) {
 
-            return base.subtract(bd("1.0"));
+            return base.subtract(
+                    bd("1.0")
+            );
         }
 
         if (creditScore >= 700) {
-
             return base;
         }
 
         if (creditScore >= 650) {
 
-            return base.add(bd("1.0"));
+            return base.add(
+                    bd("1.0")
+            );
         }
 
-        return base.add(bd("3.0"));
+        return base.add(
+                bd("3.0")
+        );
     }
 
     // ================================================================
@@ -2251,7 +2575,9 @@ BigDecimal collateralValue =
     ) {
 
         principal =
-                normalizePrincipal(principal);
+                normalizePrincipal(
+                        principal
+                );
 
         if (months <= 0) {
 
@@ -2262,6 +2588,17 @@ BigDecimal collateralValue =
 
         if (rate == null) {
             rate = BigDecimal.ZERO;
+        }
+
+        if (
+                rate.compareTo(
+                        BigDecimal.ZERO
+                ) < 0
+        ) {
+
+            throw new IllegalArgumentException(
+                    "Interest rate cannot be negative"
+            );
         }
 
         BigDecimal monthlyRate;
@@ -2302,7 +2639,9 @@ BigDecimal collateralValue =
             BigDecimal monthly =
                     money(
                             principal.divide(
-                                    BigDecimal.valueOf(months),
+                                    BigDecimal.valueOf(
+                                            months
+                                    ),
                                     16,
                                     RoundingMode.HALF_UP
                             )
@@ -2312,17 +2651,14 @@ BigDecimal collateralValue =
                     monthly,
                     money(
                             monthly.multiply(
-                                    BigDecimal.valueOf(months)
+                                    BigDecimal.valueOf(
+                                            months
+                                    )
                             )
                     )
             };
         }
 
-        /*
-         * BigDecimal is used throughout the financial calculation.
-         * Math.pow is used only for the exponent because the term
-         * is an integer number of monthly periods.
-         */
         double monthlyRateDouble =
                 monthlyRate.doubleValue();
 
@@ -2332,6 +2668,20 @@ BigDecimal collateralValue =
                         months
                 );
 
+        if (
+                Double.isInfinite(
+                        factorDouble
+                )
+                        || Double.isNaN(
+                        factorDouble
+                )
+        ) {
+
+            throw new IllegalArgumentException(
+                    "Unable to calculate loan repayment schedule"
+            );
+        }
+
         BigDecimal factor =
                 BigDecimal.valueOf(
                         factorDouble
@@ -2339,13 +2689,28 @@ BigDecimal collateralValue =
 
         BigDecimal numerator =
                 principal
-                        .multiply(monthlyRate)
-                        .multiply(factor);
+                        .multiply(
+                                monthlyRate
+                        )
+                        .multiply(
+                                factor
+                        );
 
         BigDecimal denominator =
                 factor.subtract(
                         BigDecimal.ONE
                 );
+
+        if (
+                denominator.compareTo(
+                        BigDecimal.ZERO
+                ) == 0
+        ) {
+
+            throw new IllegalArgumentException(
+                    "Invalid interest calculation"
+            );
+        }
 
         BigDecimal monthly =
                 money(
@@ -2359,7 +2724,9 @@ BigDecimal collateralValue =
         BigDecimal total =
                 money(
                         monthly.multiply(
-                                BigDecimal.valueOf(months)
+                                BigDecimal.valueOf(
+                                        months
+                                )
                         )
                 );
 
@@ -2377,7 +2744,9 @@ BigDecimal collateralValue =
             String value
     ) {
 
-        return new BigDecimal(value);
+        return new BigDecimal(
+                value
+        );
     }
 
     private static BigDecimal bd(
@@ -2390,11 +2759,14 @@ BigDecimal collateralValue =
         ) {
 
             throw new IllegalArgumentException(
-                    "Invalid numeric value: " + value
+                    "Invalid numeric value: "
+                            + value
             );
         }
 
-        return BigDecimal.valueOf(value);
+        return BigDecimal.valueOf(
+                value
+        );
     }
 
     private BigDecimal toBigDecimal(
@@ -2410,6 +2782,7 @@ BigDecimal collateralValue =
         }
 
         if (value instanceof Number number) {
+
             return BigDecimal.valueOf(
                     number.doubleValue()
             );
@@ -2449,6 +2822,7 @@ BigDecimal collateralValue =
     ) {
 
         if (value == null) {
+
             return BigDecimal.ZERO.setScale(
                     2,
                     RoundingMode.HALF_UP
@@ -2494,7 +2868,9 @@ BigDecimal collateralValue =
             Object value
     ) {
 
-        return moneyValue(value).doubleValue();
+        return moneyValue(
+                value
+        ).doubleValue();
     }
 
     private void validateRateType(
@@ -2502,8 +2878,12 @@ BigDecimal collateralValue =
     ) {
 
         if (
-                !"ANNUAL".equalsIgnoreCase(rateType)
-                        && !"MONTHLY".equalsIgnoreCase(rateType)
+                !"ANNUAL".equalsIgnoreCase(
+                        rateType
+                )
+                        && !"MONTHLY".equalsIgnoreCase(
+                        rateType
+                )
         ) {
 
             throw new IllegalArgumentException(
@@ -2539,13 +2919,13 @@ BigDecimal collateralValue =
         String timestamp =
                 LocalDateTime.now()
                         .format(
-                                java.time.format.DateTimeFormatter
-                                        .ofPattern(
-                                                "yyyyMMddHHmmssSSS"
-                                        )
+                                DateTimeFormatter.ofPattern(
+                                        "yyyyMMddHHmmssSSS"
+                                )
                         );
 
-        return prefix + timestamp;
+        return prefix
+                + timestamp;
     }
 
     private String generatePayRef(
