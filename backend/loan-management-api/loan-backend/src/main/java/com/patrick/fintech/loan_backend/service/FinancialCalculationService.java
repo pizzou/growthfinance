@@ -6,14 +6,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-/**
- * Single source of truth for monetary calculations used by loan servicing.
- *
- * All money is rounded to two decimal places only at monetary boundaries.
- * Rates retain higher precision so daily accrual does not lose value through
- * premature rounding. No financial calculation in this service uses double
- * arithmetic.
- */
+
 @Service
 public class FinancialCalculationService {
 
