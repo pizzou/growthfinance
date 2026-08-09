@@ -276,49 +276,42 @@ public class LoanController {
     }
 
 
-    // ================================================================
-    // APPROVE LOAN
-    // ================================================================
+   
+@PostMapping("/{id}/approve")
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+public ResponseEntity<ApiResponse<Loan>> approveLoan(
+        @PathVariable Long id,
+        @RequestBody(required = false)
+        Map<String, String> body
+) {
 
-    /**
-     * Records the next maker-checker approval step.
-     *
-     * IMPORTANT:
-     *
-     * Loan officers create applications but do not approve their
-     * own applications.
-     *
-     * The LoanApprovalService performs the final role, tenant,
-     * maker-checker and duplicate-approver checks.
-     */
-    @PostMapping("/{id}/approve")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    public ResponseEntity<ApiResponse<Loan>> approveLoan(
-            @PathVariable Long id,
+    User user =
+            currentUserUtil.getCurrentUser();
 
-            @RequestBody(required = false)
-            Map<String, String> body
-    ) {
+    String notes =
+            body != null
+                    ? firstNonBlank(
+                    body.get("notes"),
+                    body.get("comments")
+            )
+                    : null;
 
-        User user =
-                currentUserUtil.getCurrentUser();
+    Double newInterestRate =
+            null;
 
-        String notes =
-                body != null
-                        ? body.get("notes")
-                        : null;
+    if (body != null) {
 
-        Double newInterestRate = null;
+        String rawRate =
+                body.get("interestRate");
 
-        if (body != null
-                && body.get("interestRate") != null
-                && !body.get("interestRate").isBlank()) {
+        if (rawRate != null
+                && !rawRate.isBlank()) {
 
             try {
 
                 newInterestRate =
                         Double.valueOf(
-                                body.get("interestRate")
+                                rawRate.trim()
                         );
 
             } catch (NumberFormatException e) {
@@ -327,86 +320,99 @@ public class LoanController {
                         "interestRate must be a valid number."
                 );
             }
-
-            if (newInterestRate < 0) {
-
-                throw new IllegalArgumentException(
-                        "interestRate cannot be negative."
-                );
-            }
         }
-
-        loanApprovalService.decide(
-                id,
-                user,
-                "APPROVED",
-                notes,
-                newInterestRate
-        );
-
-        Loan updatedLoan =
-                loanService.getLoanForOrg(
-                        id,
-                        user.getOrganization().getId()
-                );
-
-        return ResponseEntity.ok(
-                ApiResponse.ok(
-                        "Approval decision recorded",
-                        updatedLoan
-                )
-        );
     }
 
+    loanApprovalService.decide(
+            id,
+            user,
+            "APPROVED",
+            notes,
+            newInterestRate
+    );
 
-    // ================================================================
-    // REJECT LOAN
-    // ================================================================
+    Loan loan =
+            loanService.getLoanForOrg(
+                    id,
+                    user.getOrganization().getId()
+            );
 
-    @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    public ResponseEntity<ApiResponse<Loan>> rejectLoan(
-            @PathVariable Long id,
+    return ResponseEntity.ok(
+            ApiResponse.ok(
+                    "Loan approval decision recorded",
+                    loan
+            )
+    );
+}
 
-            @RequestBody(required = false)
-            Map<String, String> body
-    ) {
+private String firstNonBlank(
+        String... values
+) {
 
-        User user =
-                currentUserUtil.getCurrentUser();
-
-        String reason =
-                body != null
-                        && body.get("reason") != null
-                        && !body.get("reason").isBlank()
-                        ? body.get("reason").trim()
-                        : "No reason provided";
-
-        loanApprovalService.decide(
-                id,
-                user,
-                "REJECTED",
-                reason
-        );
-
-        Loan updatedLoan =
-                loanService.getLoanForOrg(
-                        id,
-                        user.getOrganization().getId()
-                );
-
-        return ResponseEntity.ok(
-                ApiResponse.ok(
-                        "Rejection decision recorded",
-                        updatedLoan
-                )
-        );
+    if (values == null) {
+        return null;
     }
 
+    for (String value : values) {
 
-    // ================================================================
-    // DISBURSE
-    // ================================================================
+        if (value != null
+                && !value.isBlank()) {
+
+            return value.trim();
+        }
+    }
+
+    return null;
+}
+
+
+
+@PostMapping("/{id}/reject")
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+public ResponseEntity<ApiResponse<Loan>> rejectLoan(
+        @PathVariable Long id,
+        @RequestBody(required = false)
+        Map<String, String> body
+) {
+
+    User user =
+            currentUserUtil.getCurrentUser();
+
+    String reason =
+            body != null
+                    ? firstNonBlank(
+                    body.get("reason"),
+                    body.get("comments"),
+                    body.get("notes")
+            )
+                    : null;
+
+    if (reason == null) {
+        reason = "Rejected by authorized approver.";
+    }
+
+    loanApprovalService.decide(
+            id,
+            user,
+            "REJECTED",
+            reason
+    );
+
+    Loan loan =
+            loanService.getLoanForOrg(
+                    id,
+                    user.getOrganization().getId()
+            );
+
+    return ResponseEntity.ok(
+            ApiResponse.ok(
+                    "Loan rejection decision recorded",
+                    loan
+            )
+    );
+}
+
+
 
     @PostMapping("/{id}/disburse")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
