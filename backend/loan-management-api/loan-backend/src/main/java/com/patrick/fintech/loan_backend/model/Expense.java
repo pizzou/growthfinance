@@ -1,13 +1,14 @@
+
 package com.patrick.fintech.loan_backend.model;
 
-import java.math.BigDecimal;
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -16,12 +17,38 @@ import java.time.LocalDateTime;
 @Table(
     name = "expenses",
     indexes = {
-        @Index(name = "idx_expenses_org", columnList = "organization_id"),
-        @Index(name = "idx_expenses_date", columnList = "expense_date"),
-        @Index(name = "idx_expenses_category", columnList = "category"),
-        @Index(name = "idx_expenses_branch", columnList = "branch_id"),
-        @Index(name = "idx_expenses_payment_method", columnList = "payment_method"),
-        @Index(name = "idx_expenses_payment_reference", columnList = "payment_transaction_reference")
+        @Index(
+            name = "idx_expenses_org",
+            columnList = "organization_id"
+        ),
+        @Index(
+            name = "idx_expenses_date",
+            columnList = "expense_date"
+        ),
+        @Index(
+            name = "idx_expenses_category",
+            columnList = "category"
+        ),
+        @Index(
+            name = "idx_expenses_branch",
+            columnList = "branch_id"
+        ),
+        @Index(
+            name = "idx_expenses_payment_method",
+            columnList = "payment_method"
+        ),
+        @Index(
+            name = "idx_expenses_payment_reference",
+            columnList = "payment_transaction_reference"
+        ),
+        @Index(
+            name = "idx_expenses_payment_account",
+            columnList = "payment_account_id"
+        ),
+        @Index(
+            name = "idx_expenses_journal_entry",
+            columnList = "journal_entry_id"
+        )
     }
 )
 @Data
@@ -29,6 +56,10 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 public class Expense {
+
+    // ============================================================
+    // ID
+    // ============================================================
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,9 +71,11 @@ public class Expense {
 
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "organization_id", nullable = false)
+    @JoinColumn(
+        name = "organization_id",
+        nullable = false
+    )
     private Organization organization;
-
 
     // ============================================================
     // BRANCH
@@ -51,104 +84,179 @@ public class Expense {
     /**
      * Branch that incurred the expense.
      *
-     * Null means Head Office / organization-wide expense.
+     * Null means the expense is organization-wide /
+     * Head Office.
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "branch_id")
-    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    @JsonIgnoreProperties({
+        "hibernateLazyInitializer",
+        "handler"
+    })
     private Branch branch;
 
-
+    // ============================================================
+    // PAYMENT ACCOUNT
+    // ============================================================
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "payment_account_id", nullable = false)
-    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    @JoinColumn(
+        name = "payment_account_id",
+        nullable = false
+    )
+    @JsonIgnoreProperties({
+        "hibernateLazyInitializer",
+        "handler"
+    })
     private BankAccount paymentAccount;
 
-    @Column(name = "expense_date", nullable = false)
+    // ============================================================
+    // EXPENSE DETAILS
+    // ============================================================
+
+    @Column(
+        name = "expense_date",
+        nullable = false
+    )
     private LocalDate expenseDate;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
+    @Column(
+        name = "category",
+        nullable = false,
+        length = 50
+    )
     private ExpenseCategory category;
 
-   
-    @Column(nullable = false, precision = 19, scale = 6)
+    /**
+     * Financial amount.
+     *
+     * PostgreSQL:
+     * NUMERIC(19,6)
+     *
+     * Never use Double for financial calculations.
+     */
+    @Column(
+        name = "amount",
+        nullable = false,
+        precision = 19,
+        scale = 6
+    )
     @JsonProperty("amount")
     private BigDecimal amount;
 
     @Builder.Default
-    @Column(length = 3)
+    @Column(
+        name = "currency",
+        nullable = false,
+        length = 3
+    )
     private String currency = "RWF";
 
-    @Column(columnDefinition = "TEXT")
+    @Column(
+        name = "description",
+        columnDefinition = "TEXT"
+    )
     private String description;
 
+    // ============================================================
+    // PAYMENT INFORMATION
+    // ============================================================
 
-   
     @Enumerated(EnumType.STRING)
-    @Column(name = "payment_method", nullable = false, length = 30)
+    @Column(
+        name = "payment_method",
+        nullable = false,
+        length = 30
+    )
     @Builder.Default
-    private PaymentMethod paymentMethod = PaymentMethod.CASH;
+    private PaymentMethod paymentMethod =
+        PaymentMethod.CASH;
 
-
-    @Column(name = "payment_provider", length = 100)
+    @Column(
+        name = "payment_provider",
+        length = 100
+    )
     private String paymentProvider;
 
-
-    @Column(name = "payment_phone_number", length = 30)
+    @Column(
+        name = "payment_phone_number",
+        length = 30
+    )
     private String paymentPhoneNumber;
 
-
-    @Column(name = "payment_transaction_reference", length = 150)
+    @Column(
+        name = "payment_transaction_reference",
+        length = 150
+    )
     private String paymentTransactionReference;
 
-
-   
-    @Column(name = "payment_code", length = 100)
+    @Column(
+        name = "payment_code",
+        length = 100
+    )
     private String paymentCode;
 
-
-    @Column(name = "card_brand", length = 30)
+    @Column(
+        name = "card_brand",
+        length = 30
+    )
     private String cardBrand;
 
-
-   
-    @Column(name = "card_last_four", length = 4)
+    @Column(
+        name = "card_last_four",
+        length = 4
+    )
     private String cardLastFour;
 
-
-   
-    @Column(name = "card_authorization_code", length = 100)
+    @Column(
+        name = "card_authorization_code",
+        length = 100
+    )
     private String cardAuthorizationCode;
 
-
-    @Column(name = "cheque_number", length = 100)
+    @Column(
+        name = "cheque_number",
+        length = 100
+    )
     private String chequeNumber;
 
-
-    
-    @Column(name = "payment_notes", columnDefinition = "TEXT")
+    @Column(
+        name = "payment_notes",
+        columnDefinition = "TEXT"
+    )
     private String paymentNotes;
-
 
     // ============================================================
     // RECEIPT
     // ============================================================
 
-    @Column(name = "receipt_file_name")
+    @Column(
+        name = "receipt_file_name",
+        length = 255
+    )
     private String receiptFileName;
 
-    @Column(name = "receipt_file_type")
+    @Column(
+        name = "receipt_file_type",
+        length = 100
+    )
     private String receiptFileType;
 
     @Column(name = "receipt_file_size")
     private Long receiptFileSize;
 
+    /**
+     * Receipt binary data.
+     *
+     * JSON serialization is disabled.
+     */
     @JsonIgnore
-    @Column(name = "receipt_data", columnDefinition = "bytea")
+    @Column(
+        name = "receipt_data",
+        columnDefinition = "bytea"
+    )
     private byte[] receiptData;
-
 
     // ============================================================
     // STATUS
@@ -156,37 +264,49 @@ public class Expense {
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
-    @Column(nullable = false, length = 20)
+    @Column(
+        name = "status",
+        nullable = false,
+        length = 20
+    )
     private Status status = Status.POSTED;
-
 
     // ============================================================
     // ACCOUNTING
     // ============================================================
 
     /**
-     * Journal entry created when this expense was posted.
+     * General-ledger journal entry created when the
+     * expense is posted.
      */
     @Column(name = "journal_entry_id")
     private Long journalEntryId;
-
 
     // ============================================================
     // AUDIT
     // ============================================================
 
-    @Column(name = "created_by_name")
+    @Column(
+        name = "created_by_name",
+        length = 255
+    )
     private String createdByName;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(
+        name = "created_at",
+        nullable = false,
+        updatable = false
+    )
     private LocalDateTime createdAt;
 
-    @Column(name = "void_reason", columnDefinition = "TEXT")
+    @Column(
+        name = "void_reason",
+        columnDefinition = "TEXT"
+    )
     private String voidReason;
 
     @Column(name = "voided_at")
     private LocalDateTime voidedAt;
-
 
     // ============================================================
     // PRE-PERSIST
@@ -203,35 +323,59 @@ public class Expense {
             status = Status.POSTED;
         }
 
-        if (currency == null || currency.isBlank()) {
+        if (currency == null ||
+            currency.isBlank()) {
+
             currency = "RWF";
         }
 
         if (paymentMethod == null) {
             paymentMethod = PaymentMethod.CASH;
         }
+
+        normalizeAmount();
     }
 
+    // ============================================================
+    // PRE-UPDATE
+    // ============================================================
+
+    @PreUpdate
+    protected void onUpdate() {
+        normalizeAmount();
+    }
+
+    private void normalizeAmount() {
+
+        if (amount != null) {
+
+            amount = amount.setScale(
+                6,
+                RoundingMode.HALF_UP
+            );
+        }
+    }
 
     // ============================================================
     // RECEIPT HELPER
     // ============================================================
 
+    @JsonIgnore
     public boolean hasReceipt() {
+
         return receiptData != null &&
                receiptData.length > 0;
     }
-
 
     // ============================================================
     // STATUS
     // ============================================================
 
     public enum Status {
+
         POSTED,
         VOID
     }
-
 
     // ============================================================
     // PAYMENT METHOD
@@ -239,42 +383,20 @@ public class Expense {
 
     public enum PaymentMethod {
 
-        /**
-         * Physical cash.
-         */
         CASH,
 
-        /**
-         * Bank transfer.
-         */
         BANK_TRANSFER,
 
-        /**
-         * Mobile money transaction.
-         */
         MOBILE_MONEY,
 
-        /**
-         * MoMo Pay / merchant payment.
-         */
         MOMO_PAY,
 
-        /**
-         * Debit or credit card.
-         */
         CARD,
 
-        /**
-         * Cheque.
-         */
         CHEQUE,
 
-        /**
-         * Other payment method.
-         */
         OTHER
     }
-
 
     // ============================================================
     // EXPENSE CATEGORIES
@@ -365,7 +487,6 @@ public class Expense {
         private final String label;
         private final String accountCode;
 
-
         ExpenseCategory(
             String label,
             String accountCode
@@ -374,54 +495,12 @@ public class Expense {
             this.accountCode = accountCode;
         }
 
-
         public String getLabel() {
             return label;
         }
-
 
         public String getAccountCode() {
             return accountCode;
         }
     }
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getAmountDecimal().
-     */
-    @Deprecated
-    @JsonIgnore
-    public Double getAmount() {
-        return amount == null ? null : amount.doubleValue();
-    }
-
-    @JsonIgnore
-    public BigDecimal getAmountDecimal() {
-        return amount;
-    }
-
-    @Deprecated
-    public void setAmount(Double value) {
-        this.amount = value == null ? null : BigDecimal.valueOf(value);
-    }
-
-    public void setAmount(BigDecimal value) {
-        this.amount = value;
-    }
-
-    /** Backward-compatible builder overloads for legacy Double callers.
-     *  Financial state is stored as BigDecimal.
-     */
-    public static class ExpenseBuilder {
-        private BigDecimal amount;
-
-
-        public ExpenseBuilder amount(Double value) {
-            this.amount = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }        public ExpenseBuilder amount(BigDecimal value) {
-            this.amount = value;
-            return this;
-        }
-    }
-
 }

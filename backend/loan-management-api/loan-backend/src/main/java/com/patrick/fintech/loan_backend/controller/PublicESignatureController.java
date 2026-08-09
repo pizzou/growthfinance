@@ -12,11 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Public, token-secured borrower signing flow — no login required, matching
- * how borrowers actually receive and act on a signing link via SMS.
- * The token itself is the credential; OTP adds a second factor.
- */
+
 @RestController
 @RequestMapping("/api/public/esignature")
 @RequiredArgsConstructor

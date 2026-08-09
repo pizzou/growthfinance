@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.controller;
 
 import com.patrick.fintech.loan_backend.dto.ApiResponse;
@@ -18,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
 
@@ -31,7 +31,6 @@ public class ExpenseController {
     private final OrganizationRepository orgRepo;
     private final CurrentUserUtil currentUserUtil;
     private final AuditService auditService;
-
 
     // ============================================================
     // CREATE EXPENSE
@@ -49,7 +48,7 @@ public class ExpenseController {
             String category,
 
             @RequestParam("amount")
-            Double amount,
+            BigDecimal amount,
 
             @RequestParam("paymentAccountId")
             Long paymentAccountId,
@@ -134,22 +133,59 @@ public class ExpenseController {
 
     ) throws Exception {
 
-
         // ========================================================
         // ORGANIZATION
         // ========================================================
 
-        Organization org =
-                orgRepo.findById(
-                        currentUserUtil
-                                .getCurrentOrganizationId()
-                )
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Organization not found"
-                        )
-                );
+        Long organizationId =
+                currentUserUtil.getCurrentOrganizationId();
 
+        if (organizationId == null) {
+            throw new IllegalStateException(
+                    "Current organization could not be determined"
+            );
+        }
+
+        Organization org =
+                orgRepo.findById(organizationId)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Organization not found"
+                                )
+                        );
+
+        // ========================================================
+        // BASIC REQUEST VALIDATION
+        // ========================================================
+
+        if (expenseDate == null || expenseDate.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Expense date is required"
+            );
+        }
+
+        LocalDate parsedExpenseDate;
+
+        try {
+            parsedExpenseDate =
+                    LocalDate.parse(expenseDate.trim());
+        } catch (Exception ex) {
+            throw new IllegalArgumentException(
+                    "Invalid expense date. Expected format: yyyy-MM-dd"
+            );
+        }
+
+        if (amount == null) {
+            throw new IllegalArgumentException(
+                    "Expense amount is required"
+            );
+        }
+
+        if (amount.signum() <= 0) {
+            throw new IllegalArgumentException(
+                    "Expense amount must be greater than zero"
+            );
+        }
 
         // ========================================================
         // PAYMENT METHOD
@@ -178,10 +214,15 @@ public class ExpenseController {
             }
         }
 
-
         // ========================================================
         // CATEGORY
         // ========================================================
+
+        if (category == null || category.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Expense category is required"
+            );
+        }
 
         Expense.ExpenseCategory expenseCategory;
 
@@ -202,9 +243,23 @@ public class ExpenseController {
             );
         }
 
+        // ========================================================
+        // CURRENT USER
+        // ========================================================
+
+        if (currentUserUtil.getCurrentUser() == null) {
+            throw new IllegalStateException(
+                    "Authenticated user could not be determined"
+            );
+        }
+
+        String createdByName =
+                currentUserUtil
+                        .getCurrentUser()
+                        .getName();
 
         // ========================================================
-        // CREATE
+        // CREATE EXPENSE
         // ========================================================
 
         Expense created =
@@ -212,9 +267,7 @@ public class ExpenseController {
 
                         org,
 
-                        LocalDate.parse(
-                                expenseDate
-                        ),
+                        parsedExpenseDate,
 
                         expenseCategory,
 
@@ -226,9 +279,7 @@ public class ExpenseController {
 
                         description,
 
-                        currentUserUtil
-                                .getCurrentUser()
-                                .getName(),
+                        createdByName,
 
                         method,
 
@@ -253,7 +304,6 @@ public class ExpenseController {
                         receipt
                 );
 
-
         // ========================================================
         // AUDIT
         // ========================================================
@@ -275,6 +325,9 @@ public class ExpenseController {
                 "Accounting"
         );
 
+        // ========================================================
+        // RESPONSE
+        // ========================================================
 
         return ResponseEntity.ok(
                 ApiResponse.ok(
@@ -283,7 +336,6 @@ public class ExpenseController {
                 )
         );
     }
-
 
     // ============================================================
     // LIST EXPENSES
@@ -328,6 +380,15 @@ public class ExpenseController {
                 currentUserUtil
                         .getCurrentOrganizationId();
 
+        if (orgId == null) {
+            throw new IllegalStateException(
+                    "Current organization could not be determined"
+            );
+        }
+
+        // ========================================================
+        // PAGINATION SAFETY
+        // ========================================================
 
         if (page < 0) {
             page = 0;
@@ -341,9 +402,11 @@ public class ExpenseController {
             size = 100;
         }
 
+        // ========================================================
+        // CATEGORY
+        // ========================================================
 
-        Expense.ExpenseCategory cat =
-                null;
+        Expense.ExpenseCategory cat = null;
 
         if (category != null
                 && !category.isBlank()) {
@@ -366,20 +429,68 @@ public class ExpenseController {
             }
         }
 
+        // ========================================================
+        // FROM DATE
+        // ========================================================
 
-        LocalDate fromDate =
-                from != null
-                        && !from.isBlank()
-                        ? LocalDate.parse(from)
-                        : null;
+        LocalDate fromDate = null;
 
+        if (from != null && !from.isBlank()) {
 
-        LocalDate toDate =
-                to != null
-                        && !to.isBlank()
-                        ? LocalDate.parse(to)
-                        : null;
+            try {
 
+                fromDate =
+                        LocalDate.parse(
+                                from.trim()
+                        );
+
+            } catch (Exception ex) {
+
+                throw new IllegalArgumentException(
+                        "Invalid from date. Expected format: yyyy-MM-dd"
+                );
+            }
+        }
+
+        // ========================================================
+        // TO DATE
+        // ========================================================
+
+        LocalDate toDate = null;
+
+        if (to != null && !to.isBlank()) {
+
+            try {
+
+                toDate =
+                        LocalDate.parse(
+                                to.trim()
+                        );
+
+            } catch (Exception ex) {
+
+                throw new IllegalArgumentException(
+                        "Invalid to date. Expected format: yyyy-MM-dd"
+                );
+            }
+        }
+
+        // ========================================================
+        // DATE RANGE VALIDATION
+        // ========================================================
+
+        if (fromDate != null
+                && toDate != null
+                && fromDate.isAfter(toDate)) {
+
+            throw new IllegalArgumentException(
+                    "From date cannot be after to date"
+            );
+        }
+
+        // ========================================================
+        // FETCH
+        // ========================================================
 
         Page<Expense> expenses =
                 expenseService.list(
@@ -394,14 +505,12 @@ public class ExpenseController {
                         )
                 );
 
-
         return ResponseEntity.ok(
                 ApiResponse.ok(
                         expenses
                 )
         );
     }
-
 
     // ============================================================
     // EXPENSE SUMMARY
@@ -426,21 +535,48 @@ public class ExpenseController {
                 currentUserUtil
                         .getCurrentOrganizationId();
 
+        if (orgId == null) {
+            throw new IllegalStateException(
+                    "Current organization could not be determined"
+            );
+        }
 
-        LocalDate fromDate =
-                from != null
-                        && !from.isBlank()
-                        ? LocalDate.parse(from)
-                        : LocalDate.now()
-                                .withDayOfMonth(1);
+        LocalDate fromDate = null;
+        LocalDate toDate = null;
 
+        if (from != null && !from.isBlank()) {
 
-        LocalDate toDate =
-                to != null
-                        && !to.isBlank()
-                        ? LocalDate.parse(to)
-                        : LocalDate.now();
+            try {
 
+                fromDate =
+                        LocalDate.parse(
+                                from.trim()
+                        );
+
+            } catch (Exception ex) {
+
+                throw new IllegalArgumentException(
+                        "Invalid from date. Expected format: yyyy-MM-dd"
+                );
+            }
+        }
+
+        if (to != null && !to.isBlank()) {
+
+            try {
+
+                toDate =
+                        LocalDate.parse(
+                                to.trim()
+                        );
+
+            } catch (Exception ex) {
+
+                throw new IllegalArgumentException(
+                        "Invalid to date. Expected format: yyyy-MM-dd"
+                );
+            }
+        }
 
         return ResponseEntity.ok(
                 ApiResponse.ok(
@@ -452,7 +588,6 @@ public class ExpenseController {
                 )
         );
     }
-
 
     // ============================================================
     // GET SINGLE EXPENSE
@@ -467,6 +602,11 @@ public class ExpenseController {
                 currentUserUtil
                         .getCurrentOrganizationId();
 
+        if (orgId == null) {
+            throw new IllegalStateException(
+                    "Current organization could not be determined"
+            );
+        }
 
         Expense expense =
                 expenseService.getForOrg(
@@ -474,14 +614,12 @@ public class ExpenseController {
                         orgId
                 );
 
-
         return ResponseEntity.ok(
                 ApiResponse.ok(
                         expense
                 )
         );
     }
-
 
     // ============================================================
     // VOID EXPENSE
@@ -506,12 +644,16 @@ public class ExpenseController {
                 currentUserUtil
                         .getCurrentOrganizationId();
 
+        if (orgId == null) {
+            throw new IllegalStateException(
+                    "Current organization could not be determined"
+            );
+        }
 
         String reason =
                 body != null
                         ? body.get("reason")
                         : null;
-
 
         Expense voided =
                 expenseService.voidExpense(
@@ -522,7 +664,6 @@ public class ExpenseController {
                                 .getName(),
                         reason
                 );
-
 
         auditService.log(
                 voided.getOrganization(),
@@ -543,7 +684,6 @@ public class ExpenseController {
                 "Accounting"
         );
 
-
         return ResponseEntity.ok(
                 ApiResponse.ok(
                         "Expense voided",
@@ -551,7 +691,6 @@ public class ExpenseController {
                 )
         );
     }
-
 
     // ============================================================
     // GET RECEIPT
@@ -566,6 +705,11 @@ public class ExpenseController {
                 currentUserUtil
                         .getCurrentOrganizationId();
 
+        if (orgId == null) {
+            throw new IllegalStateException(
+                    "Current organization could not be determined"
+            );
+        }
 
         Expense expense =
                 expenseService.getForOrg(
@@ -573,41 +717,66 @@ public class ExpenseController {
                         orgId
                 );
 
-
         if (!expense.hasReceipt()) {
 
-            throw new RuntimeException(
+            throw new IllegalArgumentException(
                     "No receipt attached to this expense"
             );
         }
 
-
         String contentType =
                 expense.getReceiptFileType() != null
                         ? expense.getReceiptFileType()
-                        : "application/octet-stream";
-
+                        : MediaType.APPLICATION_OCTET_STREAM_VALUE;
 
         String fileName =
                 expense.getReceiptFileName() != null
                         ? expense.getReceiptFileName()
                         : "receipt";
 
+        MediaType mediaType;
+
+        try {
+
+            mediaType =
+                    MediaType.parseMediaType(
+                            contentType
+                    );
+
+        } catch (Exception ex) {
+
+            mediaType =
+                    MediaType.APPLICATION_OCTET_STREAM;
+        }
 
         return ResponseEntity.ok()
-                .contentType(
-                        MediaType.parseMediaType(
-                                contentType
-                        )
-                )
+                .contentType(mediaType)
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
-                        "inline; filename=\""
-                                + fileName
-                                + "\""
+                        "inline; filename=\"" +
+                                sanitizeFileName(fileName) +
+                                "\""
                 )
                 .body(
                         expense.getReceiptData()
                 );
+    }
+
+    // ============================================================
+    // FILE NAME SANITIZATION
+    // ============================================================
+
+    private String sanitizeFileName(String fileName) {
+
+        if (fileName == null || fileName.isBlank()) {
+            return "receipt";
+        }
+
+        return fileName
+                .replace("\\", "_")
+                .replace("/", "_")
+                .replace("\"", "_")
+                .replace("\r", "_")
+                .replace("\n", "_");
     }
 }
