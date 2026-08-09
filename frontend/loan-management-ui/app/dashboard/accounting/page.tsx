@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   accountingApi,
   bankAccountApi,
@@ -12,7 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 /* =========================================================
    TYPES
-   ========================================================= */
+========================================================= */
 
 interface Account {
   id: number;
@@ -112,6 +112,7 @@ interface BankAccountRow {
   accountNumber?: string;
   branchName?: string;
   glAccountCode: string;
+  glAccountId?: number;
   active: boolean;
   balance: number;
 }
@@ -121,9 +122,11 @@ interface BranchRow {
   name: string;
 }
 
+type BankTransactionType = 'DEPOSIT' | 'WITHDRAWAL';
+
 /* =========================================================
    CONSTANTS
-   ========================================================= */
+========================================================= */
 
 const TYPE_COLORS: Record<string, string> = {
   ASSET: 'bg-blue-50 text-blue-700',
@@ -144,11 +147,11 @@ const TABS = [
   'Branches',
 ] as const;
 
-type Tab = typeof TABS[number];
+type Tab = (typeof TABS)[number];
 
 /* =========================================================
    MAIN ACCOUNTING PAGE
-   ========================================================= */
+========================================================= */
 
 export default function AccountingPage() {
   const { currency } = useAuth();
@@ -175,9 +178,18 @@ export default function AccountingPage() {
   const [showBankAccountForm, setShowBankAccountForm] =
     useState(false);
 
+  const [showTransactionForm, setShowTransactionForm] =
+    useState(false);
+
+  const [showTransferForm, setShowTransferForm] =
+    useState(false);
+
+  const [selectedBankAccount, setSelectedBankAccount] =
+    useState<BankAccountRow | null>(null);
+
   /* =======================================================
      LOAD ACCOUNTING DATA
-     ======================================================= */
+  ======================================================= */
 
   const loadAll = async () => {
     setLoading(true);
@@ -209,18 +221,28 @@ export default function AccountingPage() {
       setAccounts(accountsResponse as Account[]);
       setJournal(journalResponse as JournalEntryRow[]);
       setTrial(trialResponse as TrialBalance | null);
+
       setBalanceSheet(
         balanceSheetResponse as BalanceSheet | null
       );
+
       setPnl(pnlResponse as ProfitAndLoss | null);
-      setCashFlow(cashFlowResponse as CashFlow | null);
+
+      setCashFlow(
+        cashFlowResponse as CashFlow | null
+      );
+
       setBranchSummary(
         branchSummaryResponse as BranchSummaryRow[]
       );
+
       setBankAccounts(
         bankAccountsResponse as BankAccountRow[]
       );
-      setBranches(branchesResponse as BranchRow[]);
+
+      setBranches(
+        branchesResponse as BranchRow[]
+      );
     } catch (err) {
       setError(
         err instanceof Error
@@ -233,12 +255,12 @@ export default function AccountingPage() {
   };
 
   useEffect(() => {
-    loadAll();
+    void loadAll();
   }, []);
 
   /* =======================================================
      REVERSE JOURNAL ENTRY
-     ======================================================= */
+  ======================================================= */
 
   const handleReverse = async (id: number) => {
     const reason =
@@ -247,6 +269,8 @@ export default function AccountingPage() {
       ) ?? '';
 
     try {
+      setError('');
+
       await accountingApi.reverseEntry(
         id,
         reason || undefined
@@ -264,8 +288,46 @@ export default function AccountingPage() {
   };
 
   /* =======================================================
+     OPEN DEPOSIT / WITHDRAWAL MODAL
+  ======================================================= */
+
+  const openTransactionModal = (
+    account: BankAccountRow
+  ) => {
+    if (!account.active) {
+      setError(
+        `Bank account "${account.name}" is inactive.`
+      );
+      return;
+    }
+
+    setError('');
+    setSelectedBankAccount(account);
+    setShowTransactionForm(true);
+  };
+
+  /* =======================================================
+     OPEN TRANSFER MODAL
+  ======================================================= */
+
+  const openTransferModal = (
+    account: BankAccountRow
+  ) => {
+    if (!account.active) {
+      setError(
+        `Bank account "${account.name}" is inactive.`
+      );
+      return;
+    }
+
+    setError('');
+    setSelectedBankAccount(account);
+    setShowTransferForm(true);
+  };
+
+  /* =======================================================
      FORMATTERS
-     ======================================================= */
+  ======================================================= */
 
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', {
@@ -276,7 +338,9 @@ export default function AccountingPage() {
   const formatAccountNumber = (
     accountNumber?: string
   ) => {
-    if (!accountNumber) return '—';
+    if (!accountNumber) {
+      return '—';
+    }
 
     if (accountNumber.length <= 4) {
       return accountNumber;
@@ -285,13 +349,31 @@ export default function AccountingPage() {
     return `•••• ${accountNumber.slice(-4)}`;
   };
 
+  /* =======================================================
+     ACTIVE GL COUNTER ACCOUNTS
+  ======================================================= */
+
+  const transactionAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (account) =>
+          account.active &&
+          account.type !== 'ASSET'
+      ),
+    [accounts]
+  );
+
+  /* =======================================================
+     LOADING
+  ======================================================= */
+
   if (loading) {
     return <PageSpinner />;
   }
 
   /* =======================================================
      RENDER
-     ======================================================= */
+  ======================================================= */
 
   return (
     <div className="space-y-6">
@@ -337,13 +419,13 @@ export default function AccountingPage() {
         {TABS.map((t) => (
           <button
             key={t}
+            type="button"
             onClick={() => setTab(t)}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap
-              ${
-                tab === t
-                  ? 'border-[#0D6B3E] text-[#0D6B3E]'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
+              tab === t
+                ? 'border-[#0D6B3E] text-[#0D6B3E]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
           >
             {t}
           </button>
@@ -876,9 +958,10 @@ export default function AccountingPage() {
                   {!entry.reversed &&
                     entry.sourceType !== 'REVERSAL' && (
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleReverse(entry.id);
+                          void handleReverse(entry.id);
                         }}
                         className="text-red-500 hover:text-red-700 font-semibold border border-red-100 bg-white hover:bg-red-50 px-2 py-1 rounded"
                       >
@@ -958,7 +1041,7 @@ export default function AccountingPage() {
       {tab === 'Bank Accounts' && (
         <div className="space-y-4">
 
-          {/* Header */}
+          {/* HEADER */}
 
           <div className="flex items-center justify-between">
 
@@ -968,8 +1051,9 @@ export default function AccountingPage() {
               </h2>
 
               <p className="text-sm text-gray-500 mt-1">
-                Manage the institution's bank accounts,
-                cash drawers, and other cash holdings.
+                Manage institutional bank accounts,
+                cash drawers, deposits, withdrawals,
+                and internal transfers.
               </p>
             </div>
 
@@ -989,7 +1073,7 @@ export default function AccountingPage() {
 
           </div>
 
-          {/* Information banner */}
+          {/* INFORMATION */}
 
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
 
@@ -1000,188 +1084,230 @@ export default function AccountingPage() {
               </div>
 
               <div>
+
                 <p className="text-sm font-semibold text-blue-900">
-                  Why payment accounts matter
+                  Bank accounts are now transaction-enabled
                 </p>
 
                 <p className="text-xs text-blue-700 mt-1 leading-5">
-                  These accounts represent the actual places
-                  where your organization's money is held.
-                  Expenses can then be linked to the account
-                  from which the money was paid, such as a
-                  bank account or petty cash.
+                  An account can be created with a zero
+                  opening balance and funded later using
+                  Deposit. Withdrawals and transfers are
+                  also recorded through the general ledger.
+                  The displayed balance comes from posted
+                  journal entries.
                 </p>
-              </div>
 
+              </div>
             </div>
           </div>
 
-          {/* Accounts table */}
+          {/* ACCOUNTS TABLE */}
 
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
 
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
 
-              <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+              <table className="w-full text-sm">
 
-                <tr>
+                <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
 
-                  <th className="text-left px-5 py-3 font-semibold">
-                    Account
-                  </th>
+                  <tr>
 
-                  <th className="text-left px-5 py-3 font-semibold">
-                    Type
-                  </th>
+                    <th className="text-left px-5 py-3 font-semibold">
+                      Account
+                    </th>
 
-                  <th className="text-left px-5 py-3 font-semibold">
-                    Bank / Details
-                  </th>
+                    <th className="text-left px-5 py-3 font-semibold">
+                      Type
+                    </th>
 
-                  <th className="text-left px-5 py-3 font-semibold">
-                    Branch
-                  </th>
+                    <th className="text-left px-5 py-3 font-semibold">
+                      Bank / Details
+                    </th>
 
-                  <th className="text-left px-5 py-3 font-semibold">
-                    GL Code
-                  </th>
+                    <th className="text-left px-5 py-3 font-semibold">
+                      Branch
+                    </th>
 
-                  <th className="text-right px-5 py-3 font-semibold">
-                    Balance
-                  </th>
+                    <th className="text-left px-5 py-3 font-semibold">
+                      GL Code
+                    </th>
 
-                  <th className="text-center px-5 py-3 font-semibold">
-                    Status
-                  </th>
+                    <th className="text-right px-5 py-3 font-semibold">
+                      Balance
+                    </th>
 
-                </tr>
+                    <th className="text-center px-5 py-3 font-semibold">
+                      Status
+                    </th>
 
-              </thead>
-
-              <tbody className="divide-y divide-gray-100">
-
-                {bankAccounts.map((account) => (
-                  <tr
-                    key={account.id}
-                    className="hover:bg-gray-50"
-                  >
-
-                    <td className="px-5 py-3">
-
-                      <div className="font-semibold text-gray-900">
-                        {account.name}
-                      </div>
-
-                      {account.accountType === 'BANK' &&
-                        account.accountNumber && (
-                          <div className="text-xs text-gray-400 mt-0.5">
-                            {formatAccountNumber(
-                              account.accountNumber
-                            )}
-                          </div>
-                        )}
-
-                    </td>
-
-                    <td className="px-5 py-3">
-
-                      <span
-                        className={`text-[10px] font-bold px-2 py-1 rounded ${
-                          account.accountType ===
-                          'BANK'
-                            ? 'bg-blue-50 text-blue-700'
-                            : 'bg-amber-50 text-amber-700'
-                        }`}
-                      >
-                        {account.accountType}
-                      </span>
-
-                    </td>
-
-                    <td className="px-5 py-3 text-gray-600">
-
-                      {account.accountType ===
-                        'BANK'
-                        ? account.bankName || '—'
-                        : 'Petty Cash / Cash'}
-
-                    </td>
-
-                    <td className="px-5 py-3 text-gray-600">
-                      {account.branchName ||
-                        'Head Office'}
-                    </td>
-
-                    <td className="px-5 py-3 font-mono text-gray-500">
-                      {account.glAccountCode}
-                    </td>
-
-                    <td className="px-5 py-3 text-right font-mono font-semibold">
-                      {currency}{' '}
-                      {fmt(account.balance)}
-                    </td>
-
-                    <td className="px-5 py-3 text-center">
-
-                      <span
-                        className={`text-[10px] font-bold px-2 py-1 rounded ${
-                          account.active
-                            ? 'bg-green-50 text-green-700'
-                            : 'bg-gray-100 text-gray-500'
-                        }`}
-                      >
-                        {account.active
-                          ? 'Active'
-                          : 'Inactive'}
-                      </span>
-
-                    </td>
+                    <th className="text-right px-5 py-3 font-semibold">
+                      Actions
+                    </th>
 
                   </tr>
-                ))}
 
-                {bankAccounts.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-5 py-12 text-center"
+                </thead>
+
+                <tbody className="divide-y divide-gray-100">
+
+                  {bankAccounts.map((account) => (
+                    <tr
+                      key={account.id}
+                      className="hover:bg-gray-50"
                     >
 
-                      <div className="mx-auto max-w-md">
+                      <td className="px-5 py-3">
 
-                        <div className="text-4xl mb-3">
-                          🏦
+                        <div className="font-semibold text-gray-900">
+                          {account.name}
                         </div>
 
-                        <h3 className="font-semibold text-gray-900">
-                          No payment accounts yet
-                        </h3>
+                        {account.accountType === 'BANK' &&
+                          account.accountNumber && (
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              {formatAccountNumber(
+                                account.accountNumber
+                              )}
+                            </div>
+                          )}
 
-                        <p className="text-sm text-gray-500 mt-1">
-                          Add your organization's first
-                          bank account or cash account so
-                          expenses and other cash movements
-                          can be recorded correctly.
-                        </p>
+                      </td>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setShowBankAccountForm(true)
-                          }
-                          className="mt-4 px-4 py-2 bg-[#0D6B3E] hover:bg-[#09552F] text-white text-sm font-semibold rounded-lg"
+                      <td className="px-5 py-3">
+
+                        <span
+                          className={`text-[10px] font-bold px-2 py-1 rounded ${
+                            account.accountType ===
+                            'BANK'
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}
                         >
-                          + Add Bank / Cash Account
-                        </button>
+                          {account.accountType}
+                        </span>
 
-                      </div>
+                      </td>
 
-                    </td>
-                  </tr>
-                )}
+                      <td className="px-5 py-3 text-gray-600">
 
-              </tbody>
-            </table>
+                        {account.accountType ===
+                          'BANK'
+                          ? account.bankName || '—'
+                          : 'Petty Cash / Cash'}
+
+                      </td>
+
+                      <td className="px-5 py-3 text-gray-600">
+                        {account.branchName ||
+                          'Head Office'}
+                      </td>
+
+                      <td className="px-5 py-3 font-mono text-gray-500">
+                        {account.glAccountCode}
+                      </td>
+
+                      <td className="px-5 py-3 text-right font-mono font-semibold">
+                        {currency}{' '}
+                        {fmt(account.balance)}
+                      </td>
+
+                      <td className="px-5 py-3 text-center">
+
+                        <span
+                          className={`text-[10px] font-bold px-2 py-1 rounded ${
+                            account.active
+                              ? 'bg-green-50 text-green-700'
+                              : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
+                          {account.active
+                            ? 'Active'
+                            : 'Inactive'}
+                        </span>
+
+                      </td>
+
+                      <td className="px-5 py-3">
+
+                        <div className="flex justify-end gap-2">
+
+                          <button
+                            type="button"
+                            disabled={!account.active}
+                            onClick={() =>
+                              openTransactionModal(
+                                account
+                              )
+                            }
+                            className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Deposit / Withdraw
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={!account.active}
+                            onClick={() =>
+                              openTransferModal(
+                                account
+                              )
+                            }
+                            className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Transfer
+                          </button>
+
+                        </div>
+
+                      </td>
+
+                    </tr>
+                  ))}
+
+                  {bankAccounts.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="px-5 py-12 text-center"
+                      >
+
+                        <div className="mx-auto max-w-md">
+
+                          <div className="text-4xl mb-3">
+                            🏦
+                          </div>
+
+                          <h3 className="font-semibold text-gray-900">
+                            No payment accounts yet
+                          </h3>
+
+                          <p className="text-sm text-gray-500 mt-1">
+                            Add your organization's first
+                            bank account or cash account.
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowBankAccountForm(true)
+                            }
+                            className="mt-4 px-4 py-2 bg-[#0D6B3E] hover:bg-[#09552F] text-white text-sm font-semibold rounded-lg"
+                          >
+                            + Add Bank / Cash Account
+                          </button>
+
+                        </div>
+
+                      </td>
+                    </tr>
+                  )}
+
+                </tbody>
+              </table>
+
+            </div>
           </div>
         </div>
       )}
@@ -1267,27 +1393,96 @@ export default function AccountingPage() {
       =================================================== */}
 
       {showBankAccountForm && (
-        <AddBankAccountModal
-          branches={branches}
-          currency={currency}
-          onClose={() =>
-            setShowBankAccountForm(false)
-          }
-          onSaved={async () => {
-            setShowBankAccountForm(false);
-
-            await loadAll();
-          }}
-        />
+        <ModalShell>
+          <AddBankAccountModal
+            branches={branches}
+            currency={currency}
+            onClose={() =>
+              setShowBankAccountForm(false)
+            }
+            onSaved={async () => {
+              setShowBankAccountForm(false);
+              await loadAll();
+            }}
+          />
+        </ModalShell>
       )}
+
+      {/* ===================================================
+          DEPOSIT / WITHDRAW MODAL
+      =================================================== */}
+
+      {showTransactionForm &&
+        selectedBankAccount && (
+          <ModalShell>
+
+            <BankTransactionModal
+              account={selectedBankAccount}
+              currency={currency}
+              counterAccounts={transactionAccounts}
+              onClose={() => {
+                setShowTransactionForm(false);
+                setSelectedBankAccount(null);
+              }}
+              onSaved={async () => {
+                setShowTransactionForm(false);
+                setSelectedBankAccount(null);
+                await loadAll();
+              }}
+            />
+
+          </ModalShell>
+        )}
+
+      {/* ===================================================
+          TRANSFER MODAL
+      =================================================== */}
+
+      {showTransferForm &&
+        selectedBankAccount && (
+          <ModalShell>
+
+            <TransferModal
+              fromAccount={selectedBankAccount}
+              accounts={bankAccounts}
+              currency={currency}
+              onClose={() => {
+                setShowTransferForm(false);
+                setSelectedBankAccount(null);
+              }}
+              onSaved={async () => {
+                setShowTransferForm(false);
+                setSelectedBankAccount(null);
+                await loadAll();
+              }}
+            />
+
+          </ModalShell>
+        )}
 
     </div>
   );
 }
 
 /* =========================================================
+   MODAL SHELL
+========================================================= */
+
+function ModalShell({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      {children}
+    </div>
+  );
+}
+
+/* =========================================================
    ADD BANK ACCOUNT MODAL
-   ========================================================= */
+========================================================= */
 
 function AddBankAccountModal({
   branches,
@@ -1316,7 +1511,7 @@ function AddBankAccountModal({
 
   /* =======================================================
      SUBMIT
-     ======================================================= */
+  ======================================================= */
 
   const handleSubmit = async (
     e: React.FormEvent
@@ -1347,7 +1542,10 @@ function AddBankAccountModal({
         ? 0
         : Number(openingBalance);
 
-    if (!Number.isFinite(opening) || opening < 0) {
+    if (
+      !Number.isFinite(opening) ||
+      opening < 0
+    ) {
       setError(
         'Opening balance must be zero or a positive amount.'
       );
@@ -1388,316 +1586,1050 @@ function AddBankAccountModal({
 
   /* =======================================================
      MODAL
-     ======================================================= */
+  ======================================================= */
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
 
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+      <div className="px-6 py-5 border-b border-gray-100 flex items-start justify-between">
 
-        {/* Header */}
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">
+            Add Bank or Cash Account
+          </h2>
 
-        <div className="px-6 py-5 border-b border-gray-100 flex items-start justify-between">
+          <p className="text-sm text-gray-500 mt-1">
+            Add an account where your organization
+            holds or manages money.
+          </p>
+        </div>
 
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">
-              Add Bank or Cash Account
-            </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={saving}
+          className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+        >
+          ×
+        </button>
 
-            <p className="text-sm text-gray-500 mt-1">
-              Add an account where your organization
-              holds or manages money.
-            </p>
+      </div>
+
+      <form
+        onSubmit={handleSubmit}
+        className="p-6 space-y-5"
+      >
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+            {error}
           </div>
+        )}
+
+        {/* ACCOUNT TYPE */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            Account Type
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+
+            <button
+              type="button"
+              onClick={() =>
+                setAccountType('BANK')
+              }
+              className={`text-left border rounded-xl p-4 transition ${
+                accountType === 'BANK'
+                  ? 'border-[#0D6B3E] bg-green-50 ring-1 ring-[#0D6B3E]'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+
+              <div className="font-semibold text-gray-900">
+                🏦 Bank Account
+              </div>
+
+              <p className="text-xs text-gray-500 mt-1">
+                A formal bank account held with
+                a financial institution.
+              </p>
+
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setAccountType('CASH')
+              }
+              className={`text-left border rounded-xl p-4 transition ${
+                accountType === 'CASH'
+                  ? 'border-[#0D6B3E] bg-green-50 ring-1 ring-[#0D6B3E]'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+
+              <div className="font-semibold text-gray-900">
+                💵 Cash Account
+              </div>
+
+              <p className="text-xs text-gray-500 mt-1">
+                Physical cash such as petty cash
+                or a branch cash drawer.
+              </p>
+
+            </button>
+
+          </div>
+        </div>
+
+        {/* NAME */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Account Name *
+          </label>
+
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) =>
+              setName(e.target.value)
+            }
+            placeholder={
+              accountType === 'BANK'
+                ? 'e.g. Bank of Kigali - Main Account'
+                : 'e.g. Kigali Head Office Petty Cash'
+            }
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+          />
+
+        </div>
+
+        {/* BANK FIELDS */}
+
+        {accountType === 'BANK' && (
+          <>
+            <div>
+
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Bank Name *
+              </label>
+
+              <input
+                type="text"
+                required
+                value={bankName}
+                onChange={(e) =>
+                  setBankName(e.target.value)
+                }
+                placeholder="e.g. Bank of Kigali"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+              />
+
+            </div>
+
+            <div>
+
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Account Number
+              </label>
+
+              <input
+                type="text"
+                value={accountNumber}
+                onChange={(e) =>
+                  setAccountNumber(
+                    e.target.value
+                  )
+                }
+                placeholder="Enter bank account number"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+              />
+
+              <p className="text-xs text-gray-400 mt-1">
+                Used for identification and reconciliation.
+              </p>
+
+            </div>
+          </>
+        )}
+
+        {/* BRANCH */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Branch
+          </label>
+
+          <select
+            value={branchId}
+            onChange={(e) =>
+              setBranchId(e.target.value)
+            }
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+          >
+
+            <option value="">
+              Head Office / Organization-wide
+            </option>
+
+            {branches.map((branch) => (
+              <option
+                key={branch.id}
+                value={branch.id}
+              >
+                {branch.name}
+              </option>
+            ))}
+
+          </select>
+
+        </div>
+
+        {/* OPENING BALANCE */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Opening Balance
+          </label>
+
+          <div className="relative">
+
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              {currency}
+            </span>
+
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={openingBalance}
+              onChange={(e) =>
+                setOpeningBalance(
+                  e.target.value
+                )
+              }
+              placeholder="0.00"
+              className="w-full pl-14 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+            />
+
+          </div>
+
+          <p className="text-xs text-gray-400 mt-1">
+            Enter zero if the account has no opening
+            balance. You can fund it later using Deposit.
+          </p>
+
+        </div>
+
+        {/* ACCOUNTING INFO */}
+
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+
+          <div className="text-sm font-semibold text-gray-800">
+            Accounting treatment
+          </div>
+
+          <p className="text-xs text-gray-500 mt-1 leading-5">
+            The system creates a dedicated asset GL
+            account. A positive opening balance creates
+            an opening journal entry. A zero opening
+            balance creates the account at zero and does
+            not create a journal entry.
+          </p>
+
+        </div>
+
+        {/* BUTTONS */}
+
+        <div className="flex gap-3 pt-2">
 
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
-            ×
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 px-4 py-2.5 bg-[#0D6B3E] hover:bg-[#09552F] disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+          >
+            {saving
+              ? 'Creating Account…'
+              : 'Create Account'}
           </button>
 
         </div>
 
-        {/* Body */}
+      </form>
+    </div>
+  );
+}
 
-        <form
-          onSubmit={handleSubmit}
-          className="p-6 space-y-5"
+/* =========================================================
+   BANK TRANSACTION MODAL
+   DEPOSIT / WITHDRAWAL
+========================================================= */
+
+function BankTransactionModal({
+  account,
+  currency,
+  counterAccounts,
+  onClose,
+  onSaved,
+}: {
+  account: BankAccountRow;
+  currency: string;
+  counterAccounts: Account[];
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [type, setType] =
+    useState<BankTransactionType>('DEPOSIT');
+
+  const [amount, setAmount] = useState('');
+  const [counterAccountId, setCounterAccountId] =
+    useState('');
+
+  const [description, setDescription] =
+    useState('');
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  /* =======================================================
+     SUBMIT
+  ======================================================= */
+
+  const handleSubmit = async (
+    e: React.FormEvent
+  ) => {
+    e.preventDefault();
+
+    setError('');
+
+    const numericAmount = Number(amount);
+
+    if (
+      !Number.isFinite(numericAmount) ||
+      numericAmount <= 0
+    ) {
+      setError(
+        'Amount must be greater than zero.'
+      );
+      return;
+    }
+
+    const counterId =
+      Number(counterAccountId);
+
+    if (
+      !Number.isInteger(counterId) ||
+      counterId <= 0
+    ) {
+      setError(
+        'Select the counter GL account.'
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      /*
+       * IMPORTANT:
+       *
+       * bankAccountApi.recordTransaction()
+       * requires:
+       *
+       * recordTransaction(id, data)
+       */
+
+      await bankAccountApi.recordTransaction(
+        account.id,
+        {
+          type,
+          amount: numericAmount,
+          counterAccountId: counterId,
+          description:
+            description.trim() ||
+            `${type === 'DEPOSIT'
+              ? 'Deposit into'
+              : 'Withdrawal from'} ${account.name}`,
+        }
+      );
+
+      await onSaved();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Could not record transaction.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+
+      {/* HEADER */}
+
+      <div className="px-6 py-5 border-b border-gray-100 flex items-start justify-between">
+
+        <div>
+
+          <h2 className="text-lg font-bold text-gray-900">
+            {type === 'DEPOSIT'
+              ? 'Deposit Money'
+              : 'Withdraw Money'}
+          </h2>
+
+          <p className="text-sm text-gray-500 mt-1">
+            {account.name}
+          </p>
+
+          <p className="text-xs text-gray-400 mt-1">
+            Current balance: {currency}{' '}
+            {new Intl.NumberFormat('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            }).format(account.balance ?? 0)}
+          </p>
+
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={saving}
+          className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
         >
+          ×
+        </button>
 
-          {/* Error */}
+      </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
-              {error}
-            </div>
-          )}
+      {/* FORM */}
 
-          {/* Account Type */}
+      <form
+        onSubmit={handleSubmit}
+        className="p-6 space-y-5"
+      >
 
-          <div>
-
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Account Type
-            </label>
-
-            <div className="grid grid-cols-2 gap-3">
-
-              <button
-                type="button"
-                onClick={() =>
-                  setAccountType('BANK')
-                }
-                className={`text-left border rounded-xl p-4 transition ${
-                  accountType === 'BANK'
-                    ? 'border-[#0D6B3E] bg-green-50 ring-1 ring-[#0D6B3E]'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-
-                <div className="font-semibold text-gray-900">
-                  🏦 Bank Account
-                </div>
-
-                <p className="text-xs text-gray-500 mt-1">
-                  A formal bank account held with
-                  a financial institution.
-                </p>
-
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setAccountType('CASH')
-                }
-                className={`text-left border rounded-xl p-4 transition ${
-                  accountType === 'CASH'
-                    ? 'border-[#0D6B3E] bg-green-50 ring-1 ring-[#0D6B3E]'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-
-                <div className="font-semibold text-gray-900">
-                  💵 Cash Account
-                </div>
-
-                <p className="text-xs text-gray-500 mt-1">
-                  Physical cash such as petty cash
-                  or a branch cash drawer.
-                </p>
-
-              </button>
-
-            </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+            {error}
           </div>
+        )}
 
-          {/* Account Name */}
+        {/* TRANSACTION TYPE */}
 
-          <div>
+        <div>
 
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Account Name *
-            </label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            Transaction Type
+          </label>
 
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) =>
-                setName(e.target.value)
-              }
-              placeholder={
-                accountType === 'BANK'
-                  ? 'e.g. Bank of Kigali - Main Account'
-                  : 'e.g. Kigali Head Office Petty Cash'
-              }
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
-            />
-
-            <p className="text-xs text-gray-400 mt-1">
-              Use a clear name that staff can easily
-              recognize when recording transactions.
-            </p>
-
-          </div>
-
-          {/* Bank Fields */}
-
-          {accountType === 'BANK' && (
-            <>
-
-              <div>
-
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Bank Name *
-                </label>
-
-                <input
-                  type="text"
-                  required
-                  value={bankName}
-                  onChange={(e) =>
-                    setBankName(e.target.value)
-                  }
-                  placeholder="e.g. Bank of Kigali"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
-                />
-
-              </div>
-
-              <div>
-
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Account Number
-                </label>
-
-                <input
-                  type="text"
-                  value={accountNumber}
-                  onChange={(e) =>
-                    setAccountNumber(e.target.value)
-                  }
-                  placeholder="Enter bank account number"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
-                />
-
-                <p className="text-xs text-gray-400 mt-1">
-                  This is used for identification and
-                  reconciliation. It is not used as the
-                  accounting GL code.
-                </p>
-
-              </div>
-
-            </>
-          )}
-
-          {/* Branch */}
-
-          <div>
-
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Branch
-            </label>
-
-            <select
-              value={branchId}
-              onChange={(e) =>
-                setBranchId(e.target.value)
-              }
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
-            >
-
-              <option value="">
-                Head Office / Organization-wide
-              </option>
-
-              {branches.map((branch) => (
-                <option
-                  key={branch.id}
-                  value={branch.id}
-                >
-                  {branch.name}
-                </option>
-              ))}
-
-            </select>
-
-            <p className="text-xs text-gray-400 mt-1">
-              Leave this as Head Office if the account
-              is shared by the organization rather than
-              assigned to a specific branch.
-            </p>
-
-          </div>
-
-          {/* Opening Balance */}
-
-          <div>
-
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Opening Balance
-            </label>
-
-            <div className="relative">
-
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                {currency}
-              </span>
-
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={openingBalance}
-                onChange={(e) =>
-                  setOpeningBalance(
-                    e.target.value
-                  )
-                }
-                placeholder="0.00"
-                className="w-full pl-14 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
-              />
-
-            </div>
-
-            <p className="text-xs text-gray-400 mt-1">
-              Enter the amount already held in this
-              account when you start using the system.
-              Leave zero if there is no opening balance.
-            </p>
-
-          </div>
-
-          {/* Accounting explanation */}
-
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-
-            <div className="text-sm font-semibold text-gray-800">
-              Accounting treatment
-            </div>
-
-            <p className="text-xs text-gray-500 mt-1 leading-5">
-              When this account is created, the system
-              automatically creates a dedicated asset
-              account in the general ledger. If an opening
-              balance is entered, the system records the
-              corresponding opening journal entry.
-            </p>
-
-          </div>
-
-          {/* Buttons */}
-
-          <div className="flex gap-3 pt-2">
+          <div className="grid grid-cols-2 gap-3">
 
             <button
               type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              onClick={() =>
+                setType('DEPOSIT')
+              }
+              className={`border rounded-xl p-4 text-left ${
+                type === 'DEPOSIT'
+                  ? 'border-green-600 bg-green-50 ring-1 ring-green-600'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
             >
-              Cancel
+
+              <div className="font-semibold text-gray-900">
+                ↓ Deposit
+              </div>
+
+              <p className="text-xs text-gray-500 mt-1">
+                Increase the bank/cash balance.
+              </p>
+
             </button>
 
             <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 px-4 py-2.5 bg-[#0D6B3E] hover:bg-[#09552F] disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+              type="button"
+              onClick={() =>
+                setType('WITHDRAWAL')
+              }
+              className={`border rounded-xl p-4 text-left ${
+                type === 'WITHDRAWAL'
+                  ? 'border-red-600 bg-red-50 ring-1 ring-red-600'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
             >
-              {saving
-                ? 'Creating Account…'
-                : 'Create Account'}
+
+              <div className="font-semibold text-gray-900">
+                ↑ Withdrawal
+              </div>
+
+              <p className="text-xs text-gray-500 mt-1">
+                Reduce the bank/cash balance.
+              </p>
+
             </button>
 
           </div>
+        </div>
 
-        </form>
+        {/* AMOUNT */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Amount *
+          </label>
+
+          <div className="relative">
+
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              {currency}
+            </span>
+
+            <input
+              type="number"
+              required
+              min="0.01"
+              step="0.01"
+              value={amount}
+              onChange={(e) =>
+                setAmount(e.target.value)
+              }
+              placeholder="0.00"
+              className="w-full pl-14 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+            />
+
+          </div>
+
+        </div>
+
+        {/* COUNTER ACCOUNT */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Counter GL Account *
+          </label>
+
+          <select
+            required
+            value={counterAccountId}
+            onChange={(e) =>
+              setCounterAccountId(
+                e.target.value
+              )
+            }
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+          >
+
+            <option value="">
+              Select counter account
+            </option>
+
+            {counterAccounts.map((account) => (
+              <option
+                key={account.id}
+                value={account.id}
+              >
+                {account.code} — {account.name}
+              </option>
+            ))}
+
+          </select>
+
+          <p className="text-xs text-gray-400 mt-1">
+            This is the other side of the journal
+            transaction.
+          </p>
+
+        </div>
+
+        {/* DESCRIPTION */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Description
+          </label>
+
+          <textarea
+            value={description}
+            onChange={(e) =>
+              setDescription(
+                e.target.value
+              )
+            }
+            rows={3}
+            placeholder={
+              type === 'DEPOSIT'
+                ? 'e.g. Cash received from investor'
+                : 'e.g. Bank charges or cash payment'
+            }
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+          />
+
+        </div>
+
+        {/* ACCOUNTING PREVIEW */}
+
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+
+          <div className="text-sm font-semibold text-gray-800">
+            Journal treatment
+          </div>
+
+          {type === 'DEPOSIT' ? (
+            <div className="text-xs text-gray-600 mt-2 space-y-1">
+              <div>
+                <strong>Debit:</strong>{' '}
+                {account.name}
+              </div>
+
+              <div>
+                <strong>Credit:</strong>{' '}
+                Counter GL Account
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-gray-600 mt-2 space-y-1">
+              <div>
+                <strong>Debit:</strong>{' '}
+                Counter GL Account
+              </div>
+
+              <div>
+                <strong>Credit:</strong>{' '}
+                {account.name}
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* BUTTONS */}
+
+        <div className="flex gap-3 pt-2">
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className={`flex-1 px-4 py-2.5 text-white rounded-lg text-sm font-semibold disabled:opacity-50 ${
+              type === 'DEPOSIT'
+                ? 'bg-[#0D6B3E] hover:bg-[#09552F]'
+                : 'bg-red-600 hover:bg-red-700'
+            }`}
+          >
+            {saving
+              ? 'Processing…'
+              : type === 'DEPOSIT'
+                ? 'Record Deposit'
+                : 'Record Withdrawal'}
+          </button>
+
+        </div>
+
+      </form>
+    </div>
+  );
+}
+
+/* =========================================================
+   TRANSFER MODAL
+========================================================= */
+
+function TransferModal({
+  fromAccount,
+  accounts,
+  currency,
+  onClose,
+  onSaved,
+}: {
+  fromAccount: BankAccountRow;
+  accounts: BankAccountRow[];
+  currency: string;
+  onClose: () => void;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [destinationId, setDestinationId] =
+    useState('');
+
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] =
+    useState('');
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const destinationAccounts =
+    accounts.filter(
+      (account) =>
+        account.id !== fromAccount.id &&
+        account.active
+    );
+
+  /* =======================================================
+     SUBMIT
+  ======================================================= */
+
+  const handleSubmit = async (
+    e: React.FormEvent
+  ) => {
+    e.preventDefault();
+
+    setError('');
+
+    const destinationAccountId =
+      Number(destinationId);
+
+    if (
+      !Number.isInteger(
+        destinationAccountId
+      ) ||
+      destinationAccountId <= 0
+    ) {
+      setError(
+        'Select a destination account.'
+      );
+      return;
+    }
+
+    const numericAmount = Number(amount);
+
+    if (
+      !Number.isFinite(numericAmount) ||
+      numericAmount <= 0
+    ) {
+      setError(
+        'Transfer amount must be greater than zero.'
+      );
+      return;
+    }
+
+    if (
+      numericAmount >
+      Number(fromAccount.balance ?? 0)
+    ) {
+      setError(
+        `Insufficient balance. Available balance is ${currency} ${new Intl.NumberFormat(
+          'en-US',
+          {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }
+        ).format(fromAccount.balance ?? 0)}.`
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      /*
+       * IMPORTANT:
+       *
+       * bankAccountApi.transfer()
+       * accepts ONE object.
+       *
+       * Correct:
+       *
+       * transfer({
+       *   fromAccountId,
+       *   toAccountId,
+       *   amount,
+       *   description
+       * })
+       */
+
+      await bankAccountApi.transfer({
+        fromAccountId: fromAccount.id,
+        toAccountId:
+          destinationAccountId,
+        amount: numericAmount,
+        description:
+          description.trim() ||
+          `Transfer from ${fromAccount.name}`,
+      });
+
+      await onSaved();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Could not transfer money.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+
+      {/* HEADER */}
+
+      <div className="px-6 py-5 border-b border-gray-100 flex items-start justify-between">
+
+        <div>
+
+          <h2 className="text-lg font-bold text-gray-900">
+            Transfer Money
+          </h2>
+
+          <p className="text-sm text-gray-500 mt-1">
+            Transfer between bank and cash accounts.
+          </p>
+
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={saving}
+          className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+        >
+          ×
+        </button>
+
       </div>
+
+      {/* FORM */}
+
+      <form
+        onSubmit={handleSubmit}
+        className="p-6 space-y-5"
+      >
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* FROM */}
+
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+
+          <div className="text-xs text-gray-500 uppercase font-semibold">
+            From Account
+          </div>
+
+          <div className="font-semibold text-gray-900 mt-1">
+            {fromAccount.name}
+          </div>
+
+          <div className="text-sm text-gray-500 mt-1">
+            Available:{' '}
+            <span className="font-mono font-semibold text-gray-900">
+              {currency}{' '}
+              {new Intl.NumberFormat(
+                'en-US',
+                {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }
+              ).format(
+                fromAccount.balance ?? 0
+              )}
+            </span>
+          </div>
+
+        </div>
+
+        {/* DESTINATION */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Destination Account *
+          </label>
+
+          <select
+            required
+            value={destinationId}
+            onChange={(e) =>
+              setDestinationId(
+                e.target.value
+              )
+            }
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+          >
+
+            <option value="">
+              Select destination account
+            </option>
+
+            {destinationAccounts.map(
+              (account) => (
+                <option
+                  key={account.id}
+                  value={account.id}
+                >
+                  {account.name} —{' '}
+                  {currency}{' '}
+                  {new Intl.NumberFormat(
+                    'en-US',
+                    {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }
+                  ).format(
+                    account.balance ?? 0
+                  )}
+                </option>
+              )
+            )}
+
+          </select>
+
+          {destinationAccounts.length === 0 && (
+            <p className="text-xs text-amber-600 mt-1">
+              Create another active bank or cash
+              account before making a transfer.
+            </p>
+          )}
+
+        </div>
+
+        {/* AMOUNT */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Transfer Amount *
+          </label>
+
+          <div className="relative">
+
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              {currency}
+            </span>
+
+            <input
+              type="number"
+              required
+              min="0.01"
+              step="0.01"
+              value={amount}
+              onChange={(e) =>
+                setAmount(e.target.value)
+              }
+              placeholder="0.00"
+              className="w-full pl-14 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+            />
+
+          </div>
+
+        </div>
+
+        {/* DESCRIPTION */}
+
+        <div>
+
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            Description
+          </label>
+
+          <textarea
+            value={description}
+            onChange={(e) =>
+              setDescription(
+                e.target.value
+              )
+            }
+            rows={3}
+            placeholder="e.g. Transfer operating funds to branch account"
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#0D6B3E]"
+          />
+
+        </div>
+
+        {/* ACCOUNTING PREVIEW */}
+
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+
+          <div className="text-sm font-semibold text-blue-900">
+            Accounting treatment
+          </div>
+
+          <div className="text-xs text-blue-700 mt-2 space-y-1">
+
+            <div>
+              <strong>Debit:</strong>{' '}
+              Destination account
+            </div>
+
+            <div>
+              <strong>Credit:</strong>{' '}
+              {fromAccount.name}
+            </div>
+
+          </div>
+
+          <p className="text-xs text-blue-600 mt-2">
+            This is an internal transfer. It does not
+            create income or expense.
+          </p>
+
+        </div>
+
+        {/* BUTTONS */}
+
+        <div className="flex gap-3 pt-2">
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            disabled={
+              saving ||
+              destinationAccounts.length === 0
+            }
+            className="flex-1 px-4 py-2.5 bg-[#0D6B3E] hover:bg-[#09552F] disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+          >
+            {saving
+              ? 'Transferring…'
+              : 'Transfer Money'}
+          </button>
+
+        </div>
+
+      </form>
     </div>
   );
 }
