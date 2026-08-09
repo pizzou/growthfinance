@@ -82,11 +82,7 @@ class RiskScoringServiceTest {
         loan.setAmount(BigDecimal.valueOf(50_000));
         loan.setLoanType(Loan.LoanType.EMERGENCY);
 
-        /*
-         * Explicit BigDecimal null.
-         * Loan currently has both legacy Double and BigDecimal
-         * setter overloads, so plain null is ambiguous.
-         */
+    
         loan.setCollateralValue((BigDecimal) null);
 
         loan.setDebtToIncomeRatio(BigDecimal.valueOf(80));

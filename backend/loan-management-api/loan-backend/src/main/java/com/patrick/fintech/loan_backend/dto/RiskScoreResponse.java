@@ -38,12 +38,7 @@ public class RiskScoreResponse {
     @JsonProperty("concentrationFactor")
     private BigDecimal concentrationFactor;
 
-    /**
-     * Backward-compatible constructor for callers that provide
-     * the original seven risk-score values.
-     *
-     * concentrationFactor defaults to ZERO.
-     */
+   
     public RiskScoreResponse(
             BigDecimal score,
             String category,
