@@ -787,11 +787,11 @@ public class PublicController {
                             ? gatewayResponse.getAmount()
                             : dueAmount;
 
-            paymentService.recordPayment(
+           paymentService.recordPayment(
         loan.getId(),
         BigDecimal.valueOf(confirmedAmount),
         method,
-        transactionId,doo push
+        transactionId,
         "GATEWAY",
         "Paid via " +
                 gatewayResponse.getProvider(),
