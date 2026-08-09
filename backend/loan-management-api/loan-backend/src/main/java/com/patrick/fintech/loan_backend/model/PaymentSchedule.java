@@ -3,6 +3,8 @@ package com.patrick.fintech.loan_backend.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -10,7 +12,23 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "payment_schedules")
+@Table(
+        name = "payment_schedules",
+        indexes = {
+                @Index(
+                        name = "idx_payment_schedules_loan_id",
+                        columnList = "loan_id"
+                ),
+                @Index(
+                        name = "idx_payment_schedules_due_date",
+                        columnList = "due_date"
+                ),
+                @Index(
+                        name = "idx_payment_schedules_status",
+                        columnList = "status"
+                )
+        }
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -18,24 +36,71 @@ import java.time.LocalDateTime;
 @Builder
 public class PaymentSchedule {
 
+    private static final int MONEY_SCALE = 6;
+
+    private static final BigDecimal ZERO =
+            BigDecimal.ZERO.setScale(
+                    MONEY_SCALE
+            );
+
+    // ============================================================
+    // PRIMARY KEY
+    // ============================================================
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "loan_id", nullable = false)
+    // ============================================================
+    // LOAN
+    // ============================================================
+
+    /*
+     * A payment schedule belongs to a loan.
+     *
+     * Organization is intentionally NOT stored here because
+     * this application is currently single-tenant.
+     *
+     * If the organization is needed, it can be reached through:
+     *
+     * paymentSchedule.getLoan().getOrganization()
+     */
+    @NotNull
+    @ManyToOne(
+            fetch = FetchType.LAZY,
+            optional = false
+    )
+    @JoinColumn(
+            name = "loan_id",
+            nullable = false
+    )
     private Loan loan;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "organization_id", nullable = false)
-    private Organization organization;
+    // ============================================================
+    // INSTALLMENT
+    // ============================================================
 
-    @Column(nullable = false)
+    @NotNull
+    @Column(
+            nullable = false
+    )
     private Integer installmentNumber;
 
-    @Column(nullable = false)
+    @NotNull
+    @Column(
+            nullable = false
+    )
     private LocalDate dueDate;
 
+    // ============================================================
+    // INSTALLMENT AMOUNT
+    // ============================================================
+
+    @NotNull
+    @DecimalMin(
+            value = "0.000000",
+            inclusive = true
+    )
     @Column(
             nullable = false,
             precision = 19,
@@ -44,6 +109,15 @@ public class PaymentSchedule {
     @JsonProperty("installmentAmount")
     private BigDecimal installmentAmount;
 
+    // ============================================================
+    // PRINCIPAL
+    // ============================================================
+
+    @NotNull
+    @DecimalMin(
+            value = "0.000000",
+            inclusive = true
+    )
     @Column(
             nullable = false,
             precision = 19,
@@ -52,6 +126,15 @@ public class PaymentSchedule {
     @JsonProperty("principalAmount")
     private BigDecimal principalAmount;
 
+    // ============================================================
+    // INTEREST
+    // ============================================================
+
+    @NotNull
+    @DecimalMin(
+            value = "0.000000",
+            inclusive = true
+    )
     @Column(
             nullable = false,
             precision = 19,
@@ -60,115 +143,216 @@ public class PaymentSchedule {
     @JsonProperty("interestAmount")
     private BigDecimal interestAmount;
 
+    // ============================================================
+    // PENALTY
+    // ============================================================
+
     @Builder.Default
+    @NotNull
+    @DecimalMin(
+            value = "0.000000",
+            inclusive = true
+    )
     @Column(
             nullable = false,
             precision = 19,
             scale = 6
     )
     @JsonProperty("penaltyAmount")
-    private BigDecimal penaltyAmount = BigDecimal.ZERO;
+    private BigDecimal penaltyAmount = ZERO;
+
+    // ============================================================
+    // AMOUNT PAID
+    // ============================================================
 
     @Builder.Default
+    @NotNull
+    @DecimalMin(
+            value = "0.000000",
+            inclusive = true
+    )
     @Column(
             nullable = false,
             precision = 19,
             scale = 6
     )
     @JsonProperty("amountPaid")
-    private BigDecimal amountPaid = BigDecimal.ZERO;
+    private BigDecimal amountPaid = ZERO;
+
+    // ============================================================
+    // REMAINING BALANCE
+    // ============================================================
 
     @Builder.Default
+    @NotNull
+    @DecimalMin(
+            value = "0.000000",
+            inclusive = true
+    )
     @Column(
             nullable = false,
             precision = 19,
             scale = 6
     )
     @JsonProperty("remainingBalance")
-    private BigDecimal remainingBalance = BigDecimal.ZERO;
+    private BigDecimal remainingBalance = ZERO;
 
+    // ============================================================
+    // STATUS
+    // ============================================================
+
+    @Builder.Default
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ScheduleStatus status;
+    @Column(
+            nullable = false,
+            length = 20
+    )
+    private ScheduleStatus status =
+            ScheduleStatus.PENDING;
+
+    // ============================================================
+    // PAID DATE
+    // ============================================================
 
     private LocalDate paidDate;
 
-    @Column(nullable = false)
+    // ============================================================
+    // AUDIT TIMESTAMPS
+    // ============================================================
+
+    @Column(
+            nullable = false,
+            updatable = false
+    )
     private LocalDateTime createdAt;
 
-    @Column(nullable = false)
+    @Column(
+            nullable = false
+    )
     private LocalDateTime updatedAt;
+
+    // ============================================================
+    // PRE-PERSIST
+    // ============================================================
 
     @PrePersist
     protected void onCreate() {
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now =
+                LocalDateTime.now();
 
-        createdAt = now;
+        if (createdAt == null) {
+            createdAt = now;
+        }
+
         updatedAt = now;
 
         if (status == null) {
             status = ScheduleStatus.PENDING;
         }
 
-        if (penaltyAmount == null) {
-            penaltyAmount = BigDecimal.ZERO;
-        }
+        installmentAmount =
+                normalizeMoney(
+                        installmentAmount
+                );
 
-        if (amountPaid == null) {
-            amountPaid = BigDecimal.ZERO;
-        }
+        principalAmount =
+                normalizeMoney(
+                        principalAmount
+                );
 
-        if (remainingBalance == null) {
-            remainingBalance = BigDecimal.ZERO;
-        }
+        interestAmount =
+                normalizeMoney(
+                        interestAmount
+                );
 
-        if (installmentAmount == null) {
-            installmentAmount = BigDecimal.ZERO;
-        }
+        penaltyAmount =
+                normalizeMoney(
+                        penaltyAmount
+                );
 
-        if (principalAmount == null) {
-            principalAmount = BigDecimal.ZERO;
-        }
+        amountPaid =
+                normalizeMoney(
+                        amountPaid
+                );
 
-        if (interestAmount == null) {
-            interestAmount = BigDecimal.ZERO;
-        }
+        remainingBalance =
+                normalizeMoney(
+                        remainingBalance
+                );
     }
+
+    // ============================================================
+    // PRE-UPDATE
+    // ============================================================
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
 
-        if (penaltyAmount == null) {
-            penaltyAmount = BigDecimal.ZERO;
-        }
+        updatedAt =
+                LocalDateTime.now();
 
-        if (amountPaid == null) {
-            amountPaid = BigDecimal.ZERO;
-        }
+        installmentAmount =
+                normalizeMoney(
+                        installmentAmount
+                );
 
-        if (remainingBalance == null) {
-            remainingBalance = BigDecimal.ZERO;
-        }
+        principalAmount =
+                normalizeMoney(
+                        principalAmount
+                );
 
-        if (installmentAmount == null) {
-            installmentAmount = BigDecimal.ZERO;
-        }
+        interestAmount =
+                normalizeMoney(
+                        interestAmount
+                );
 
-        if (principalAmount == null) {
-            principalAmount = BigDecimal.ZERO;
-        }
+        penaltyAmount =
+                normalizeMoney(
+                        penaltyAmount
+                );
 
-        if (interestAmount == null) {
-            interestAmount = BigDecimal.ZERO;
-        }
+        amountPaid =
+                normalizeMoney(
+                        amountPaid
+                );
+
+        remainingBalance =
+                normalizeMoney(
+                        remainingBalance
+                );
     }
 
+    // ============================================================
+    // MONEY NORMALIZATION
+    // ============================================================
+
+    private BigDecimal normalizeMoney(
+            BigDecimal value
+    ) {
+
+        if (value == null) {
+            return ZERO;
+        }
+
+        return value.setScale(
+                MONEY_SCALE,
+                java.math.RoundingMode.HALF_UP
+        );
+    }
+
+    // ============================================================
+    // STATUS
+    // ============================================================
+
     public enum ScheduleStatus {
+
         PENDING,
-        PAID,
+
         PARTIAL,
+
+        PAID,
+
         OVERDUE
     }
 }
