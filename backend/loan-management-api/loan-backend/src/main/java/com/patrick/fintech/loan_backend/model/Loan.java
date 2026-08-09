@@ -1,11 +1,11 @@
-
 package com.patrick.fintech.loan_backend.model;
 
 import java.math.BigDecimal;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -17,18 +17,19 @@ import java.util.List;
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(
-        name = "loans",
-        indexes = {
-                @Index(name = "idx_loans_org", columnList = "organization_id"),
-                @Index(name = "idx_loans_branch", columnList = "branch_id"),
-                @Index(name = "idx_loans_borrower", columnList = "borrower_id"),
-                @Index(name = "idx_loans_status", columnList = "status"),
-                @Index(name = "idx_loans_type", columnList = "loan_type"),
-                @Index(name = "idx_loans_created_at", columnList = "created_at"),
-                @Index(name = "idx_loans_disbursed_at", columnList = "disbursed_at"),
-                @Index(name = "idx_loans_days_overdue", columnList = "days_overdue"),
-                @Index(name = "idx_loans_maturity_date", columnList = "maturity_date")
-        }
+    name = "loans",
+    indexes = {
+        @Index(name = "idx_loans_org", columnList = "organization_id"),
+        @Index(name = "idx_loans_branch", columnList = "branch_id"),
+        @Index(name = "idx_loans_borrower", columnList = "borrower_id"),
+        @Index(name = "idx_loans_status", columnList = "status"),
+        @Index(name = "idx_loans_type", columnList = "loan_type"),
+        @Index(name = "idx_loans_created_at", columnList = "created_at"),
+        @Index(name = "idx_loans_created_by", columnList = "created_by"),
+        @Index(name = "idx_loans_disbursed_at", columnList = "disbursed_at"),
+        @Index(name = "idx_loans_days_overdue", columnList = "days_overdue"),
+        @Index(name = "idx_loans_maturity_date", columnList = "maturity_date")
+    }
 )
 @Getter
 @Setter
@@ -46,8 +47,7 @@ public class Loan {
     private Long id;
 
     /**
-     * Optimistic concurrency guard for loan state changes outside the
-     * pessimistically locked payment workflow.
+     * Optimistic concurrency guard.
      */
     @Version
     @Column(name = "version", nullable = false)
@@ -55,10 +55,10 @@ public class Loan {
     private Long version = 0L;
 
     @Column(
-            name = "reference_number",
-            unique = true,
-            nullable = false,
-            length = 100
+        name = "reference_number",
+        unique = true,
+        nullable = false,
+        length = 100
     )
     private String referenceNumber;
 
@@ -70,9 +70,9 @@ public class Loan {
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
-            name = "organization_id",
-            nullable = false,
-            foreignKey = @ForeignKey(name = "fk_loan_organization")
+        name = "organization_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_loan_organization")
     )
     private Organization organization;
 
@@ -83,12 +83,12 @@ public class Loan {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
-            name = "branch_id",
-            foreignKey = @ForeignKey(name = "fk_loan_branch")
+        name = "branch_id",
+        foreignKey = @ForeignKey(name = "fk_loan_branch")
     )
     @JsonIgnoreProperties({
-            "hibernateLazyInitializer",
-            "handler"
+        "hibernateLazyInitializer",
+        "handler"
     })
     private Branch branch;
 
@@ -99,15 +99,44 @@ public class Loan {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
-            name = "borrower_id",
-            nullable = false,
-            foreignKey = @ForeignKey(name = "fk_loan_borrower")
+        name = "borrower_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_loan_borrower")
     )
     @JsonIgnoreProperties({
-            "hibernateLazyInitializer",
-            "handler"
+        "hibernateLazyInitializer",
+        "handler"
     })
     private Borrower borrower;
+
+
+    // ============================================================
+    // MAKER / CREATOR
+    // ============================================================
+
+    /**
+     * The user who created/submitted this loan application.
+     *
+     * This is the authoritative field for maker-checker separation.
+     *
+     * IMPORTANT:
+     * createdBy is different from loanOfficer.
+     *
+     * createdBy:
+     *     The staff member who created/submitted the application.
+     *
+     * loanOfficer:
+     *     The officer assigned to manage the loan.
+     *
+     * A user must never approve a loan that they created.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "created_by",
+        foreignKey = @ForeignKey(name = "fk_loan_created_by")
+    )
+    @JsonIgnore
+    private User createdBy;
 
 
     // ============================================================
@@ -116,8 +145,8 @@ public class Loan {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
-            name = "approved_by",
-            foreignKey = @ForeignKey(name = "fk_loan_approved_by")
+        name = "approved_by",
+        foreignKey = @ForeignKey(name = "fk_loan_approved_by")
     )
     @JsonIgnore
     private User approvedBy;
@@ -125,8 +154,8 @@ public class Loan {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
-            name = "loan_officer_id",
-            foreignKey = @ForeignKey(name = "fk_loan_officer")
+        name = "loan_officer_id",
+        foreignKey = @ForeignKey(name = "fk_loan_officer")
     )
     @JsonIgnore
     private User loanOfficer;
@@ -138,18 +167,18 @@ public class Loan {
 
     @Enumerated(EnumType.STRING)
     @Column(
-            name = "loan_type",
-            nullable = false,
-            length = 50
+        name = "loan_type",
+        nullable = false,
+        length = 50
     )
     private LoanType loanType;
 
 
     @Enumerated(EnumType.STRING)
     @Column(
-            name = "status",
-            nullable = false,
-            length = 50
+        name = "status",
+        nullable = false,
+        length = 50
     )
     @Builder.Default
     private LoanStatus status = LoanStatus.PENDING;
@@ -157,8 +186,8 @@ public class Loan {
 
     @Enumerated(EnumType.STRING)
     @Column(
-            name = "repayment_frequency",
-            length = 30
+        name = "repayment_frequency",
+        length = 30
     )
     private RepaymentFrequency repaymentFrequency;
 
@@ -237,25 +266,15 @@ public class Loan {
     /**
      * MONTHLY or ANNUAL.
      *
-     * DAILY INTEREST MODEL:
-     *
      * MONTHLY:
-     *     daily rate = monthly rate / 100 / 30
-     *
-     * Example:
-     *
-     *     10% monthly
-     *
-     *     10 / 100 / 30
-     *     = 0.0033333333 per day
+     * daily rate = monthly rate / 100 / 30
      *
      * ANNUAL:
-     *
-     *     daily rate = annual rate / 100 / 12 / 30
+     * daily rate = annual rate / 100 / 12 / 30
      */
     @Column(
-            name = "interest_rate_type",
-            length = 20
+        name = "interest_rate_type",
+        length = 20
     )
     @Builder.Default
     private String interestRateType = "MONTHLY";
@@ -270,8 +289,8 @@ public class Loan {
     // ============================================================
 
     @Column(
-            name = "currency",
-            length = 3
+        name = "currency",
+        length = 3
     )
     @Builder.Default
     private String currency = "RWF";
@@ -306,8 +325,8 @@ public class Loan {
 
 
     @Column(
-            name = "collateral_description",
-            columnDefinition = "TEXT"
+        name = "collateral_description",
+        columnDefinition = "TEXT"
     )
     private String collateralDescription;
 
@@ -318,15 +337,15 @@ public class Loan {
 
 
     @Column(
-            name = "rejection_reason",
-            columnDefinition = "TEXT"
+        name = "rejection_reason",
+        columnDefinition = "TEXT"
     )
     private String rejectionReason;
 
 
     @Column(
-            name = "internal_notes",
-            columnDefinition = "TEXT"
+        name = "internal_notes",
+        columnDefinition = "TEXT"
     )
     private String internalNotes;
 
@@ -354,8 +373,8 @@ public class Loan {
 
 
     @Column(
-            name = "risk_category",
-            length = 30
+        name = "risk_category",
+        length = 30
     )
     private String riskCategory;
 
@@ -382,22 +401,7 @@ public class Loan {
 
 
     /**
-     * EXACT DATE AND TIME THE LOAN WAS DISBURSED.
-     *
-     * This is intentionally LocalDateTime.
-     *
-     * Daily interest is based on elapsed 24-hour periods from
-     * this timestamp.
-     *
-     * Example:
-     *
-     * 2026-08-08 10:30:00
-     *
-     * to
-     *
-     * 2026-08-09 10:30:00
-     *
-     * = exactly 24 hours = 1 day of interest.
+     * Exact date and time the loan was disbursed.
      */
     @Column(name = "disbursed_at")
     private LocalDateTime disbursedAt;
@@ -412,16 +416,16 @@ public class Loan {
     // ============================================================
 
     @Column(
-            name = "created_at",
-            nullable = false,
-            updatable = false
+        name = "created_at",
+        nullable = false,
+        updatable = false
     )
     private LocalDateTime createdAt;
 
 
     @Column(
-            name = "updated_at",
-            nullable = false
+        name = "updated_at",
+        nullable = false
     )
     private LocalDateTime updatedAt;
 
@@ -440,10 +444,10 @@ public class Loan {
 
     @JsonIgnore
     @OneToMany(
-            mappedBy = "loan",
-            cascade = CascadeType.ALL,
-            orphanRemoval = false,
-            fetch = FetchType.LAZY
+        mappedBy = "loan",
+        cascade = CascadeType.ALL,
+        orphanRemoval = false,
+        fetch = FetchType.LAZY
     )
     @Builder.Default
     private List<Payment> payments = new ArrayList<>();
@@ -471,13 +475,13 @@ public class Loan {
         }
 
         if (interestRateType == null ||
-                interestRateType.isBlank()) {
+            interestRateType.isBlank()) {
 
             interestRateType = "MONTHLY";
         }
 
         if (currency == null ||
-                currency.isBlank()) {
+            currency.isBlank()) {
 
             currency = "RWF";
         }
@@ -491,11 +495,11 @@ public class Loan {
         }
 
         if (totalPaid == null) {
-            totalPaid = BigDecimal.valueOf(0.0);
+            totalPaid = BigDecimal.ZERO;
         }
 
         if (outstandingBalance == null) {
-            outstandingBalance = BigDecimal.valueOf(0.0);
+            outstandingBalance = BigDecimal.ZERO;
         }
 
         if (processingFeeRate == null) {
@@ -503,7 +507,7 @@ public class Loan {
         }
 
         if (processingFee == null) {
-            processingFee = BigDecimal.valueOf(0.0);
+            processingFee = BigDecimal.ZERO;
         }
 
         if (imported == null) {
@@ -525,27 +529,16 @@ public class Loan {
     public enum LoanType {
 
         PERSONAL,
-
         MORTGAGE,
-
         AUTO,
-
         BUSINESS,
-
         STUDENT,
-
         EMERGENCY,
-
         ASSET_FINANCE,
-
         SALARY_ADVANCE,
-
         MICROFINANCE,
-
         AGRICULTURAL,
-
         TRADE_FINANCE,
-
         GROUP
     }
 
@@ -553,317 +546,355 @@ public class Loan {
     public enum RepaymentFrequency {
 
         WEEKLY,
-
         BIWEEKLY,
-
         MONTHLY,
-
         QUARTERLY,
-
         BULLET
     }
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getAmountDecimal().
-     */
+
+
+    // ============================================================
+    // LEGACY FINANCIAL GETTERS / SETTERS
+    // ============================================================
+
     @Deprecated
     @JsonIgnore
     public Double getAmount() {
         return amount == null ? null : amount.doubleValue();
     }
 
+
     @JsonIgnore
     public BigDecimal getAmountDecimal() {
         return amount;
     }
 
+
     @Deprecated
     public void setAmount(Double value) {
-        this.amount = value == null ? null : BigDecimal.valueOf(value);
+        this.amount = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setAmount(BigDecimal value) {
         this.amount = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getDisbursedAmountDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getDisbursedAmount() {
-        return disbursedAmount == null ? null : disbursedAmount.doubleValue();
+        return disbursedAmount == null
+            ? null
+            : disbursedAmount.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getDisbursedAmountDecimal() {
         return disbursedAmount;
     }
 
+
     @Deprecated
     public void setDisbursedAmount(Double value) {
-        this.disbursedAmount = value == null ? null : BigDecimal.valueOf(value);
+        this.disbursedAmount = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setDisbursedAmount(BigDecimal value) {
         this.disbursedAmount = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getTotalRepayableDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getTotalRepayable() {
-        return totalRepayable == null ? null : totalRepayable.doubleValue();
+        return totalRepayable == null
+            ? null
+            : totalRepayable.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getTotalRepayableDecimal() {
         return totalRepayable;
     }
 
+
     @Deprecated
     public void setTotalRepayable(Double value) {
-        this.totalRepayable = value == null ? null : BigDecimal.valueOf(value);
+        this.totalRepayable = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setTotalRepayable(BigDecimal value) {
         this.totalRepayable = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getTotalPaidDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getTotalPaid() {
-        return totalPaid == null ? null : totalPaid.doubleValue();
+        return totalPaid == null
+            ? null
+            : totalPaid.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getTotalPaidDecimal() {
         return totalPaid;
     }
 
+
     @Deprecated
     public void setTotalPaid(Double value) {
-        this.totalPaid = value == null ? null : BigDecimal.valueOf(value);
+        this.totalPaid = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setTotalPaid(BigDecimal value) {
         this.totalPaid = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getOutstandingBalanceDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getOutstandingBalance() {
-        return outstandingBalance == null ? null : outstandingBalance.doubleValue();
+        return outstandingBalance == null
+            ? null
+            : outstandingBalance.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getOutstandingBalanceDecimal() {
         return outstandingBalance;
     }
 
+
     @Deprecated
     public void setOutstandingBalance(Double value) {
-        this.outstandingBalance = value == null ? null : BigDecimal.valueOf(value);
+        this.outstandingBalance = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setOutstandingBalance(BigDecimal value) {
         this.outstandingBalance = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getNextInstallmentAmountDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getNextInstallmentAmount() {
-        return nextInstallmentAmount == null ? null : nextInstallmentAmount.doubleValue();
+        return nextInstallmentAmount == null
+            ? null
+            : nextInstallmentAmount.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getNextInstallmentAmountDecimal() {
         return nextInstallmentAmount;
     }
 
+
     @Deprecated
     public void setNextInstallmentAmount(Double value) {
-        this.nextInstallmentAmount = value == null ? null : BigDecimal.valueOf(value);
+        this.nextInstallmentAmount = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setNextInstallmentAmount(BigDecimal value) {
         this.nextInstallmentAmount = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getInterestRateDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getInterestRate() {
-        return interestRate == null ? null : interestRate.doubleValue();
+        return interestRate == null
+            ? null
+            : interestRate.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getInterestRateDecimal() {
         return interestRate;
     }
 
+
     @Deprecated
     public void setInterestRate(Double value) {
-        this.interestRate = value == null ? null : BigDecimal.valueOf(value);
+        this.interestRate = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setInterestRate(BigDecimal value) {
         this.interestRate = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getProcessingFeeRateDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getProcessingFeeRate() {
-        return processingFeeRate == null ? null : processingFeeRate.doubleValue();
+        return processingFeeRate == null
+            ? null
+            : processingFeeRate.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getProcessingFeeRateDecimal() {
         return processingFeeRate;
     }
 
+
     @Deprecated
     public void setProcessingFeeRate(Double value) {
-        this.processingFeeRate = value == null ? null : BigDecimal.valueOf(value);
+        this.processingFeeRate = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setProcessingFeeRate(BigDecimal value) {
         this.processingFeeRate = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getProcessingFeeDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getProcessingFee() {
-        return processingFee == null ? null : processingFee.doubleValue();
+        return processingFee == null
+            ? null
+            : processingFee.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getProcessingFeeDecimal() {
         return processingFee;
     }
 
+
     @Deprecated
     public void setProcessingFee(Double value) {
-        this.processingFee = value == null ? null : BigDecimal.valueOf(value);
+        this.processingFee = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setProcessingFee(BigDecimal value) {
         this.processingFee = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getCollateralValueDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getCollateralValue() {
-        return collateralValue == null ? null : collateralValue.doubleValue();
+        return collateralValue == null
+            ? null
+            : collateralValue.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getCollateralValueDecimal() {
         return collateralValue;
     }
 
+
     @Deprecated
     public void setCollateralValue(Double value) {
-        this.collateralValue = value == null ? null : BigDecimal.valueOf(value);
+        this.collateralValue = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setCollateralValue(BigDecimal value) {
         this.collateralValue = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getRiskScoreDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getRiskScore() {
-        return riskScore == null ? null : riskScore.doubleValue();
+        return riskScore == null
+            ? null
+            : riskScore.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getRiskScoreDecimal() {
         return riskScore;
     }
 
+
     @Deprecated
     public void setRiskScore(Double value) {
-        this.riskScore = value == null ? null : BigDecimal.valueOf(value);
+        this.riskScore = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setRiskScore(BigDecimal value) {
         this.riskScore = value;
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getDebtToIncomeRatioDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getDebtToIncomeRatio() {
-        return debtToIncomeRatio == null ? null : debtToIncomeRatio.doubleValue();
+        return debtToIncomeRatio == null
+            ? null
+            : debtToIncomeRatio.doubleValue();
     }
+
 
     @JsonIgnore
     public BigDecimal getDebtToIncomeRatioDecimal() {
         return debtToIncomeRatio;
     }
 
+
     @Deprecated
     public void setDebtToIncomeRatio(Double value) {
-        this.debtToIncomeRatio = value == null ? null : BigDecimal.valueOf(value);
+        this.debtToIncomeRatio = value == null
+            ? null
+            : BigDecimal.valueOf(value);
     }
+
 
     public void setDebtToIncomeRatio(BigDecimal value) {
         this.debtToIncomeRatio = value;
     }
 
-    /** Backward-compatible builder overloads for legacy Double callers.
-     *  Financial state is stored as BigDecimal.
-     */
+
+    // ============================================================
+    // BACKWARD-COMPATIBLE LOMBOK BUILDER
+    // ============================================================
+
     public static class LoanBuilder {
 
         private BigDecimal amount;
@@ -881,100 +912,182 @@ public class Loan {
 
 
         public LoanBuilder amount(Double value) {
-            this.amount = value == null ? null : BigDecimal.valueOf(value);
+            this.amount = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
             return this;
         }
-        public LoanBuilder disbursedAmount(Double value) {
-            this.disbursedAmount = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder totalRepayable(Double value) {
-            this.totalRepayable = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder totalPaid(Double value) {
-            this.totalPaid = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder outstandingBalance(Double value) {
-            this.outstandingBalance = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder nextInstallmentAmount(Double value) {
-            this.nextInstallmentAmount = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder interestRate(Double value) {
-            this.interestRate = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder processingFeeRate(Double value) {
-            this.processingFeeRate = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder processingFee(Double value) {
-            this.processingFee = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder collateralValue(Double value) {
-            this.collateralValue = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder riskScore(Double value) {
-            this.riskScore = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }
-        public LoanBuilder debtToIncomeRatio(Double value) {
-            this.debtToIncomeRatio = value == null ? null : BigDecimal.valueOf(value);
-            return this;
-        }        public LoanBuilder amount(BigDecimal value) {
+
+
+        public LoanBuilder amount(BigDecimal value) {
             this.amount = value;
             return this;
         }
+
+
+        public LoanBuilder disbursedAmount(Double value) {
+            this.disbursedAmount = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder disbursedAmount(BigDecimal value) {
             this.disbursedAmount = value;
             return this;
         }
+
+
+        public LoanBuilder totalRepayable(Double value) {
+            this.totalRepayable = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder totalRepayable(BigDecimal value) {
             this.totalRepayable = value;
             return this;
         }
+
+
+        public LoanBuilder totalPaid(Double value) {
+            this.totalPaid = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder totalPaid(BigDecimal value) {
             this.totalPaid = value;
             return this;
         }
+
+
+        public LoanBuilder outstandingBalance(Double value) {
+            this.outstandingBalance = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder outstandingBalance(BigDecimal value) {
             this.outstandingBalance = value;
             return this;
         }
+
+
+        public LoanBuilder nextInstallmentAmount(Double value) {
+            this.nextInstallmentAmount = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder nextInstallmentAmount(BigDecimal value) {
             this.nextInstallmentAmount = value;
             return this;
         }
+
+
+        public LoanBuilder interestRate(Double value) {
+            this.interestRate = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder interestRate(BigDecimal value) {
             this.interestRate = value;
             return this;
         }
+
+
+        public LoanBuilder processingFeeRate(Double value) {
+            this.processingFeeRate = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder processingFeeRate(BigDecimal value) {
             this.processingFeeRate = value;
             return this;
         }
+
+
+        public LoanBuilder processingFee(Double value) {
+            this.processingFee = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder processingFee(BigDecimal value) {
             this.processingFee = value;
             return this;
         }
+
+
+        public LoanBuilder collateralValue(Double value) {
+            this.collateralValue = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder collateralValue(BigDecimal value) {
             this.collateralValue = value;
             return this;
         }
+
+
+        public LoanBuilder riskScore(Double value) {
+            this.riskScore = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder riskScore(BigDecimal value) {
             this.riskScore = value;
             return this;
         }
+
+
+        public LoanBuilder debtToIncomeRatio(Double value) {
+            this.debtToIncomeRatio = value == null
+                ? null
+                : BigDecimal.valueOf(value);
+
+            return this;
+        }
+
+
         public LoanBuilder debtToIncomeRatio(BigDecimal value) {
             this.debtToIncomeRatio = value;
             return this;
         }
     }
-
 }
