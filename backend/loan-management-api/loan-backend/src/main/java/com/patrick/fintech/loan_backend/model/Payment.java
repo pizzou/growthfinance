@@ -31,18 +31,13 @@ import java.time.LocalDateTime;
 @Builder
 public class Payment {
 
-    // ============================================================
-    // IDENTITY
-    // ============================================================
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
 
-    // ============================================================
-    // PAYMENT REFERENCE
-    // ============================================================
+    
 
     @Column(
             name = "payment_reference",
@@ -52,9 +47,6 @@ public class Payment {
     private String paymentReference;
 
 
-    // ============================================================
-    // RELATIONSHIPS
-    // ============================================================
 
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -80,51 +72,28 @@ public class Payment {
     private User recordedBy;
 
 
-    // ============================================================
-    // INSTALLMENT
-    // ============================================================
+   
 
     @Column(name = "installment_number")
     private Integer installmentNumber;
 
-
-    /**
-     * Scheduled installment amount.
-     */
     @Column(name = "amount", precision = 19, scale = 6)
     @JsonProperty("amount")
     private BigDecimal amount;
 
-
-    /**
-     * Cumulative principal allocated to this installment/cycle.
-     */
     @Column(name = "principal_component", precision = 19, scale = 6)
     @JsonProperty("principalComponent")
     private BigDecimal principalComponent;
 
 
-    /**
-     * Cumulative interest actually paid for this installment/cycle.
-     */
     @Column(name = "interest_component", precision = 19, scale = 6)
     @JsonProperty("interestComponent")
     private BigDecimal interestComponent;
 
-
-    /**
-     * Total money paid against this installment/cycle.
-     *
-     * This is cumulative when several payments are made.
-     */
     @Column(name = "amount_paid", precision = 19, scale = 6)
     @JsonProperty("amountPaid")
     private BigDecimal amountPaid;
 
-
-    // ============================================================
-    // PENALTIES
-    // ============================================================
 
     @Column(name = "penalty", precision = 19, scale = 6)
     @Builder.Default
@@ -138,18 +107,11 @@ public class Payment {
     private BigDecimal waivedAmount = BigDecimal.ZERO;
 
 
-    // ============================================================
-    // BALANCE
-    // ============================================================
-
     @Column(name = "outstanding_after", precision = 19, scale = 6)
     @JsonProperty("outstandingAfter")
     private BigDecimal outstandingAfter;
 
 
-    // ============================================================
-    // PAYMENT STATUS
-    // ============================================================
 
     @Column(name = "paid")
     @Builder.Default
@@ -165,65 +127,16 @@ public class Payment {
     private PaymentStatus status = PaymentStatus.PENDING;
 
 
-    // ============================================================
-    // DATES
-    // ============================================================
-
-    /**
-     * Contractual/scheduled due date.
-     *
-     * This remains a LocalDate because the repayment schedule is
-     * date-based.
-     */
+    
     @Column(name = "due_date")
     private LocalDate dueDate;
 
-
-    /**
-     * Calendar date on which the payment was recorded.
-     */
     @Column(name = "paid_date")
     private LocalDate paidDate;
 
 
-    /**
-     * EXACT timestamp through which daily interest has already
-     * been calculated for this payment cycle.
-     *
-     * IMPORTANT:
-     *
-     * This must be LocalDateTime rather than LocalDate because
-     * interest is calculated every 24 hours.
-     *
-     * Example:
-     *
-     * Disbursement:
-     *     2026-08-08 10:30:00
-     *
-     * Payment:
-     *     2026-08-09 10:30:00
-     *
-     * Elapsed time:
-     *     exactly 24 hours
-     *
-     * Therefore:
-     *     1 day of interest
-     *
-     * After payment, this field becomes:
-     *     2026-08-09 10:30:00
-     *
-     * A later payment at:
-     *     2026-08-10 10:30:00
-     *
-     * calculates another 1 day.
-     */
     @Column(name = "interest_calculation_date")
     private LocalDateTime interestCalculationDate;
-
-
-    // ============================================================
-    // LATE PAYMENT
-    // ============================================================
 
     @Column(name = "days_late")
     @Builder.Default
@@ -233,11 +146,6 @@ public class Payment {
     @Column(name = "is_late")
     @Builder.Default
     private boolean isLate = false;
-
-
-    // ============================================================
-    // PAYMENT DETAILS
-    // ============================================================
 
     @Column(name = "payment_method", length = 50)
     private String paymentMethod;
@@ -269,9 +177,6 @@ public class Payment {
     private String notes;
 
 
-    // ============================================================
-    // SYSTEM DATES
-    // ============================================================
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -281,37 +186,15 @@ public class Payment {
     private LocalDateTime verifiedAt;
 
 
-    // ============================================================
-    // DAILY INTEREST
-    // ============================================================
-
-    /**
-     * Total interest accrued for this payment cycle.
-     *
-     * This is NOT necessarily the amount already paid.
-     *
-     * Example:
-     *
-     * cycleInterestDue = 50,000
-     * interestComponent = 20,000
-     * cycleInterestRemaining = 30,000
-     */
     @Column(name = "cycle_interest_due", precision = 19, scale = 6)
     @JsonProperty("cycleInterestDue")
     private BigDecimal cycleInterestDue;
 
-
-    /**
-     * Interest still owed for this payment cycle.
-     */
     @Column(name = "cycle_interest_remaining", precision = 19, scale = 6)
     @JsonProperty("cycleInterestRemaining")
     private BigDecimal cycleInterestRemaining;
 
 
-    // ============================================================
-    // JPA LIFECYCLE
-    // ============================================================
 
     @PrePersist
     protected void onCreate() {
@@ -383,10 +266,6 @@ public class Payment {
     }
 
 
-    // ============================================================
-    // ENUM
-    // ============================================================
-
     public enum PaymentStatus {
 
         PENDING,
@@ -399,10 +278,7 @@ public class Payment {
 
         PARTIALLY_PAID
     }
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getAmountDecimal().
-     */
+   
     @Deprecated
     @JsonIgnore
     public Double getAmount() {
@@ -424,10 +300,6 @@ public class Payment {
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getPrincipalComponentDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getPrincipalComponent() {
@@ -449,10 +321,7 @@ public class Payment {
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getInterestComponentDecimal().
-     */
+   
     @Deprecated
     @JsonIgnore
     public Double getInterestComponent() {
@@ -474,10 +343,6 @@ public class Payment {
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getAmountPaidDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getAmountPaid() {
@@ -499,10 +364,6 @@ public class Payment {
     }
 
 
-    /**
-     * Legacy binary-floating-point read boundary retained for existing service integrations.
-     * New financial code should use getPenaltyDecimal().
-     */
     @Deprecated
     @JsonIgnore
     public Double getPenalty() {

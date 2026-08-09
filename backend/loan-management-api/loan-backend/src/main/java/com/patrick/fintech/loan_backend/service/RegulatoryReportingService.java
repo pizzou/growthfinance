@@ -196,6 +196,64 @@ public class RegulatoryReportingService {
 
 
     // ============================================================
+    // DATE/TIME BOUNDARY HELPERS
+    // ============================================================
+
+    /**
+     * Converts an inclusive LocalDate into the exclusive beginning
+     * of the following day.
+     *
+     * Example:
+     *
+     * 2026-08-31
+     *
+     * becomes:
+     *
+     * 2026-09-01T00:00:00
+     *
+     * This allows a query using:
+     *
+     *     disbursedAt < :asOf
+     *
+     * to include every loan disbursed during 2026-08-31,
+     * including loans disbursed at 23:59:59.
+     *
+     * IMPORTANT:
+     *
+     * This does NOT modify Loan.disbursedAt.
+     * It is only a reporting query boundary.
+     */
+    private LocalDateTime exclusiveEndOfDay(
+            LocalDate date
+    ) {
+
+        if (date == null) {
+            return null;
+        }
+
+        return date
+                .plusDays(1)
+                .atStartOfDay();
+    }
+
+
+    /**
+     * Converts the beginning LocalDate into the beginning
+     * of that day.
+     */
+    private LocalDateTime startOfDay(
+            LocalDate date
+    ) {
+
+        if (date == null) {
+            return null;
+        }
+
+        return date.atStartOfDay();
+    }
+
+
+    // ============================================================
     // PORTFOLIO
     // ============================================================
 
@@ -205,14 +263,40 @@ public class RegulatoryReportingService {
             LocalDate asOf
     ) {
 
-        if (organizationId == null) {
+        if (organizationId == null || asOf == null) {
             return new ArrayList<>();
         }
+
+        /*
+         * IMPORTANT:
+         *
+         * Loan.disbursedAt is LocalDateTime.
+         *
+         * We therefore convert an inclusive reporting date into
+         * the exclusive beginning of the next day.
+         *
+         * Example:
+         *
+         * asOf = 2026-08-31
+         *
+         * query value:
+         *
+         * 2026-09-01T00:00:00
+         *
+         * Repository condition:
+         *
+         * l.disbursedAt < :asOf
+         *
+         * This includes all loans disbursed on 2026-08-31,
+         * regardless of their exact time.
+         */
+        LocalDateTime asOfDateTime =
+                exclusiveEndOfDay(asOf);
 
         return loanRepository.findPortfolioAsOf(
                 organizationId,
                 branchId,
-                asOf
+                asOfDateTime
         );
     }
 
@@ -228,15 +312,56 @@ public class RegulatoryReportingService {
             LocalDate to
     ) {
 
-        if (organizationId == null) {
+        if (
+                organizationId == null
+                        ||
+                from == null
+                        ||
+                to == null
+        ) {
+
             return new ArrayList<>();
         }
+
+        if (to.isBefore(from)) {
+
+            throw new IllegalArgumentException(
+                    "'to' cannot be before 'from'."
+            );
+        }
+
+        /*
+         * Reporting dates are inclusive.
+         *
+         * Example:
+         *
+         * from = 2026-08-01
+         * to   = 2026-08-31
+         *
+         * becomes:
+         *
+         * fromDateTime = 2026-08-01T00:00:00
+         * toDateTime   = 2026-09-01T00:00:00
+         *
+         * Repository must use:
+         *
+         * l.disbursedAt >= :from
+         * AND
+         * l.disbursedAt < :to
+         *
+         * This correctly includes all disbursements on August 31.
+         */
+        LocalDateTime fromDateTime =
+                startOfDay(from);
+
+        LocalDateTime toDateTime =
+                exclusiveEndOfDay(to);
 
         return loanRepository.findLoansDisbursedDuringPeriod(
                 organizationId,
                 branchId,
-                from,
-                to
+                fromDateTime,
+                toDateTime
         );
     }
 
@@ -252,10 +377,31 @@ public class RegulatoryReportingService {
             LocalDate to
     ) {
 
-        if (organizationId == null) {
+        if (
+                organizationId == null
+                        ||
+                from == null
+                        ||
+                to == null
+        ) {
+
             return new ArrayList<>();
         }
 
+        if (to.isBefore(from)) {
+
+            throw new IllegalArgumentException(
+                    "'to' cannot be before 'from'."
+            );
+        }
+
+        /*
+         * PaymentRepository currently receives LocalDate values.
+         *
+         * We intentionally leave this call unchanged because the
+         * current error is caused by LoanRepository's LocalDateTime
+         * fields.
+         */
         return paymentRepository.findPaymentsDuringPeriod(
                 organizationId,
                 branchId,
@@ -778,16 +924,6 @@ public class RegulatoryReportingService {
 
                 loansMissingCurrency++;
             }
-
-
-            /*
-             * We intentionally do not assume a particular
-             * repayment-schedule getter exists on Loan.
-             *
-             * Schedule completeness should be validated by the
-             * schedule repository/service where that relationship
-             * actually exists.
-             */
         }
 
 
@@ -978,14 +1114,6 @@ public class RegulatoryReportingService {
                 );
 
 
-        /*
-         * PAR 30+ excludes the 1-30 bucket.
-         *
-         * PAR 60+ excludes 1-30 and 31-60.
-         *
-         * PAR 90+ excludes 1-30, 31-60 and 61-90.
-         */
-
         double par30Amount =
                 par31To60
                         + par61To90
@@ -1039,13 +1167,6 @@ public class RegulatoryReportingService {
         // ========================================================
         // OUTSTANDING
         // ========================================================
-
-        /*
-         * Current Loan model does not expose separate outstanding
-         * interest/fee balances in the contract used here.
-         *
-         * Therefore these remain zero rather than inventing values.
-         */
 
         double outstandingInterest = 0.0;
 
@@ -1183,10 +1304,6 @@ public class RegulatoryReportingService {
 
         return BnrSummaryReport.builder()
 
-                // ------------------------------------------------
-                // ORGANIZATION
-                // ------------------------------------------------
-
                 .organizationId(
                         organizationId
                 )
@@ -1218,11 +1335,6 @@ public class RegulatoryReportingService {
                                 ? organization.getDefaultCurrency()
                                 : "RWF"
                 )
-
-
-                // ------------------------------------------------
-                // PERIOD
-                // ------------------------------------------------
 
                 .reportPeriod(
                         (
@@ -1260,11 +1372,6 @@ public class RegulatoryReportingService {
                         )
                 )
 
-
-                // ------------------------------------------------
-                // BRANCH
-                // ------------------------------------------------
-
                 .branchId(
                         branchId
                 )
@@ -1275,11 +1382,6 @@ public class RegulatoryReportingService {
                                 branchId
                         )
                 )
-
-
-                // ------------------------------------------------
-                // LOANS
-                // ------------------------------------------------
 
                 .totalLoans(
                         portfolioLoans.size()
@@ -1333,11 +1435,6 @@ public class RegulatoryReportingService {
                         restructuredLoans
                 )
 
-
-                // ------------------------------------------------
-                // DISBURSEMENTS
-                // ------------------------------------------------
-
                 .totalPrincipalDisbursed(
                         totalPrincipalDisbursed
                 )
@@ -1358,11 +1455,6 @@ public class RegulatoryReportingService {
                         smallestLoanAmount
                 )
 
-
-                // ------------------------------------------------
-                // OUTSTANDING
-                // ------------------------------------------------
-
                 .outstandingPrincipal(
                         outstandingPrincipal
                 )
@@ -1378,11 +1470,6 @@ public class RegulatoryReportingService {
                 .totalOutstanding(
                         totalOutstanding
                 )
-
-
-                // ------------------------------------------------
-                // REPAYMENTS
-                // ------------------------------------------------
 
                 .totalPrincipalCollected(
                         principalCollected
@@ -1419,11 +1506,6 @@ public class RegulatoryReportingService {
                 .overduePayments(
                         overduePayments
                 )
-
-
-                // ------------------------------------------------
-                // PAR
-                // ------------------------------------------------
 
                 .parAmount(
                         parAmount
@@ -1473,11 +1555,6 @@ public class RegulatoryReportingService {
                         parOver365
                 )
 
-
-                // ------------------------------------------------
-                // NPL
-                // ------------------------------------------------
-
                 .nplAmount(
                         nplAmount
                 )
@@ -1510,11 +1587,6 @@ public class RegulatoryReportingService {
                         loansOver365Days
                 )
 
-
-                // ------------------------------------------------
-                // DEFAULT / WRITE-OFF
-                // ------------------------------------------------
-
                 .defaultedAmount(
                         defaultedAmount
                 )
@@ -1527,11 +1599,6 @@ public class RegulatoryReportingService {
                         0.0
                 )
 
-
-                // ------------------------------------------------
-                // PROVISION
-                // ------------------------------------------------
-
                 .requiredProvision(
                         0.0
                 )
@@ -1543,11 +1610,6 @@ public class RegulatoryReportingService {
                 .provisionShortfall(
                         0.0
                 )
-
-
-                // ------------------------------------------------
-                // BORROWERS
-                // ------------------------------------------------
 
                 .totalBorrowers(
                         borrowerIds.size()
@@ -1573,11 +1635,6 @@ public class RegulatoryReportingService {
                         borrowersWithMultipleLoans.size()
                 )
 
-
-                // ------------------------------------------------
-                // FINANCIAL INCLUSION
-                // ------------------------------------------------
-
                 .youthBorrowers(
                         youthBorrowerIds.size()
                 )
@@ -1589,11 +1646,6 @@ public class RegulatoryReportingService {
                 .seniorBorrowers(
                         seniorBorrowerIds.size()
                 )
-
-
-                // ------------------------------------------------
-                // CREDIT
-                // ------------------------------------------------
 
                 .borrowersCreditChecked(
                         borrowersCreditChecked
@@ -1615,11 +1667,6 @@ public class RegulatoryReportingService {
                         0.0
                 )
 
-
-                // ------------------------------------------------
-                // BREAKDOWNS
-                // ------------------------------------------------
-
                 .loanTypeBreakdown(
                         loanTypeBreakdown
                 )
@@ -1631,11 +1678,6 @@ public class RegulatoryReportingService {
                 .genderBreakdown(
                         genderBreakdown
                 )
-
-
-                // ------------------------------------------------
-                // DATA QUALITY
-                // ------------------------------------------------
 
                 .loansMissingBorrower(
                         loansMissingBorrower
@@ -1660,11 +1702,6 @@ public class RegulatoryReportingService {
                 .dataQualityWarnings(
                         warnings
                 )
-
-
-                // ------------------------------------------------
-                // STATUS
-                // ------------------------------------------------
 
                 .reportStatus(
                         reportStatus
@@ -1913,10 +1950,6 @@ public class RegulatoryReportingService {
 
         return BnrFinancialStatementReport.builder()
 
-                // ------------------------------------------------
-                // REPORT INFORMATION
-                // ------------------------------------------------
-
                 .organizationId(
                         organizationId
                 )
@@ -1966,11 +1999,6 @@ public class RegulatoryReportingService {
                         LocalDateTime.now()
                 )
 
-
-                // ------------------------------------------------
-                // BALANCE SHEET
-                // ------------------------------------------------
-
                 .assets(
                         getList(
                                 financialPosition,
@@ -2012,11 +2040,6 @@ public class RegulatoryReportingService {
                         balanceSheetBalanced
                 )
 
-
-                // ------------------------------------------------
-                // PROFIT AND LOSS
-                // ------------------------------------------------
-
                 .income(
                         getList(
                                 incomeStatement,
@@ -2043,11 +2066,6 @@ public class RegulatoryReportingService {
                         netIncome
                 )
 
-
-                // ------------------------------------------------
-                // CASH FLOW
-                // ------------------------------------------------
-
                 .cashUsedForLending(
                         cashUsedForLending
                 )
@@ -2067,11 +2085,6 @@ public class RegulatoryReportingService {
                 .netChangeInCash(
                         netChangeInCash
                 )
-
-
-                // ------------------------------------------------
-                // TRIAL BALANCE
-                // ------------------------------------------------
 
                 .trialBalanceDebit(
                         trialBalanceDebit
@@ -2483,6 +2496,23 @@ public class RegulatoryReportingService {
                     CreditBureauRecord.builder();
 
 
+            /*
+             * IMPORTANT:
+             *
+             * loan.getDisbursedAt() remains LocalDateTime.
+             *
+             * Converting it to LocalDate here is ONLY for the
+             * CreditBureauRecord.dateOpened DTO field.
+             *
+             * It does NOT modify Loan.disbursedAt and does NOT
+             * participate in interest calculation.
+             */
+            LocalDate dateOpened =
+                    loan.getDisbursedAt() != null
+                            ? loan.getDisbursedAt().toLocalDate()
+                            : loan.getStartDate();
+
+
             builder
                     .borrowerId(
                             borrower != null
@@ -2558,11 +2588,9 @@ public class RegulatoryReportingService {
                             creditScore
                     )
 
-                   .dateOpened(
-        loan.getDisbursedAt() != null
-                ? loan.getDisbursedAt().toLocalDate()
-                : loan.getStartDate()
-)
+                    .dateOpened(
+                            dateOpened
+                    )
 
                     .lastPaymentDate(
                             loan.getLastPaymentDate()
@@ -2590,17 +2618,12 @@ public class RegulatoryReportingService {
 
 
             /*
-             * IMPORTANT:
+             * Current CreditBureauRecord does not expose a
+             * repaymentClassification builder field.
              *
-             * The current CreditBureauRecord contract shown in the
-             * project does not expose a repaymentClassification
-             * builder field.
-             *
-             * We therefore calculate the classification above but
-             * do not call a non-existent builder method.
-             *
-             * This prevents a compile failure while keeping the CRB
-             * classification logic ready for the DTO enhancement.
+             * Keep the classification calculation above ready
+             * for a future DTO enhancement without calling a
+             * non-existent builder method.
              */
 
             output.add(
@@ -2661,15 +2684,10 @@ public class RegulatoryReportingService {
             return false;
         }
 
-
         /*
-         * Avoid assuming a getRestructured() or
-         * getRestructuredAt() property that may not exist in
-         * the current Loan entity.
-         *
-         * Existing status values remain authoritative.
+         * Do not assume properties that are not confirmed
+         * on the current Loan entity.
          */
-
         return false;
     }
 
