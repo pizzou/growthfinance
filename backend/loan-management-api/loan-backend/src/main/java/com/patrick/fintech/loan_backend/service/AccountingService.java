@@ -1,3 +1,4 @@
+
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.model.Branch;
@@ -38,6 +39,12 @@ public class AccountingService {
     private final JournalEntryRepository journalRepo;
     private final JournalLineRepository lineRepo;
 
+    /*
+     * ============================================================
+     * MONEY CONFIGURATION
+     * ============================================================
+     */
+
     private static final int MONEY_SCALE = 6;
 
     private static final RoundingMode MONEY_ROUNDING =
@@ -48,6 +55,12 @@ public class AccountingService {
                     MONEY_SCALE,
                     MONEY_ROUNDING
             );
+
+    /*
+     * ============================================================
+     * DEFAULT CHART OF ACCOUNTS
+     * ============================================================
+     */
 
     private static final String[][] DEFAULT_ACCOUNTS = {
 
@@ -141,9 +154,7 @@ public class AccountingService {
             return money((BigDecimal) value);
         }
 
-        return BigDecimal.valueOf(
-                        value.doubleValue()
-                )
+        return BigDecimal.valueOf(value.doubleValue())
                 .setScale(
                         MONEY_SCALE,
                         MONEY_ROUNDING
@@ -161,8 +172,7 @@ public class AccountingService {
 
     private boolean isPositive(BigDecimal value) {
 
-        return money(value)
-                .compareTo(ZERO) > 0;
+        return money(value).compareTo(ZERO) > 0;
     }
 
     private BigDecimal normalize(BigDecimal value) {
@@ -264,9 +274,9 @@ public class AccountingService {
             }
         }
 
-        for (String[] account : DEFAULT_ACCOUNTS) {
+        for (String[] definition : DEFAULT_ACCOUNTS) {
 
-            String code = account[0];
+            String code = definition[0];
 
             if (existingCodes.contains(code)) {
                 continue;
@@ -276,14 +286,14 @@ public class AccountingService {
                     ChartOfAccount.builder()
                             .organization(org)
                             .code(code)
-                            .name(account[1])
+                            .name(definition[1])
                             .type(
                                     ChartOfAccount.AccountType
-                                            .valueOf(account[2])
+                                            .valueOf(definition[2])
                             )
                             .normalBalance(
                                     ChartOfAccount.NormalBalance
-                                            .valueOf(account[3])
+                                            .valueOf(definition[3])
                             )
                             .active(true)
                             .build()
@@ -504,7 +514,7 @@ public class AccountingService {
         requireOrganizationId(orgId);
         requireAccountId(accountId);
 
-        ChartOfAccount acc =
+        ChartOfAccount account =
                 coaRepo.findByIdAndOrganization_Id(
                         accountId,
                         orgId
@@ -516,14 +526,14 @@ public class AccountingService {
                 );
 
         if (name != null && !name.isBlank()) {
-            acc.setName(name.trim());
+            account.setName(name.trim());
         }
 
         if (active != null) {
-            acc.setActive(active);
+            account.setActive(active);
         }
 
-        return coaRepo.save(acc);
+        return coaRepo.save(account);
     }
 
     /*
@@ -601,15 +611,20 @@ public class AccountingService {
             );
         }
 
-       
-        if (!"REVERSAL".equals(sourceType)) {
+        String normalizedSourceType =
+                sourceType.trim();
+
+        String normalizedSourceId =
+                sourceId.trim();
+
+        if (!"REVERSAL".equals(normalizedSourceType)) {
 
             JournalEntry existing =
                     journalRepo
                             .findFirstByOrganization_IdAndSourceTypeAndSourceId(
                                     org.getId(),
-                                    sourceType,
-                                    sourceId
+                                    normalizedSourceType,
+                                    normalizedSourceId
                             )
                             .orElse(null);
 
@@ -619,8 +634,8 @@ public class AccountingService {
                         "Accounting event already posted. " +
                         "Returning existing journal entry {} for {}:{}",
                         existing.getId(),
-                        sourceType,
-                        sourceId
+                        normalizedSourceType,
+                        normalizedSourceId
                 );
 
                 return existing;
@@ -696,9 +711,8 @@ public class AccountingService {
         totalDebit = money(totalDebit);
         totalCredit = money(totalCredit);
 
-        if (
-                totalDebit.compareTo(totalCredit) != 0
-        ) {
+        if (totalDebit.compareTo(totalCredit) != 0) {
+
             throw new IllegalStateException(
                     "Journal entry does not balance: " +
                     "debits " +
@@ -716,16 +730,15 @@ public class AccountingService {
                         .organization(org)
                         .branch(branch)
                         .entryDate(LocalDate.now())
-                        .sourceType(sourceType.trim())
-                        .sourceId(sourceId.trim())
+                        .sourceType(normalizedSourceType)
+                        .sourceId(normalizedSourceId)
                         .reference(reference.trim())
                         .description(description.trim())
                         .createdBy("SYSTEM")
                         .reversed(false)
                         .build();
 
-        entry =
-                journalRepo.save(entry);
+        entry = journalRepo.save(entry);
 
         for (JournalLine line : lines) {
 
@@ -867,6 +880,15 @@ public class AccountingService {
 
         /*
          * PROCESSING FEE
+         *
+         * The fee is posted separately so the GL records:
+         *
+         * DR Cash
+         * CR Fee/Income
+         *
+         * If the fee is deducted from the borrower proceeds,
+         * the resulting cash movement is still correctly reflected
+         * across the two journals.
          */
 
         BigDecimal fee =
@@ -972,10 +994,19 @@ public class AccountingService {
             return;
         }
 
+        /*
+         * One accounting accrual per loan per calendar date.
+         *
+         * The loan/payment service is responsible for determining
+         * whether a new day/cycle of interest is actually due.
+         */
+        LocalDate accrualDate =
+                LocalDate.now();
+
         String sourceId =
                 loan.getId() +
                 "-" +
-                LocalDate.now();
+                accrualDate;
 
         JournalEntry existing =
                 journalRepo
@@ -991,7 +1022,7 @@ public class AccountingService {
             log.info(
                     "Interest already accrued for loan {} on {}. Journal {}",
                     loan.getId(),
-                    LocalDate.now(),
+                    accrualDate,
                     existing.getId()
             );
 
@@ -1013,7 +1044,7 @@ public class AccountingService {
                 "Interest accrual for " +
                 reference +
                 " (" +
-                LocalDate.now() +
+                accrualDate +
                 ")",
 
                 List.of(
@@ -1051,7 +1082,12 @@ public class AccountingService {
         );
     }
 
-    
+    /*
+     * ============================================================
+     * PAYMENT RECEIVED
+     * ============================================================
+     */
+
     @Transactional
     public JournalEntry postPaymentReceived(
             Payment payment,
@@ -1168,8 +1204,6 @@ public class AccountingService {
         BigDecimal overpayment =
                 maxZero(overpaymentAmount);
 
-        
-
         BigDecimal allocated =
                 principal
                         .add(interest)
@@ -1180,10 +1214,9 @@ public class AccountingService {
                 money(allocated);
 
         BigDecimal allocationDifference =
-                total.subtract(allocated);
-
-        allocationDifference =
-                money(allocationDifference);
+                money(
+                        total.subtract(allocated)
+                );
 
         if (
                 allocationDifference.compareTo(ZERO) != 0
@@ -1209,7 +1242,6 @@ public class AccountingService {
         List<JournalLine> lines =
                 new ArrayList<>();
 
-     
         String loanReference =
                 loan.getReferenceNumber() != null
                         && !loan.getReferenceNumber().isBlank()
@@ -1265,7 +1297,14 @@ public class AccountingService {
             );
         }
 
-       
+        /*
+         * ========================================================
+         * INTEREST
+         *
+         * First clear accrued interest receivable.
+         * Any remaining interest is recognized directly as income.
+         * ========================================================
+         */
 
         if (interest.compareTo(ZERO) > 0) {
 
@@ -1362,7 +1401,17 @@ public class AccountingService {
             );
         }
 
-        
+        /*
+         * ========================================================
+         * OVERPAYMENT LIABILITY
+         *
+         * IMPORTANT:
+         * The overpayment is recognized here exactly once.
+         * Therefore postOverpaymentRefundPayable() below will
+         * detect an existing payment journal and will NOT create
+         * a second liability.
+         * ========================================================
+         */
 
         if (overpayment.compareTo(ZERO) > 0) {
 
@@ -1427,9 +1476,7 @@ public class AccountingService {
                 money(totalCredits);
 
         if (
-                totalDebits.compareTo(
-                        totalCredits
-                ) != 0
+                totalDebits.compareTo(totalCredits) != 0
         ) {
 
             throw new IllegalStateException(
@@ -1441,23 +1488,11 @@ public class AccountingService {
             );
         }
 
-        /*
-         * ========================================================
-         * PAYMENT REFERENCE
-         * ========================================================
-         */
-
         String reference =
                 payment.getPaymentReference() != null
                         && !payment.getPaymentReference().isBlank()
                         ? payment.getPaymentReference().trim()
                         : "PAY-" + payment.getId();
-
-        /*
-         * ========================================================
-         * POST JOURNAL
-         * ========================================================
-         */
 
         return post(
                 org,
@@ -1471,7 +1506,11 @@ public class AccountingService {
         );
     }
 
-    
+    /*
+     * ============================================================
+     * PAYMENT RECEIVED FROM PAYMENT ENTITY
+     * ============================================================
+     */
 
     @Transactional
     public JournalEntry postPaymentReceived(
@@ -1516,8 +1555,6 @@ public class AccountingService {
                         )
                         : ZERO;
 
-       
-
         BigDecimal derivedOverpayment =
                 amount
                         .subtract(principal)
@@ -1537,7 +1574,18 @@ public class AccountingService {
         );
     }
 
-  
+    /*
+     * ============================================================
+     * OVERPAYMENT REFUND PAYABLE
+     * ============================================================
+     *
+     * This method is retained for compatibility with callers.
+     *
+     * If the payment journal already recognized the overpayment,
+     * this method returns that existing journal instead of creating
+     * a second liability.
+     * ============================================================
+     */
 
     @Transactional
     public JournalEntry postOverpaymentRefundPayable(
@@ -1582,17 +1630,43 @@ public class AccountingService {
             );
         }
 
-        String sourceId =
+        String paymentSourceId =
                 String.valueOf(
                         payment.getId()
                 );
+
+        /*
+         * Payment accounting already recognizes the overpayment.
+         * Do not create the liability twice.
+         */
+
+        JournalEntry paymentJournal =
+                journalRepo
+                        .findFirstByOrganization_IdAndSourceTypeAndSourceId(
+                                org.getId(),
+                                "PAYMENT_RECEIVED",
+                                paymentSourceId
+                        )
+                        .orElse(null);
+
+        if (paymentJournal != null) {
+
+            log.info(
+                    "Overpayment for payment {} is already recognized " +
+                    "in payment journal {}. No duplicate liability created.",
+                    payment.getId(),
+                    paymentJournal.getId()
+            );
+
+            return paymentJournal;
+        }
 
         JournalEntry existing =
                 journalRepo
                         .findFirstByOrganization_IdAndSourceTypeAndSourceId(
                                 org.getId(),
                                 "OVERPAYMENT_REFUND_PAYABLE",
-                                sourceId
+                                paymentSourceId
                         )
                         .orElse(null);
 
@@ -1610,7 +1684,7 @@ public class AccountingService {
                 org,
                 loan.getBranch(),
                 "OVERPAYMENT_REFUND_PAYABLE",
-                sourceId,
+                paymentSourceId,
                 "REFUND-" + payment.getId(),
                 "Borrower refund payable for payment " +
                 reference,
@@ -1650,7 +1724,12 @@ public class AccountingService {
         );
     }
 
-  
+    /*
+     * ============================================================
+     * REFUND PAID
+     * ============================================================
+     */
+
     @Transactional
     public JournalEntry postRefundPaid(
             Organization org,
@@ -1704,6 +1783,7 @@ public class AccountingService {
                         payableBalance
                 ) > 0
         ) {
+
             throw new IllegalStateException(
                     "Refund amount exceeds borrower refund liability. " +
                     "Requested=" +
@@ -1718,7 +1798,7 @@ public class AccountingService {
                         .findFirstByOrganization_IdAndSourceTypeAndSourceId(
                                 org.getId(),
                                 "REFUND_PAYMENT",
-                                sourceId
+                                sourceId.trim()
                         )
                         .orElse(null);
 
@@ -1736,7 +1816,7 @@ public class AccountingService {
                 org,
                 branch,
                 "REFUND_PAYMENT",
-                sourceId,
+                sourceId.trim(),
                 refundReference.trim(),
                 finalDescription,
 
@@ -2218,6 +2298,12 @@ public class AccountingService {
         );
     }
 
+    /*
+     * ============================================================
+     * REVERSE JOURNAL ENTRY
+     * ============================================================
+     */
+
     @Transactional
     public JournalEntry reverseEntry(
             Long orgId,
@@ -2246,6 +2332,26 @@ public class AccountingService {
                                         entryId
                                 )
                         );
+
+        if (
+                original.getOrganization() == null
+                || original.getOrganization().getId() == null
+        ) {
+            throw new IllegalStateException(
+                    "Journal entry has no valid organization"
+            );
+        }
+
+        if (
+                !orgId.equals(
+                        original.getOrganization().getId()
+                )
+        ) {
+            throw new IllegalStateException(
+                    "Journal entry does not belong to organization " +
+                    orgId
+            );
+        }
 
         if (
                 Boolean.TRUE.equals(
@@ -2280,8 +2386,8 @@ public class AccountingService {
         }
 
         /*
-         * A payment journal cannot be reversed after its associated
-         * refund has already been paid.
+         * A payment journal cannot be reversed after a refund
+         * payment using the same source ID has already been posted.
          */
 
         if (
@@ -2316,7 +2422,7 @@ public class AccountingService {
         }
 
         /*
-         * PREVENT DUPLICATE REVERSALS
+         * Prevent duplicate reversal journals.
          */
 
         String reversalSourceId =
@@ -2372,6 +2478,28 @@ public class AccountingService {
                             line.getCreditDecimal()
                     );
 
+            if (
+                    originalDebit.compareTo(ZERO) < 0
+                    || originalCredit.compareTo(ZERO) < 0
+            ) {
+                throw new IllegalStateException(
+                        "Original journal contains negative amount " +
+                        "on line " +
+                        line.getId()
+                );
+            }
+
+            if (
+                    originalDebit.compareTo(ZERO) > 0
+                    && originalCredit.compareTo(ZERO) > 0
+            ) {
+                throw new IllegalStateException(
+                        "Original journal line " +
+                        line.getId() +
+                        " contains both debit and credit"
+                );
+            }
+
             reversedLines.add(
                     JournalLine.builder()
                             .account(lineAccount)
@@ -2404,10 +2532,7 @@ public class AccountingService {
         BigDecimal reversalCredit =
                 ZERO;
 
-        for (
-                JournalLine line :
-                reversedLines
-        ) {
+        for (JournalLine line : reversedLines) {
 
             reversalDebit =
                     reversalDebit.add(
@@ -2504,10 +2629,7 @@ public class AccountingService {
                         reversal
                 );
 
-        for (
-                JournalLine line :
-                reversedLines
-        ) {
+        for (JournalLine line : reversedLines) {
 
             line.setJournalEntry(
                     reversal
@@ -2575,10 +2697,7 @@ public class AccountingService {
 
         if (lines != null) {
 
-            for (
-                    JournalLine line :
-                    lines
-            ) {
+            for (JournalLine line : lines) {
 
                 if (line == null) {
                     continue;
@@ -2723,12 +2842,9 @@ public class AccountingService {
 
         if (accounts != null) {
 
-            for (
-                    ChartOfAccount acc :
-                    accounts
-            ) {
+            for (ChartOfAccount acc : accounts) {
 
-                if (acc == null) {
+                if (acc == null || acc.getId() == null) {
                     continue;
                 }
 
@@ -2746,10 +2862,7 @@ public class AccountingService {
 
                 if (lines != null) {
 
-                    for (
-                            JournalLine line :
-                            lines
-                    ) {
+                    for (JournalLine line : lines) {
 
                         if (line == null) {
                             continue;
@@ -2921,12 +3034,14 @@ public class AccountingService {
 
         if (accounts != null) {
 
-            for (
-                    ChartOfAccount acc :
-                    accounts
-            ) {
+            for (ChartOfAccount acc : accounts) {
 
-                if (acc == null) {
+                if (
+                        acc == null
+                        || acc.getId() == null
+                        || acc.getType() == null
+                        || acc.getNormalBalance() == null
+                ) {
                     continue;
                 }
 
@@ -2997,24 +3112,28 @@ public class AccountingService {
                     }
 
                     case LIABILITY ->
+
                             totalLiabilities =
                                     totalLiabilities.add(
                                             balance
                                     );
 
                     case EQUITY ->
+
                             totalEquity =
                                     totalEquity.add(
                                             balance
                                     );
 
                     case INCOME ->
+
                             totalIncome =
                                     totalIncome.add(
                                             balance
                                     );
 
                     case EXPENSE ->
+
                             totalExpense =
                                     totalExpense.add(
                                             balance
@@ -3138,6 +3257,11 @@ public class AccountingService {
         return result;
     }
 
+    /*
+     * ============================================================
+     * PROFIT AND LOSS
+     * ============================================================
+     */
 
     @Transactional(readOnly = true)
     public Map<String, Object> getProfitAndLoss(
@@ -3175,23 +3299,16 @@ public class AccountingService {
 
         if (entries != null) {
 
-            for (
-                    JournalEntry entry :
-                    entries
-            ) {
+            for (JournalEntry entry : entries) {
 
-                if (entry == null) {
-                    continue;
-                }
-
-                if (entry.getLines() == null) {
-                    continue;
-                }
-
-                for (
-                        JournalLine line :
-                        entry.getLines()
+                if (
+                        entry == null
+                        || entry.getLines() == null
                 ) {
+                    continue;
+                }
+
+                for (JournalLine line : entry.getLines()) {
 
                     if (
                             line == null
@@ -3406,23 +3523,16 @@ public class AccountingService {
 
         if (entries != null) {
 
-            for (
-                    JournalEntry entry :
-                    entries
-            ) {
+            for (JournalEntry entry : entries) {
 
-                if (entry == null) {
-                    continue;
-                }
-
-                if (entry.getLines() == null) {
-                    continue;
-                }
-
-                for (
-                        JournalLine line :
-                        entry.getLines()
+                if (
+                        entry == null
+                        || entry.getLines() == null
                 ) {
+                    continue;
+                }
+
+                for (JournalLine line : entry.getLines()) {
 
                     if (
                             line == null
@@ -3581,10 +3691,7 @@ public class AccountingService {
 
         if (entries != null) {
 
-            for (
-                    JournalEntry entry :
-                    entries
-            ) {
+            for (JournalEntry entry : entries) {
 
                 if (entry == null) {
                     continue;
@@ -3603,7 +3710,7 @@ public class AccountingService {
                 BigDecimal[] totals =
                         byBranch.computeIfAbsent(
                                 branchName,
-                                k ->
+                                key ->
                                         new BigDecimal[]{
                                                 ZERO,
                                                 ZERO,
@@ -3621,10 +3728,7 @@ public class AccountingService {
                                 ? entry.getSourceType()
                                 : "";
 
-                for (
-                        JournalLine line :
-                        entry.getLines()
-                ) {
+                for (JournalLine line : entry.getLines()) {
 
                     if (
                             line == null
@@ -3746,7 +3850,7 @@ public class AccountingService {
                         }
 
                         default -> {
-                            // Not part of this summary.
+                            // Not part of this branch summary.
                         }
                     }
                 }
@@ -3820,6 +3924,7 @@ public class AccountingService {
         if (
                 acc == null
                 || acc.getId() == null
+                || orgId == null
         ) {
             return ZERO;
         }
@@ -3843,10 +3948,7 @@ public class AccountingService {
         BigDecimal credit =
                 ZERO;
 
-        for (
-                JournalLine line :
-                lines
-        ) {
+        for (JournalLine line : lines) {
 
             if (line == null) {
                 continue;
