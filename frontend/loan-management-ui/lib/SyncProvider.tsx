@@ -9,9 +9,7 @@ import {
 } from "react";
 
 import { drainOfflineQueue } from "./offlineSync";
-import {
-    pendingCount,
-} from "./offlineDb";
+import { pendingCount } from "./offlineDb";
 
 /**
  * LoanSaaS Pro — Offline Synchronization Provider
@@ -20,7 +18,7 @@ import {
  *
  * 1. Detect when the browser comes back online.
  * 2. Synchronize queued POST / PUT / PATCH / DELETE requests.
- * 3. Retry synchronization periodically.
+ * 3. Retry synchronization periodically only when requests are pending.
  * 4. Prevent multiple sync processes from running simultaneously.
  * 5. Keep the pending-change indicator updated.
  *
@@ -30,14 +28,9 @@ import {
  *
  * Offline GET/read caching is handled by api.ts + offlineDb.ts.
  */
-
 export default function SyncProvider() {
-
-    const [pending, setPending] =
-        useState<number>(0);
-
-    const [syncing, setSyncing] =
-        useState<boolean>(false);
+    const [pending, setPending] = useState<number>(0);
+    const [syncing, setSyncing] = useState<boolean>(false);
 
     /**
      * Prevent overlapping synchronization runs.
@@ -46,231 +39,198 @@ export default function SyncProvider() {
      *
      * - initial syncNow()
      * - online event
-     * - 30-second interval
+     * - periodic retry
      *
      * That could cause the same queued request to be
      * submitted more than once.
      */
-    const syncRunning =
-        useRef<boolean>(false);
+    const syncRunning = useRef<boolean>(false);
 
     /**
      * Prevent state updates after component unmount.
      */
-    const mounted =
-        useRef<boolean>(false);
+    const mounted = useRef<boolean>(false);
 
     /**
      * ------------------------------------------------------------
      * REFRESH PENDING COUNT
      * ------------------------------------------------------------
      */
+    const refreshPending = useCallback(async (): Promise<number> => {
+        try {
+            const count = await pendingCount();
 
-    const refreshPending =
-        useCallback(async () => {
-
-            try {
-
-                const count =
-                    await pendingCount();
-
-                if (mounted.current) {
-                    setPending(count);
-                }
-
-            } catch (error) {
-
-                console.error(
-                    "Failed to read offline queue:",
-                    error
-                );
-
+            if (mounted.current) {
+                setPending(count);
             }
 
-        }, []);
+            return count;
+        } catch (error) {
+            console.error(
+                "Failed to read offline queue:",
+                error
+            );
+
+            return 0;
+        }
+    }, []);
 
     /**
      * ------------------------------------------------------------
      * AUTH HEADER
      * ------------------------------------------------------------
      */
+    const getAuthHeader = useCallback(
+        (): Record<string, string> => {
+            if (typeof window === "undefined") {
+                return {};
+            }
 
-    const getAuthHeader =
-        useCallback(
-            (): Record<string, string> => {
+            const token = localStorage.getItem("token");
 
-                if (
-                    typeof window ===
-                    "undefined"
-                ) {
-                    return {};
-                }
+            if (!token) {
+                return {};
+            }
 
-                const token =
-                    localStorage.getItem(
-                        "token"
-                    );
-
-                if (!token) {
-                    return {};
-                }
-
-                return {
-                    Authorization:
-                        `Bearer ${token}`,
-                };
-            },
-            []
-        );
+            return {
+                Authorization: `Bearer ${token}`,
+            };
+        },
+        []
+    );
 
     /**
      * ------------------------------------------------------------
      * SYNCHRONIZE OFFLINE QUEUE
      * ------------------------------------------------------------
      */
+    const syncNow = useCallback(async () => {
+        /**
+         * Never attempt synchronization while offline.
+         */
+        if (
+            typeof navigator !== "undefined" &&
+            !navigator.onLine
+        ) {
+            return;
+        }
 
-    const syncNow =
-        useCallback(async () => {
+        /**
+         * Prevent overlapping sync operations.
+         */
+        if (syncRunning.current) {
+            console.log(
+                "Offline sync already running."
+            );
+
+            return;
+        }
+
+        /**
+         * IMPORTANT:
+         *
+         * Check the queue before starting synchronization.
+         *
+         * This prevents:
+         *
+         * "Starting offline synchronization..."
+         *
+         * from being printed every 30 seconds when there
+         * are no pending offline requests.
+         */
+        const count = await refreshPending();
+
+        if (count <= 0) {
+            return;
+        }
+
+        syncRunning.current = true;
+
+        if (mounted.current) {
+            setSyncing(true);
+        }
+
+        try {
+            console.log(
+                `Starting offline synchronization for ${count} pending request(s)...`
+            );
+
+            const result = await drainOfflineQueue(
+                getAuthHeader
+            );
 
             /**
-             * Never attempt synchronization while offline.
+             * Successfully synchronized requests.
              */
             if (
-                typeof navigator !==
-                    "undefined" &&
-                !navigator.onLine
+                result.succeeded.length > 0
             ) {
-                return;
+                console.log(
+                    `Successfully synced ${result.succeeded.length} offline request(s).`
+                );
+
+                for (
+                    const action of result.succeeded
+                ) {
+                    console.log(
+                        "Synced offline action:",
+                        {
+                            id: action.id,
+                            method: action.method,
+                            url: action.url,
+                            label: action.label,
+                        }
+                    );
+                }
             }
 
             /**
-             * Prevent overlapping sync operations.
+             * Failed requests remain in IndexedDB.
              */
-            if (syncRunning.current) {
-                console.log(
-                    "Offline sync already running."
+            if (
+                result.failed.length > 0
+            ) {
+                console.warn(
+                    `Failed to sync ${result.failed.length} offline request(s).`
                 );
 
-                return;
+                for (
+                    const failure of result.failed
+                ) {
+                    console.warn(
+                        "Offline sync failure:",
+                        {
+                            id: failure.action.id,
+                            method: failure.action.method,
+                            url: failure.action.url,
+                            error: failure.error,
+                        }
+                    );
+                }
             }
 
-            syncRunning.current = true;
+            /**
+             * Always refresh the queue count after synchronization.
+             */
+            await refreshPending();
+        } catch (error) {
+            console.error(
+                "Offline synchronization failed:",
+                error
+            );
+
+            await refreshPending();
+        } finally {
+            syncRunning.current = false;
 
             if (mounted.current) {
-                setSyncing(true);
+                setSyncing(false);
             }
-
-            try {
-
-                console.log(
-                    "Starting offline synchronization..."
-                );
-
-                const result =
-                    await drainOfflineQueue(
-                        getAuthHeader
-                    );
-
-                /**
-                 * Successfully synchronized requests.
-                 */
-                if (
-                    result.succeeded.length >
-                    0
-                ) {
-
-                    console.log(
-                        `Successfully synced ${result.succeeded.length} offline request(s).`
-                    );
-
-                    for (
-                        const action
-                        of result.succeeded
-                    ) {
-
-                        console.log(
-                            "Synced offline action:",
-                            {
-                                id:
-                                    action.id,
-
-                                method:
-                                    action.method,
-
-                                url:
-                                    action.url,
-
-                                label:
-                                    action.label,
-                            }
-                        );
-                    }
-                }
-
-                /**
-                 * Failed requests remain in IndexedDB.
-                 */
-                if (
-                    result.failed.length >
-                    0
-                ) {
-
-                    console.warn(
-                        `Failed to sync ${result.failed.length} offline request(s).`
-                    );
-
-                    for (
-                        const failure
-                        of result.failed
-                    ) {
-
-                        console.warn(
-                            "Offline sync failure:",
-                            {
-                                id:
-                                    failure.action.id,
-
-                                method:
-                                    failure.action.method,
-
-                                url:
-                                    failure.action.url,
-
-                                error:
-                                    failure.error,
-                            }
-                        );
-                    }
-                }
-
-                /**
-                 * Always refresh the queue count.
-                 */
-                await refreshPending();
-
-            } catch (error) {
-
-                console.error(
-                    "Offline synchronization failed:",
-                    error
-                );
-
-                await refreshPending();
-
-            } finally {
-
-                syncRunning.current =
-                    false;
-
-                if (mounted.current) {
-                    setSyncing(false);
-                }
-            }
-
-        }, [
-            getAuthHeader,
-            refreshPending,
-        ]);
+        }
+    }, [
+        getAuthHeader,
+        refreshPending,
+    ]);
 
     /**
      * ------------------------------------------------------------
@@ -279,57 +239,45 @@ export default function SyncProvider() {
      *
      * Browser fires this when network connectivity returns.
      */
+    const handleOnline = useCallback(() => {
+        console.log(
+            "Internet connection restored."
+        );
 
-    const handleOnline =
-        useCallback(() => {
-
-            console.log(
-                "Internet connection restored."
-            );
-
-            /**
-             * Small delay gives the browser/network
-             * a moment to stabilize before sending
-             * queued requests.
-             */
-            window.setTimeout(
-                () => {
-                    void syncNow();
-                },
-                1000
-            );
-
-        }, [syncNow]);
+        /**
+         * Small delay gives the browser/network
+         * a moment to stabilize before sending
+         * queued requests.
+         */
+        window.setTimeout(() => {
+            void syncNow();
+        }, 1000);
+    }, [syncNow]);
 
     /**
      * ------------------------------------------------------------
      * OFFLINE EVENT
      * ------------------------------------------------------------
      */
-
-    const handleOffline =
-        useCallback(() => {
-
-            console.warn(
-                "Internet connection lost. Offline mode active."
-            );
-
-        }, []);
+    const handleOffline = useCallback(() => {
+        console.warn(
+            "Internet connection lost. Offline mode active."
+        );
+    }, []);
 
     /**
      * ------------------------------------------------------------
      * INITIALIZATION
      * ------------------------------------------------------------
      */
-
     useEffect(() => {
-
         mounted.current = true;
 
         /**
-         * Load current pending count.
+         * Load current pending count and synchronize
+         * only if there are pending requests.
          */
-        void refreshPending();
+        void syncNow();
 
         /**
          * Register connectivity listeners.
@@ -345,47 +293,32 @@ export default function SyncProvider() {
         );
 
         /**
-         * Try synchronization immediately.
-         *
-         * This handles the case where:
-         *
-         * - user had pending actions
-         * - closes browser
-         * - reopens application while online
-         */
-        void syncNow();
-
-        /**
          * Periodic retry.
          *
-         * This protects against situations where:
+         * IMPORTANT:
          *
-         * - online event is missed
-         * - Wi-Fi reconnects strangely
-         * - backend was temporarily unavailable
-         * - Render backend was waking up
+         * syncNow() now checks IndexedDB first.
+         * Therefore this interval does NOT repeatedly
+         * drain an empty queue.
+         *
+         * It is still useful when:
+         *
+         * - the online event is missed;
+         * - Wi-Fi reconnects strangely;
+         * - the backend was temporarily unavailable;
+         * - Render backend was temporarily waking up.
          */
-        const interval =
-            window.setInterval(
-                () => {
-
-                    if (
-                        navigator.onLine
-                    ) {
-                        void syncNow();
-                    }
-
-                },
-                30_000
-            );
+        const interval = window.setInterval(() => {
+            if (navigator.onLine) {
+                void syncNow();
+            }
+        }, 30_000);
 
         /**
          * Cleanup.
          */
         return () => {
-
-            mounted.current =
-                false;
+            mounted.current = false;
 
             window.removeEventListener(
                 "online",
@@ -397,15 +330,11 @@ export default function SyncProvider() {
                 handleOffline
             );
 
-            window.clearInterval(
-                interval
-            );
+            window.clearInterval(interval);
         };
-
     }, [
         handleOnline,
         handleOffline,
-        refreshPending,
         syncNow,
     ]);
 
@@ -429,7 +358,6 @@ export default function SyncProvider() {
      * Currently synchronizing.
      */
     if (syncing) {
-
         return (
             <div
                 style={{
@@ -438,27 +366,20 @@ export default function SyncProvider() {
                     left: 0,
                     right: 0,
 
-                    background:
-                        "#2563EB",
-
+                    background: "#2563EB",
                     color: "#FFFFFF",
 
-                    padding:
-                        "8px 12px",
+                    padding: "8px 12px",
 
-                    textAlign:
-                        "center",
+                    textAlign: "center",
 
                     fontWeight: 600,
-
-                    fontSize:
-                        "14px",
+                    fontSize: "14px",
 
                     zIndex: 9999,
                 }}
             >
-                🔄 Synchronizing
-                offline changes...
+                🔄 Synchronizing offline changes...
             </div>
         );
     }
@@ -475,26 +396,17 @@ export default function SyncProvider() {
                 left: 0,
                 right: 0,
 
-                background:
-                    "#0D9488",
+                background: "#0D9488",
+                color: "#FFFFFF",
 
-                color:
-                    "#FFFFFF",
+                padding: "8px 12px",
 
-                padding:
-                    "8px 12px",
+                textAlign: "center",
 
-                textAlign:
-                    "center",
+                fontWeight: 600,
+                fontSize: "14px",
 
-                fontWeight:
-                    600,
-
-                fontSize:
-                    "14px",
-
-                zIndex:
-                    9999,
+                zIndex: 9999,
             }}
         >
             ⏳ {pending} change
