@@ -1,15 +1,19 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.dto.PaymentGatewayRequest;
 import com.patrick.fintech.loan_backend.dto.PaymentGatewayResponse;
+import com.patrick.fintech.loan_backend.model.Payment;
+import com.patrick.fintech.loan_backend.model.User;
+import com.patrick.fintech.loan_backend.repository.LoanRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
@@ -23,6 +27,9 @@ public class MtnMobileMoneyService {
     private static final String MTN_PROVIDER = "MTN_MOMO";
 
     private final WebClient.Builder webClientBuilder;
+
+    private final PaymentService paymentService;
+    private final LoanRepository loanRepo;
 
     // ============================================================
     // CONFIGURATION
@@ -52,23 +59,25 @@ public class MtnMobileMoneyService {
     @Value("${mtn.momo.currency:RWF}")
     private String configuredCurrency;
 
-
     // ============================================================
     // INITIATE PAYMENT
     // ============================================================
 
+   
     public PaymentGatewayResponse initiate(
             Long loanId,
             PaymentGatewayRequest request,
             Double amount,
             String currency,
-            String description) {
+            String description
+    ) {
 
-        // --------------------------------------------------------
+        // ========================================================
         // BASIC VALIDATION
-        // --------------------------------------------------------
+        // ========================================================
 
         if (loanId == null) {
+
             return PaymentGatewayResponse.failed(
                     "Loan ID is required",
                     MTN_PROVIDER
@@ -76,6 +85,7 @@ public class MtnMobileMoneyService {
         }
 
         if (request == null) {
+
             return PaymentGatewayResponse.failed(
                     "Payment request is required",
                     MTN_PROVIDER
@@ -83,14 +93,15 @@ public class MtnMobileMoneyService {
         }
 
         if (amount == null || amount <= 0) {
+
             return PaymentGatewayResponse.failed(
                     "Payment amount must be greater than zero",
                     MTN_PROVIDER
             );
         }
 
-        if (request.getPhoneNumber() == null ||
-                request.getPhoneNumber().isBlank()) {
+        if (request.getPhoneNumber() == null
+                || request.getPhoneNumber().isBlank()) {
 
             return PaymentGatewayResponse.failed(
                     "MTN Mobile Money phone number is required",
@@ -98,27 +109,49 @@ public class MtnMobileMoneyService {
             );
         }
 
+        // ========================================================
+        // VERIFY LOAN EXISTS
+        // ========================================================
+
+        loanRepo.findById(loanId)
+                .orElseThrow(
+                        () -> new IllegalArgumentException(
+                                "Loan not found: " + loanId
+                        )
+                );
+
+        // ========================================================
+        // NORMALIZE PHONE
+        // ========================================================
+
         String phoneNumber =
                 normalizeRwandaPhone(
                         request.getPhoneNumber()
                 );
 
-        String transactionId =
-                "MTN-" +
-                loanId +
-                "-" +
-                UUID.randomUUID()
-                        .toString()
-                        .substring(0, 8)
-                        .toUpperCase();
+        // ========================================================
+        // PAYMENT CURRENCY
+        // ========================================================
 
         String paymentCurrency =
-                currency != null && !currency.isBlank()
-                        ? currency
+                currency != null
+                        && !currency.isBlank()
+                        ? currency.trim().toUpperCase()
                         : configuredCurrency;
 
+        // ========================================================
+        // CREATE STABLE TRANSACTION ID
+        // ========================================================
+
+        String transactionId =
+                createSandboxTransactionId(
+                        loanId
+                );
+
         log.info(
-                "[MTN MOMO] Initiating payment. loanId={}, amount={}, currency={}, phone={}, transactionId={}, sandbox={}",
+                "[MTN MOMO] Initiating payment. " +
+                        "loanId={}, amount={}, currency={}, phone={}, " +
+                        "transactionId={}, sandbox={}",
                 loanId,
                 amount,
                 paymentCurrency,
@@ -126,7 +159,6 @@ public class MtnMobileMoneyService {
                 transactionId,
                 sandbox
         );
-
 
         // ========================================================
         // DISABLED
@@ -140,40 +172,40 @@ public class MtnMobileMoneyService {
             );
         }
 
-
         // ========================================================
-        // LOCAL SANDBOX SIMULATION
-        //
-        // This allows us to test the complete application flow
-        // without MTN credentials and without charging real money.
+        // LOCAL SANDBOX
         // ========================================================
 
         if (sandbox) {
 
             log.info(
-                    "[MTN SANDBOX] Simulating payment request. loanId={}, transactionId={}, amount={}",
+                    "[MTN SANDBOX] Payment request created. " +
+                            "loanId={}, transactionId={}, amount={}, currency={}",
                     loanId,
                     transactionId,
-                    amount
+                    amount,
+                    paymentCurrency
             );
+
+           
 
             return PaymentGatewayResponse.pending(
                     "MTN Mobile Money sandbox payment created. " +
-                    "Waiting for simulated customer confirmation.",
+                            "Waiting for simulated customer confirmation.",
                     transactionId,
                     MTN_PROVIDER
             );
         }
 
-
         // ========================================================
-        // REAL MTN CONFIGURATION CHECK
+        // REAL MTN CONFIGURATION
         // ========================================================
 
         if (!isConfigured()) {
 
             log.error(
-                    "[MTN MOMO] Production integration enabled but credentials are missing."
+                    "[MTN MOMO] Production integration enabled " +
+                            "but credentials are missing."
             );
 
             return PaymentGatewayResponse.failed(
@@ -181,7 +213,6 @@ public class MtnMobileMoneyService {
                     MTN_PROVIDER
             );
         }
-
 
         // ========================================================
         // REAL MTN REQUEST
@@ -195,8 +226,8 @@ public class MtnMobileMoneyService {
             String accessToken =
                     getAccessToken();
 
-            if (accessToken == null ||
-                    accessToken.isBlank()) {
+            if (accessToken == null
+                    || accessToken.isBlank()) {
 
                 return PaymentGatewayResponse.failed(
                         "Unable to authenticate with MTN Mobile Money",
@@ -204,10 +235,8 @@ public class MtnMobileMoneyService {
                 );
             }
 
-
             String externalId =
                     externalReference(loanId);
-
 
             MtnRequestBody body =
                     new MtnRequestBody(
@@ -219,10 +248,10 @@ public class MtnMobileMoneyService {
                                     "msisdn"
                             ),
                             description != null
+                                    && !description.isBlank()
                                     ? description
                                     : "Loan repayment"
                     );
-
 
             var response =
                     webClientBuilder
@@ -256,9 +285,9 @@ public class MtnMobileMoneyService {
                             .toBodilessEntity()
                             .block();
 
-
             log.info(
-                    "[MTN MOMO] Request submitted. HTTP status={}, loanId={}, referenceId={}",
+                    "[MTN MOMO] Request submitted. " +
+                            "HTTP status={}, loanId={}, referenceId={}",
                     response != null
                             ? response.getStatusCode().value()
                             : "unknown",
@@ -266,16 +295,18 @@ public class MtnMobileMoneyService {
                     referenceId
             );
 
-
-            // ----------------------------------------------------
-            // MTN accepted the request.
-            //
-            // This does NOT mean payment is completed.
-            // ----------------------------------------------------
+            /*
+             * MTN accepted the request.
+             *
+             * It is NOT yet a successful payment.
+             *
+             * The payment must only be recorded after MTN
+             * confirms SUCCESSFUL.
+             */
 
             return PaymentGatewayResponse.pending(
                     "Payment request sent to MTN Mobile Money. " +
-                    "Please approve the payment on your phone.",
+                            "Please approve the payment on your phone.",
                     referenceId,
                     MTN_PROVIDER
             );
@@ -283,7 +314,8 @@ public class MtnMobileMoneyService {
         } catch (Exception e) {
 
             log.error(
-                    "[MTN MOMO] Payment initiation failed. loanId={}: {}",
+                    "[MTN MOMO] Payment initiation failed. " +
+                            "loanId={}: {}",
                     loanId,
                     e.getMessage(),
                     e
@@ -296,19 +328,18 @@ public class MtnMobileMoneyService {
         }
     }
 
-
     // ============================================================
     // SANDBOX CONFIRMATION
-    //
-    // Used ONLY for local testing.
-    // This simulates MTN confirming a pending transaction.
     // ============================================================
 
+   
+    @Transactional
     public PaymentGatewayResponse simulateConfirmation(
             Long loanId,
             String transactionId,
             Double amount,
-            String currency) {
+            String currency
+    ) {
 
         if (!sandbox) {
 
@@ -318,8 +349,43 @@ public class MtnMobileMoneyService {
             );
         }
 
-        if (transactionId == null ||
-                transactionId.isBlank()) {
+        return confirmPayment(
+                loanId,
+                transactionId,
+                amount,
+                currency,
+                "SANDBOX"
+        );
+    }
+
+    // ============================================================
+    // CONFIRM PAYMENT
+    // ============================================================
+
+   
+    @Transactional
+    public PaymentGatewayResponse confirmPayment(
+            Long loanId,
+            String transactionId,
+            Double amount,
+            String currency,
+            String confirmationSource
+    ) {
+
+        // ========================================================
+        // VALIDATION
+        // ========================================================
+
+        if (loanId == null) {
+
+            return PaymentGatewayResponse.failed(
+                    "Loan ID is required",
+                    MTN_PROVIDER
+            );
+        }
+
+        if (transactionId == null
+                || transactionId.isBlank()) {
 
             return PaymentGatewayResponse.failed(
                     "Transaction ID is required",
@@ -327,8 +393,7 @@ public class MtnMobileMoneyService {
             );
         }
 
-        if (amount == null ||
-                amount <= 0) {
+        if (amount == null || amount <= 0) {
 
             return PaymentGatewayResponse.failed(
                     "Payment amount must be greater than zero",
@@ -336,56 +401,240 @@ public class MtnMobileMoneyService {
             );
         }
 
+        // ========================================================
+        // VERIFY LOAN
+        // ========================================================
+
+        var loan =
+                loanRepo.findById(loanId)
+                        .orElseThrow(
+                                () -> new IllegalArgumentException(
+                                        "Loan not found: " + loanId
+                                )
+                        );
+
+        if (loan.getOrganization() == null
+                || loan.getOrganization().getId() == null) {
+
+            return PaymentGatewayResponse.failed(
+                    "Loan organization is missing",
+                    MTN_PROVIDER
+            );
+        }
+
+        // ========================================================
+        // NORMALIZE TRANSACTION ID
+        // ========================================================
+
+        String normalizedTransactionId =
+                transactionId.trim();
+
+        // ========================================================
+        // CURRENCY
+        // ========================================================
+
+        String paymentCurrency =
+                currency != null
+                        && !currency.isBlank()
+                        ? currency.trim().toUpperCase()
+                        : configuredCurrency;
+
+        // ========================================================
+        // VERIFY REAL MTN PAYMENT
+        // ========================================================
+
+        if (!sandbox) {
+
+            boolean verified =
+                    verify(
+                            normalizedTransactionId
+                    );
+
+            if (!verified) {
+
+                log.warn(
+                        "[MTN MOMO] Payment confirmation rejected. " +
+                                "loanId={}, transactionId={}, source={}",
+                        loanId,
+                        normalizedTransactionId,
+                        confirmationSource
+                );
+
+                return PaymentGatewayResponse.failed(
+                        "MTN Mobile Money transaction has not been confirmed as successful",
+                        MTN_PROVIDER
+                );
+            }
+        }
+
+        // ========================================================
+        // PREVENT DOUBLE PROCESSING
+        // ========================================================
+
+
         log.info(
-                "[MTN SANDBOX] Simulated successful payment. loanId={}, transactionId={}, amount={}",
+                "[MTN MOMO] Confirming payment. " +
+                        "loanId={}, transactionId={}, amount={}, " +
+                        "currency={}, source={}",
                 loanId,
-                transactionId,
-                amount
+                normalizedTransactionId,
+                amount,
+                paymentCurrency,
+                confirmationSource
         );
 
-        return PaymentGatewayResponse.success(
-                "MTN Mobile Money sandbox payment confirmed",
-                transactionId,
+        // ========================================================
+        // RECORD PAYMENT EXACTLY ONCE
+        // ========================================================
+
+        Payment payment;
+
+        try {
+
+            payment =
+                    paymentService.recordPayment(
+                            loanId,
+                            BigDecimal.valueOf(amount),
+                            "MOBILE_MONEY",
+                            normalizedTransactionId,
+                            "MTN_MOMO",
+                            "Confirmed by MTN Mobile Money. Source="
+                                    + confirmationSource,
+                            (User) null
+                    );
+
+        } catch (Exception e) {
+
+            log.error(
+                    "[MTN MOMO] Failed to record confirmed payment. " +
+                            "loanId={}, transactionId={}, amount={}",
+                    loanId,
+                    normalizedTransactionId,
+                    amount,
+                    e
+            );
+
+            return PaymentGatewayResponse.failed(
+                    "MTN payment was confirmed but could not be recorded against the loan",
+                    MTN_PROVIDER
+            );
+        }
+
+        // ========================================================
+        // FINANCIAL RESULT
+        // ========================================================
+
+        BigDecimal outstandingBalance =
+                payment.getOutstandingAfter() != null
+                        ? payment.getOutstandingAfter()
+                        : loan.getOutstandingBalanceDecimal();
+
+        BigDecimal interestPaid =
+                payment.getInterestComponentDecimal();
+
+        BigDecimal principalPaid =
+                payment.getPrincipalComponentDecimal();
+
+        log.info(
+                "[MTN MOMO] Payment successfully recorded. " +
+                        "loanId={}, paymentId={}, transactionId={}, " +
+                        "amount={}, interestPaid={}, principalPaid={}, " +
+                        "outstandingBalance={}, paymentStatus={}",
+                loanId,
+                payment.getId(),
+                normalizedTransactionId,
                 amount,
-                currency != null
-                        ? currency
-                        : configuredCurrency,
+                interestPaid,
+                principalPaid,
+                outstandingBalance,
+                payment.getStatus()
+        );
+
+        // ========================================================
+        // SUCCESS RESPONSE
+        // ========================================================
+
+        return PaymentGatewayResponse.success(
+                "MTN Mobile Money payment confirmed and recorded against the loan",
+                normalizedTransactionId,
+                amount,
+                paymentCurrency,
                 "MOBILE_MONEY",
                 MTN_PROVIDER
         );
     }
 
-
     // ============================================================
-    // VERIFY TRANSACTION
+    // REAL MTN WEBHOOK / CALLBACK PROCESSING
     // ============================================================
 
+   
+    @Transactional
+    public PaymentGatewayResponse processWebhookConfirmation(
+            Long loanId,
+            String transactionId,
+            Double amount,
+            String currency
+    ) {
+
+        if (sandbox) {
+
+            /*
+             * In sandbox mode this behaves exactly like the
+             * simulated confirmation.
+             */
+            return confirmPayment(
+                    loanId,
+                    transactionId,
+                    amount,
+                    currency,
+                    "MTN_SANDBOX_WEBHOOK"
+            );
+        }
+
+        /*
+         * Production MTN callback.
+         */
+        return confirmPayment(
+                loanId,
+                transactionId,
+                amount,
+                currency,
+                "MTN_WEBHOOK"
+        );
+    }
+
+    
     public boolean verify(
-            String transactionId) {
+            String transactionId
+    ) {
 
-        if (transactionId == null ||
-                transactionId.isBlank()) {
+        if (transactionId == null
+                || transactionId.isBlank()) {
 
             return false;
         }
 
-        // --------------------------------------------------------
-        // Sandbox
-        // --------------------------------------------------------
+        String normalizedTransactionId =
+                transactionId.trim();
+
+        // ========================================================
+        // SANDBOX
+        // ========================================================
 
         if (sandbox) {
 
             log.info(
                     "[MTN SANDBOX] Transaction {} considered verified for testing",
-                    transactionId
+                    normalizedTransactionId
             );
 
             return true;
         }
 
-        // --------------------------------------------------------
-        // Production verification
-        // --------------------------------------------------------
+        // ========================================================
+        // PRODUCTION CONFIGURATION
+        // ========================================================
 
         if (!isConfigured()) {
 
@@ -396,25 +645,29 @@ public class MtnMobileMoneyService {
             return false;
         }
 
+        // ========================================================
+        // VERIFY WITH MTN
+        // ========================================================
+
         try {
 
             String accessToken =
                     getAccessToken();
 
-            if (accessToken == null ||
-                    accessToken.isBlank()) {
+            if (accessToken == null
+                    || accessToken.isBlank()) {
 
                 return false;
             }
 
-            var response =
+            Map response =
                     webClientBuilder
                             .baseUrl(baseUrl)
                             .build()
                             .get()
                             .uri(
                                     "/collection/v1_0/requesttopay/{referenceId}",
-                                    transactionId
+                                    normalizedTransactionId
                             )
                             .header(
                                     "Authorization",
@@ -435,28 +688,42 @@ public class MtnMobileMoneyService {
                             .block();
 
             if (response == null) {
+
                 return false;
             }
 
             Object status =
                     response.get("status");
 
-            return status != null &&
-                    "SUCCESSFUL".equalsIgnoreCase(
+            boolean successful =
+                    status != null
+                            && "SUCCESSFUL".equalsIgnoreCase(
                             status.toString()
                     );
+
+            log.info(
+                    "[MTN MOMO] Transaction verification. " +
+                            "transactionId={}, status={}, successful={}",
+                    normalizedTransactionId,
+                    status,
+                    successful
+            );
+
+            return successful;
 
         } catch (Exception e) {
 
             log.error(
-                    "[MTN MOMO] Verification failed: {}",
-                    e.getMessage()
+                    "[MTN MOMO] Verification failed. " +
+                            "transactionId={}, error={}",
+                    normalizedTransactionId,
+                    e.getMessage(),
+                    e
             );
 
             return false;
         }
     }
-
 
     // ============================================================
     // ACCESS TOKEN
@@ -503,6 +770,7 @@ public class MtnMobileMoneyService {
                             .block();
 
             if (response == null) {
+
                 return null;
             }
 
@@ -517,13 +785,13 @@ public class MtnMobileMoneyService {
 
             log.error(
                     "[MTN MOMO] Failed to obtain access token: {}",
-                    e.getMessage()
+                    e.getMessage(),
+                    e
             );
 
             return null;
         }
     }
-
 
     // ============================================================
     // CONFIGURATION
@@ -531,26 +799,31 @@ public class MtnMobileMoneyService {
 
     private boolean isConfigured() {
 
-        return subscriptionKey != null &&
-                !subscriptionKey.isBlank() &&
+        return subscriptionKey != null
+                && !subscriptionKey.isBlank()
 
-                apiUser != null &&
-                !apiUser.isBlank() &&
+                && apiUser != null
+                && !apiUser.isBlank()
 
-                apiKey != null &&
-                !apiKey.isBlank() &&
+                && apiKey != null
+                && !apiKey.isBlank()
 
-                baseUrl != null &&
-                !baseUrl.isBlank();
+                && baseUrl != null
+                && !baseUrl.isBlank();
     }
-
 
     // ============================================================
     // RWANDA PHONE NORMALIZATION
     // ============================================================
 
     private String normalizeRwandaPhone(
-            String phone) {
+            String phone
+    ) {
+
+        if (phone == null) {
+
+            return "";
+        }
 
         String value =
                 phone.trim()
@@ -558,64 +831,85 @@ public class MtnMobileMoneyService {
                         .replace("-", "");
 
         if (value.startsWith("+250")) {
+
             return value.substring(1);
         }
 
         if (value.startsWith("250")) {
+
             return value;
         }
 
         if (value.startsWith("07")) {
+
             return "250" + value.substring(1);
         }
 
         if (value.startsWith("7")) {
+
             return "250" + value;
         }
 
         return value;
     }
 
-
     // ============================================================
     // MASK PHONE
     // ============================================================
 
     private String maskPhone(
-            String phone) {
+            String phone
+    ) {
 
-        if (phone == null ||
-                phone.length() < 4) {
+        if (phone == null
+                || phone.length() < 4) {
 
             return "***";
         }
 
-        return "***" +
-                phone.substring(
-                        phone.length() - 4
-                );
+        return "***"
+                + phone.substring(
+                phone.length() - 4
+        );
     }
 
+    // ============================================================
+    // SANDBOX TRANSACTION ID
+    // ============================================================
+
+    
+    private String createSandboxTransactionId(
+            Long loanId
+    ) {
+
+        return "MTN-"
+                + loanId
+                + "-"
+                + UUID.randomUUID()
+                .toString()
+                .substring(0, 8)
+                .toUpperCase();
+    }
 
     // ============================================================
     // EXTERNAL REFERENCE
     // ============================================================
 
     private String externalReference(
-            Long loanId) {
+            Long loanId
+    ) {
 
-        return "LOAN-" +
-                loanId +
-                "-" +
-                UUID.randomUUID()
-                        .toString()
-                        .substring(0, 8)
-                        .toUpperCase();
+        return "LOAN-"
+                + loanId
+                + "-"
+                + UUID.randomUUID()
+                .toString()
+                .substring(0, 8)
+                .toUpperCase();
     }
 
-
     // ============================================================
-    // MTN REQUEST DTOs
+    // MTN REQUEST DTO
     // ============================================================
 
     private record MtnRequestBody(
@@ -627,6 +921,9 @@ public class MtnMobileMoneyService {
     ) {
     }
 
+    // ============================================================
+    // MTN PAYER
+    // ============================================================
 
     private record MtnPayer(
             String partyId,
