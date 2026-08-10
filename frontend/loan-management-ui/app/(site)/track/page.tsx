@@ -102,16 +102,7 @@ interface DashboardResult {
   availablePaymentMethods: string[];
 }
 
-/**
- * IMPORTANT:
- *
- * TrackResult contains all required fields from StatusResult
- * and optionally contains dashboard fields.
- *
- * Do NOT use:
- *
- * type TrackResult = StatusResult & Partial;
- */
+
 type TrackResult = StatusResult & Partial<DashboardResult>;
 
 const DOC_LABELS: Record<string, string> = {
@@ -258,11 +249,7 @@ export default function TrackPage() {
         })
       : '—';
 
-  /*
-   * =========================================================
-   * TRACK APPLICATION
-   * =========================================================
-   */
+ 
 
   const handleSubmit = async (
     e: React.FormEvent
@@ -287,20 +274,12 @@ export default function TrackPage() {
           ph
         )) as StatusResult;
 
-      /**
-       * Start with StatusResult.
-       *
-       * This is always valid TrackResult because all
-       * required TrackResult fields come from StatusResult.
-       */
+     
       let merged: TrackResult = {
         ...status,
       };
 
-      /**
-       * Dashboard is optional because an application may
-       * not have an active loan yet.
-       */
+   
       try {
         const dashboard =
           (await publicApi.trackDashboard(
@@ -308,22 +287,13 @@ export default function TrackPage() {
             ph
           )) as DashboardResult;
 
-        /**
-         * Merge DashboardResult into the existing StatusResult.
-         *
-         * This is safe because merged already contains
-         * all required StatusResult properties.
-         */
+        
         merged = {
           ...merged,
           ...dashboard,
         };
       } catch {
-        /**
-         * Application may not have an active loan yet.
-         *
-         * Keep the StatusResult.
-         */
+      
       }
 
       setResult(merged);
@@ -379,12 +349,7 @@ export default function TrackPage() {
     setPayMessage('');
     setError('');
 
-    /**
-     * Default payment amount.
-     *
-     * Prefer the next installment.
-     * If unavailable, use outstanding balance.
-     */
+    
     const defaultAmount =
       result.nextInstallmentAmount &&
       result.nextInstallmentAmount > 0
@@ -515,20 +480,7 @@ export default function TrackPage() {
     setPaySuccess(false);
 
     try {
-      /**
-       * IMPORTANT:
-       *
-       * amount is now explicitly sent to the backend.
-       *
-       * Example:
-       *
-       * {
-       *   amount: 50000,
-       *   paymentMethod: "MOBILE_MONEY",
-       *   phoneNumber: "078XXXXXXX",
-       *   network: "MTN"
-       * }
-       */
+     
       const payload: {
         amount: number;
         paymentMethod:
@@ -697,11 +649,7 @@ export default function TrackPage() {
     setDownloadingDoc(doc);
 
     try {
-      /**
-       * Do not use a normal browser request.
-       *
-       * publicApi adds the tenant header.
-       */
+     
       const response =
         await publicApi.downloadDocument(
           ref,
@@ -910,15 +858,7 @@ export default function TrackPage() {
 
       setUploadedDocs(docs);
 
-      /**
-       * IMPORTANT TYPE FIX:
-       *
-       * status is StatusResult.
-       *
-       * We merge it into the existing TrackResult.
-       *
-       * We NEVER return a DashboardResult here.
-       */
+    
       setResult(prev => {
         if (!prev) {
           return {
