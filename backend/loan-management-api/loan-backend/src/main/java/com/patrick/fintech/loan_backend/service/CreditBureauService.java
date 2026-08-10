@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,25 +7,33 @@ import com.patrick.fintech.loan_backend.model.CreditBureauCheck;
 import com.patrick.fintech.loan_backend.model.Loan;
 import com.patrick.fintech.loan_backend.repository.BorrowerRepository;
 import com.patrick.fintech.loan_backend.repository.CreditBureauCheckRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.UUID;
 
 @Service
@@ -39,243 +46,429 @@ public class CreditBureauService {
     private final AuditService auditService;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final PlatformTransactionManager transactionManager;
+    private final Environment environment;
 
     // ============================================================
     // CONFIGURATION
     // ============================================================
 
     /**
-     * Enable the real external credit bureau integration.
+     * Enables the real external credit bureau integration.
      *
-     * IMPORTANT:
-     * In production this should normally be true only when
-     * a licensed/approved bureau integration is configured.
+     * Production:
+     *   app.credit-bureau.enabled=true
      */
     @Value("${app.credit-bureau.enabled:false}")
     private boolean bureauEnabled;
 
     /**
      * Provider display name.
+     *
+     * Example:
+     *   BNR_CREDIT_BUREAU
+     *   TRANSUNION
+     *   LICENSED_PROVIDER_NAME
      */
     @Value("${app.credit-bureau.provider:INTERNAL_SIMULATED}")
     private String providerName;
 
     /**
-     * External credit bureau base URL.
+     * External provider base URL.
      */
     @Value("${app.credit-bureau.base-url:}")
     private String baseUrl;
 
     /**
-     * API credential.
+     * Secret API key.
      *
-     * This must come from the deployment environment/secret manager,
-     * never from source control.
+     * Must come from environment variables / secret manager.
      */
     @Value("${app.credit-bureau.api-key:}")
     private String apiKey;
 
     /**
-     * Connect timeout in milliseconds.
-     */
-    @Value("${app.credit-bureau.connect-timeout-ms:5000}")
-    private int connectTimeoutMs;
-
-    /**
-     * Read timeout in milliseconds.
-     */
-    @Value("${app.credit-bureau.read-timeout-ms:15000}")
-    private int readTimeoutMs;
-
-    /**
-     * Whether the internal simulation is allowed.
+     * Internal simulation.
      *
-     * IMPORTANT:
-     * This should be false in production.
+     * This is automatically blocked when production is detected.
      */
     @Value("${app.credit-bureau.simulation-enabled:false}")
     private boolean simulationEnabled;
+
+    /**
+     * Credit report validity period.
+     *
+     * Example:
+     *   30 days
+     */
+    @Value("${app.credit-bureau.validity-days:30}")
+    private int validityDays;
+
+    /**
+     * Whether raw provider responses should be persisted.
+     *
+     * Production default is false because bureau responses can contain
+     * sensitive personal information.
+     */
+    @Value("${app.credit-bureau.store-raw-response:false}")
+    private boolean storeRawResponse;
+
+    /**
+     * Maximum timeout for the database persistence transaction.
+     */
+    @Value("${app.credit-bureau.db-transaction-timeout-seconds:30}")
+    private int dbTransactionTimeoutSeconds;
+
+    /**
+     * Optional explicit application environment.
+     *
+     * Examples:
+     *
+     * app.environment=development
+     * app.environment=staging
+     * app.environment=production
+     */
+    @Value("${app.environment:development}")
+    private String applicationEnvironment;
+
+    // ============================================================
+    // PRODUCTION STARTUP VALIDATION
+    // ============================================================
+
+    /**
+     * Fail fast when the application is running in production but
+     * the credit bureau configuration is unsafe.
+     *
+     * This prevents an incorrectly configured production deployment
+     * from accidentally using fake credit scores.
+     */
+    @PostConstruct
+    private void validateProductionConfiguration() {
+
+        if (!isProductionEnvironment()) {
+            log.info(
+                    "Credit Bureau service initialized in non-production environment '{}'.",
+                    applicationEnvironment
+            );
+
+            if (simulationEnabled) {
+                log.warn(
+                        "INTERNAL CREDIT BUREAU SIMULATION IS ENABLED. "
+                                + "This must never be enabled in production."
+                );
+            }
+
+            return;
+        }
+
+        log.info(
+                "Credit Bureau service initializing in PRODUCTION environment."
+        );
+
+        if (simulationEnabled) {
+            throw new IllegalStateException(
+                    "Unsafe production configuration: "
+                            + "app.credit-bureau.simulation-enabled=true. "
+                            + "Internal credit bureau simulation is forbidden in production."
+            );
+        }
+
+        if (!bureauEnabled) {
+            throw new IllegalStateException(
+                    "Credit Bureau is disabled in production. "
+                            + "Set app.credit-bureau.enabled=true and configure "
+                            + "a licensed/approved provider."
+            );
+        }
+
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "Credit Bureau API key is missing in production."
+            );
+        }
+
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalStateException(
+                    "Credit Bureau base URL is missing in production."
+            );
+        }
+
+        if (providerName == null
+                || providerName.isBlank()
+                || "INTERNAL_SIMULATED".equalsIgnoreCase(
+                        providerName.trim()
+                )) {
+
+            throw new IllegalStateException(
+                    "Invalid Credit Bureau provider configured for production."
+            );
+        }
+
+        validateProductionBaseUrl();
+
+        if (validityDays <= 0) {
+            throw new IllegalStateException(
+                    "app.credit-bureau.validity-days must be greater than zero."
+            );
+        }
+
+        log.info(
+                "Production Credit Bureau configuration validated successfully. "
+                        + "Provider={}, Base URL={}, Validity={} days.",
+                providerName,
+                sanitizeUrlForLog(baseUrl),
+                validityDays
+        );
+    }
 
     // ============================================================
     // RUN CREDIT BUREAU CHECK
     // ============================================================
 
     /**
-     * Runs a credit bureau check for a borrower.
+     * Runs a credit bureau check.
      *
-     * Production rules:
+     * IMPORTANT:
      *
-     * 1. Borrower must exist.
-     * 2. Borrower must belong to the requested organization.
-     * 3. Real provider is used when explicitly enabled/configured.
-     * 4. Internal simulation is only allowed when explicitly enabled.
-     * 5. A failed real bureau request NEVER becomes a fake successful
-     *    simulated bureau result.
+     * The external HTTP request intentionally happens OUTSIDE a database
+     * transaction. This prevents a slow/unavailable bureau from holding
+     * database connections unnecessarily.
      */
-    @Transactional
     public CreditBureauCheck runCheck(
             Long borrowerId,
             Long orgId,
             String requestedBy
     ) {
 
-        validateRequiredId(borrowerId, "Borrower ID");
-        validateRequiredId(orgId, "Organization ID");
-
-        Borrower borrower = assertBorrowerBelongsToOrganization(
+        validateRequiredId(
                 borrowerId,
-                orgId
+                "Borrower ID"
         );
 
-        validateBorrowerForCreditCheck(borrower);
+        validateRequiredId(
+                orgId,
+                "Organization ID"
+        );
+
+        Borrower borrower =
+                assertBorrowerBelongsToOrganization(
+                        borrowerId,
+                        orgId
+                );
+
+        validateBorrowerForCreditCheck(
+                borrower
+        );
 
         CreditBureauCheck check;
 
         if (isLiveProviderConfigured()) {
 
             /*
-             * Production behaviour:
+             * REAL PROVIDER
              *
-             * DO NOT silently replace a failed bureau response
-             * with an internally generated score.
+             * Never fall back to simulation when the provider fails.
              */
-            check = tryLiveProvider(borrower);
+            check =
+                    tryLiveProvider(
+                            borrower
+                    );
 
-        } else if (simulationEnabled) {
+        } else if (isSimulationAllowed()) {
 
             /*
-             * Simulation is explicitly opt-in.
-             *
-             * This should normally be disabled in production.
+             * NON-PRODUCTION ONLY.
              */
-            check = simulate(borrower);
+            check =
+                    simulate(
+                            borrower
+                    );
 
             log.warn(
-                    "INTERNAL CREDIT BUREAU SIMULATION USED for borrower {}. "
-                            + "This must not be used for production underwriting.",
-                    borrowerId
+                    "INTERNAL CREDIT BUREAU SIMULATION USED "
+                            + "for borrower {} in non-production environment '{}'.",
+                    borrowerId,
+                    applicationEnvironment
             );
 
         } else {
 
+            /*
+             * FAIL CLOSED.
+             *
+             * This is especially important in production.
+             */
             throw new IllegalStateException(
                     "Credit Bureau integration is not configured. "
-                            + "Configure a licensed provider or explicitly enable "
-                            + "simulation for non-production environments."
+                            + "Configure a licensed/approved provider."
             );
         }
 
-        // ========================================================
-        // COMMON INFORMATION
-        // ========================================================
-
-        check.setBorrower(borrower);
-
-        check.setOrganization(
-                borrower.getOrganization()
+        /*
+         * Persist the result in a SHORT database transaction.
+         *
+         * The external HTTP request has already completed.
+         */
+        return persistCompletedCheck(
+                borrowerId,
+                orgId,
+                requestedBy,
+                check
         );
+    }
 
-        check.setRequestedBy(
-                clean(requestedBy)
-        );
+    // ============================================================
+    // PERSIST CREDIT CHECK
+    // ============================================================
 
-        check.setNationalIdChecked(
-                clean(
-                        borrower.getNationalId()
-                )
-        );
+    /**
+     * Persists a successful credit bureau check and updates the
+     * borrower's credit information.
+     *
+     * The transaction is deliberately limited to database work.
+     */
+    private CreditBureauCheck persistCompletedCheck(
+            Long borrowerId,
+            Long orgId,
+            String requestedBy,
+            CreditBureauCheck check
+    ) {
 
-        check.setReference(
-                generateReference(
-                        borrower
-                                .getOrganization()
-                                .getId()
-                )
-        );
-
-        // ========================================================
-        // SAVE CHECK
-        // ========================================================
-
-        check = checkRepo.save(check);
-
-        // ========================================================
-        // UPDATE BORROWER CREDIT INFORMATION
-        // ========================================================
-
-        if (
-                check.getStatus()
-                        == CreditBureauCheck.CheckStatus.COMPLETED
-                        &&
-                check.getCreditScore() != null
-        ) {
-
-            borrower.setCreditScore(
-                    check.getCreditScore()
+        if (check == null) {
+            throw new IllegalArgumentException(
+                    "Credit Bureau check result is required"
             );
-
-            borrower.setCreditBureau(
-                    clean(check.getProvider())
-            );
-
-            borrower.setCreditReportDate(
-                    LocalDate.now()
-            );
-
-            borrowerRepo.save(borrower);
         }
 
-        // ========================================================
-        // AUDIT
-        // ========================================================
-
-        StringBuilder description =
-                new StringBuilder(
-                        "Credit bureau check completed via "
+        TransactionTemplate transactionTemplate =
+                new TransactionTemplate(
+                        transactionManager
                 );
 
-        description.append(
-                clean(check.getProvider()) != null
-                        ? check.getProvider()
-                        : "UNKNOWN_PROVIDER"
-        );
-
-        description.append(
-                " -> "
-        );
-
-        description.append(
-                check.getStatus()
-        );
-
-        if (check.getCreditScore() != null) {
-
-            description.append(
-                    " (score "
-            );
-
-            description.append(
-                    check.getCreditScore()
-            );
-
-            description.append(
-                    ")"
+        if (dbTransactionTimeoutSeconds > 0) {
+            transactionTemplate.setTimeout(
+                    dbTransactionTimeoutSeconds
             );
         }
 
-        auditService.log(
-                borrower.getOrganization(),
-                null,
-                "CREDIT_BUREAU_CHECK",
-                "BORROWER",
-                String.valueOf(borrowerId),
-                description.toString(),
-                null,
-                null,
-                "Credit Bureau"
-        );
+        CreditBureauCheck saved =
+                transactionTemplate.execute(
+                        status -> {
 
-        return check;
+                            Borrower borrower =
+                                    assertBorrowerBelongsToOrganization(
+                                            borrowerId,
+                                            orgId
+                                    );
+
+                            check.setBorrower(
+                                    borrower
+                            );
+
+                            check.setOrganization(
+                                    borrower.getOrganization()
+                            );
+
+                            check.setRequestedBy(
+                                    normalizeActor(
+                                            requestedBy
+                                    )
+                            );
+
+                            check.setNationalIdChecked(
+                                    clean(
+                                            borrower.getNationalId()
+                                    )
+                            );
+
+                            check.setReference(
+                                    generateReference(
+                                            borrower
+                                                    .getOrganization()
+                                                    .getId()
+                                    )
+                            );
+
+                            /*
+                             * Ensure the report has a validity period.
+                             */
+                            if (check.getExpiresAt() == null) {
+
+                                check.setExpiresAt(
+                                        LocalDateTime.now()
+                                                .plusDays(
+                                                        validityDays
+                                                )
+                                );
+                            }
+
+                            /*
+                             * Do not persist sensitive raw provider data
+                             * unless explicitly enabled.
+                             */
+                            if (!storeRawResponse
+                                    && isProductionEnvironment()) {
+
+                                check.setRawResponse(
+                                        null
+                                );
+                            }
+
+                            CreditBureauCheck savedCheck =
+                                    checkRepo.save(
+                                            check
+                                    );
+
+                            /*
+                             * Update borrower credit information only
+                             * after a successful completed bureau check.
+                             */
+                            if (
+                                    savedCheck.getStatus()
+                                            == CreditBureauCheck.CheckStatus.COMPLETED
+                                            &&
+                                    savedCheck.getCreditScore() != null
+                            ) {
+
+                                borrower.setCreditScore(
+                                        savedCheck.getCreditScore()
+                                );
+
+                                borrower.setCreditBureau(
+                                        clean(
+                                                savedCheck.getProvider()
+                                        )
+                                );
+
+                                borrower.setCreditReportDate(
+                                        LocalDate.now()
+                                );
+
+                                borrowerRepo.save(
+                                        borrower
+                                );
+                            }
+
+                            /*
+                             * Audit inside the same DB transaction.
+                             */
+                            auditCreditBureauCheck(
+                                    borrower,
+                                    borrowerId,
+                                    savedCheck
+                            );
+
+                            return savedCheck;
+                        }
+                );
+
+        if (saved == null) {
+            throw new IllegalStateException(
+                    "Credit Bureau check could not be persisted."
+            );
+        }
+
+        return saved;
     }
 
     // ============================================================
@@ -285,77 +478,66 @@ public class CreditBureauService {
     /**
      * Reports a disbursed loan to the external credit bureau.
      *
-     * This method deliberately fails when the real bureau is configured
-     * but unavailable. A successful-looking internal simulation must
-     * never be sent to the regulatory bureau workflow.
+     * Production behaviour is fail-closed:
+     *
+     * - If the real provider is unavailable, an exception is thrown.
+     * - The method never pretends that a report was successful.
+     * - Internal simulation never performs regulatory reporting.
+     *
+     * No @Transactional annotation is intentionally used here because
+     * this method performs external HTTP I/O.
      */
-    @Transactional
     public void reportDisbursedLoan(
             Loan loan,
             String reportedBy
     ) {
 
-        if (loan == null) {
-            throw new IllegalArgumentException(
-                    "Loan is required"
-            );
-        }
+        validateLoanForReporting(
+                loan
+        );
 
-        if (loan.getId() == null) {
-            throw new IllegalArgumentException(
-                    "Loan ID is required"
-            );
-        }
+        Borrower borrower =
+                loan.getBorrower();
 
-        Borrower borrower = loan.getBorrower();
-
-        if (borrower == null) {
-            throw new IllegalArgumentException(
-                    "Borrower not found for loan"
-            );
-        }
-
-        if (loan.getOrganization() == null) {
-            throw new IllegalArgumentException(
-                    "Loan organization is required"
-            );
-        }
-
-        if (borrower.getOrganization() == null) {
-            throw new IllegalArgumentException(
-                    "Borrower organization is required"
-            );
-        }
-
-        if (
-                borrower.getOrganization().getId() == null
-                        ||
-                loan.getOrganization().getId() == null
-                        ||
-                !loan.getOrganization()
-                        .getId()
-                        .equals(
-                                borrower.getOrganization().getId()
-                        )
-        ) {
-
-            throw new SecurityException(
-                    "Loan and borrower belong to different organizations"
-            );
-        }
-
-        // ========================================================
-        // PROVIDER NOT CONFIGURED
-        // ========================================================
-
+        /*
+         * In production, a live provider is mandatory.
+         */
         if (!isLiveProviderConfigured()) {
 
+            if (isProductionEnvironment()) {
+
+                auditService.log(
+                        loan.getOrganization(),
+                        null,
+                        "CREDIT_BUREAU_REPORT_FAILED",
+                        "LOAN",
+                        String.valueOf(
+                                loan.getId()
+                        ),
+                        "Production Credit Bureau reporting could not be "
+                                + "performed because the live provider is not configured.",
+                        null,
+                        null,
+                        "Credit Bureau"
+                );
+
+                throw new IllegalStateException(
+                        "Credit Bureau reporting is not configured in production. "
+                                + "The loan was NOT confirmed as reported."
+                );
+            }
+
+            /*
+             * Non-production:
+             *
+             * Simulation never counts as regulatory reporting.
+             */
             if (simulationEnabled) {
 
                 log.warn(
-                        "Credit Bureau reporting skipped for loan {} because "
-                                + "simulation mode is enabled and no live provider "
-                                + "is configured.",
+                        "Credit Bureau reporting skipped for loan {} "
+                                + "because this is a non-production environment "
+                                + "with simulation enabled.",
                         loan.getReferenceNumber()
                 );
 
@@ -364,10 +546,11 @@ public class CreditBureauService {
                         null,
                         "CREDIT_BUREAU_REPORT_SIMULATION",
                         "LOAN",
-                        String.valueOf(loan.getId()),
+                        String.valueOf(
+                                loan.getId()
+                        ),
                         "Live Credit Bureau unavailable; external reporting "
-                                + "was not performed for loan "
-                                + loan.getReferenceNumber(),
+                                + "was intentionally skipped in non-production.",
                         null,
                         null,
                         "Credit Bureau"
@@ -376,21 +559,16 @@ public class CreditBureauService {
                 return;
             }
 
-            log.warn(
-                    "Credit Bureau integration is disabled/not configured. "
-                            + "Loan {} was not externally reported.",
-                    loan.getReferenceNumber()
-            );
-
             auditService.log(
                     loan.getOrganization(),
                     null,
                     "CREDIT_BUREAU_REPORT_SKIPPED",
                     "LOAN",
-                    String.valueOf(loan.getId()),
-                    "Credit Bureau integration is not configured; loan "
-                            + loan.getReferenceNumber()
-                            + " was not externally reported.",
+                    String.valueOf(
+                            loan.getId()
+                    ),
+                    "Credit Bureau integration is not configured in "
+                            + "non-production environment.",
                     null,
                     null,
                     "Credit Bureau"
@@ -400,7 +578,7 @@ public class CreditBureauService {
         }
 
         // ========================================================
-        // LIVE CREDIT BUREAU
+        // LIVE CREDIT BUREAU REPORT
         // ========================================================
 
         try {
@@ -413,17 +591,23 @@ public class CreditBureauService {
 
             payload.put(
                     "loanNumber",
-                    clean(loan.getReferenceNumber())
+                    clean(
+                            loan.getReferenceNumber()
+                    )
             );
 
             payload.put(
                     "nationalId",
-                    clean(borrower.getNationalId())
+                    clean(
+                            borrower.getNationalId()
+                    )
             );
 
             payload.put(
                     "borrowerName",
-                    buildBorrowerName(borrower)
+                    buildBorrowerName(
+                            borrower
+                    )
             );
 
             payload.put(
@@ -438,7 +622,9 @@ public class CreditBureauService {
 
             payload.put(
                     "currency",
-                    clean(loan.getCurrency())
+                    clean(
+                            loan.getCurrency()
+                    )
             );
 
             payload.put(
@@ -460,7 +646,9 @@ public class CreditBureauService {
 
             payload.put(
                     "reportedBy",
-                    clean(reportedBy)
+                    normalizeActor(
+                            reportedBy
+                    )
             );
 
             HttpEntity<Map<String, Object>> entity =
@@ -470,7 +658,9 @@ public class CreditBureauService {
                     );
 
             String endpoint =
-                    buildEndpoint("/v1/loan-report");
+                    buildEndpoint(
+                            "/v1/loan-report"
+                    );
 
             ResponseEntity<String> response =
                     restTemplate.exchange(
@@ -493,7 +683,8 @@ public class CreditBureauService {
                                 : -1;
 
                 throw new IllegalStateException(
-                        "Credit Bureau rejected loan report. HTTP status: "
+                        "Credit Bureau rejected loan report. "
+                                + "HTTP status: "
                                 + statusCode
                 );
             }
@@ -509,7 +700,9 @@ public class CreditBureauService {
                     null,
                     "CREDIT_BUREAU_LOAN_REPORTED",
                     "LOAN",
-                    String.valueOf(loan.getId()),
+                    String.valueOf(
+                            loan.getId()
+                    ),
                     "Disbursed loan "
                             + loan.getReferenceNumber()
                             + " successfully reported to "
@@ -533,7 +726,9 @@ public class CreditBureauService {
                     null,
                     "CREDIT_BUREAU_REPORT_FAILED",
                     "LOAN",
-                    String.valueOf(loan.getId()),
+                    String.valueOf(
+                            loan.getId()
+                    ),
                     "Credit Bureau reporting failed for loan "
                             + loan.getReferenceNumber()
                             + " using provider "
@@ -545,7 +740,7 @@ public class CreditBureauService {
 
             throw new IllegalStateException(
                     "Credit Bureau reporting failed. "
-                            + "The loan was not confirmed as reported.",
+                            + "The loan was NOT confirmed as reported.",
                     ex
             );
 
@@ -562,7 +757,9 @@ public class CreditBureauService {
                     null,
                     "CREDIT_BUREAU_REPORT_FAILED",
                     "LOAN",
-                    String.valueOf(loan.getId()),
+                    String.valueOf(
+                            loan.getId()
+                    ),
                     "Unexpected Credit Bureau reporting failure for loan "
                             + loan.getReferenceNumber(),
                     null,
@@ -572,7 +769,7 @@ public class CreditBureauService {
 
             throw new IllegalStateException(
                     "Credit Bureau reporting failed. "
-                            + "The loan was not confirmed as reported.",
+                            + "The loan was NOT confirmed as reported.",
                     ex
             );
         }
@@ -585,8 +782,7 @@ public class CreditBureauService {
     /**
      * Executes a real bureau check.
      *
-     * IMPORTANT:
-     * This method does NOT fall back to simulation.
+     * There is deliberately NO simulation fallback here.
      */
     private CreditBureauCheck tryLiveProvider(
             Borrower borrower
@@ -602,17 +798,23 @@ public class CreditBureauService {
 
             payload.put(
                     "nationalId",
-                    clean(borrower.getNationalId())
+                    clean(
+                            borrower.getNationalId()
+                    )
             );
 
             payload.put(
                     "firstName",
-                    clean(borrower.getFirstName())
+                    clean(
+                            borrower.getFirstName()
+                    )
             );
 
             payload.put(
                     "lastName",
-                    clean(borrower.getLastName())
+                    clean(
+                            borrower.getLastName()
+                    )
             );
 
             HttpEntity<Map<String, Object>> entity =
@@ -622,7 +824,9 @@ public class CreditBureauService {
                     );
 
             String endpoint =
-                    buildEndpoint("/v1/credit-report");
+                    buildEndpoint(
+                            "/v1/credit-report"
+                    );
 
             ResponseEntity<Map> response =
                     restTemplate.exchange(
@@ -653,18 +857,30 @@ public class CreditBureauService {
             Map<?, ?> body =
                     response.getBody();
 
-            if (body == null || body.isEmpty()) {
+            if (
+                    body == null
+                            ||
+                    body.isEmpty()
+            ) {
 
                 throw new IllegalStateException(
-                        "Credit Bureau returned an empty response"
+                        "Credit Bureau returned an empty response."
                 );
             }
 
             Integer creditScore =
                     toInt(
-                            body.get("creditScore")
+                            body.get(
+                                    "creditScore"
+                            )
                     );
 
+            /*
+             * A credit score is optional because some bureaus may
+             * return a report without a score.
+             *
+             * If present, however, it must be valid.
+             */
             if (
                     creditScore != null
                             &&
@@ -676,87 +892,104 @@ public class CreditBureauService {
             ) {
 
                 throw new IllegalStateException(
-                        "Credit Bureau returned an invalid credit score"
+                        "Credit Bureau returned an invalid credit score."
                 );
             }
 
-            return CreditBureauCheck.builder()
+            CreditBureauCheck.CreditBureauCheckBuilder builder =
+                    CreditBureauCheck.builder()
 
-                    .provider(
-                            clean(providerName)
-                    )
-
-                    .status(
-                            CreditBureauCheck.CheckStatus.COMPLETED
-                    )
-
-                    .creditScore(
-                            creditScore
-                    )
-
-                    .riskGrade(
-                            toStringValue(
-                                    body.get("riskGrade")
-                            )
-                    )
-
-                    .activeFacilities(
-                            toInt(
-                                    body.get("activeFacilities")
-                            )
-                    )
-
-                    .delinquentAccounts(
-                            toInt(
-                                    body.get("delinquentAccounts")
-                            )
-                    )
-
-                    .totalOutstandingDebt(
-                            toDouble(
-                                    body.get(
-                                            "totalOutstandingDebt"
+                            .provider(
+                                    clean(
+                                            providerName
                                     )
                             )
-                    )
 
-                    .totalMonthlyObligations(
-                            toDouble(
-                                    body.get(
-                                            "totalMonthlyObligations"
+                            .status(
+                                    CreditBureauCheck.CheckStatus.COMPLETED
+                            )
+
+                            .creditScore(
+                                    creditScore
+                            )
+
+                            .riskGrade(
+                                    toStringValue(
+                                            body.get(
+                                                    "riskGrade"
+                                            )
                                     )
                             )
-                    )
 
-                    .hasDefaultHistory(
-                            toBoolean(
-                                    body.get(
-                                            "hasDefaultHistory"
+                            .activeFacilities(
+                                    toInt(
+                                            body.get(
+                                                    "activeFacilities"
+                                            )
                                     )
                             )
-                    )
 
-                    .hasActiveListing(
-                            toBoolean(
-                                    body.get(
-                                            "hasActiveListing"
+                            .delinquentAccounts(
+                                    toInt(
+                                            body.get(
+                                                    "delinquentAccounts"
+                                            )
                                     )
                             )
-                    )
 
-                    .listingReason(
-                            toStringValue(
-                                    body.get(
-                                            "listingReason"
+                            .totalOutstandingDebt(
+                                    toDouble(
+                                            body.get(
+                                                    "totalOutstandingDebt"
+                                            )
                                     )
                             )
-                    )
 
-                    .rawResponse(
-                            toJson(body)
-                    )
+                            .totalMonthlyObligations(
+                                    toDouble(
+                                            body.get(
+                                                    "totalMonthlyObligations"
+                                            )
+                                    )
+                            )
 
-                    .build();
+                            .hasDefaultHistory(
+                                    toBoolean(
+                                            body.get(
+                                                    "hasDefaultHistory"
+                                            )
+                                    )
+                            )
+
+                            .hasActiveListing(
+                                    toBoolean(
+                                            body.get(
+                                                    "hasActiveListing"
+                                            )
+                                    )
+                            )
+
+                            .listingReason(
+                                    toStringValue(
+                                            body.get(
+                                                    "listingReason"
+                                            )
+                                    )
+                            );
+
+            /*
+             * Raw provider response is opt-in.
+             */
+            if (storeRawResponse) {
+
+                builder.rawResponse(
+                        toJson(
+                                body
+                        )
+                );
+            }
+
+            return builder.build();
 
         } catch (RestClientException ex) {
 
@@ -791,15 +1024,20 @@ public class CreditBureauService {
     // ============================================================
 
     /**
-     * Internal simulation.
+     * Internal development/test simulation.
      *
-     * This method exists only for development/testing.
-     *
-     * It MUST NOT be enabled in production.
+     * NEVER allowed in production.
      */
     private CreditBureauCheck simulate(
             Borrower borrower
     ) {
+
+        if (isProductionEnvironment()) {
+
+            throw new IllegalStateException(
+                    "Internal Credit Bureau simulation is forbidden in production."
+            );
+        }
 
         long seed;
 
@@ -814,7 +1052,9 @@ public class CreditBureauService {
                             .getNationalId()
                             .hashCode();
 
-        } else if (borrower.getId() != null) {
+        } else if (
+                borrower.getId() != null
+        ) {
 
             seed =
                     borrower.getId();
@@ -824,12 +1064,16 @@ public class CreditBureauService {
             seed = 1L;
         }
 
-        java.util.Random random =
-                new java.util.Random(seed);
+        Random random =
+                new Random(
+                        seed
+                );
 
         int baseScore;
 
-        if (borrower.getCreditScore() != null) {
+        if (
+                borrower.getCreditScore() != null
+        ) {
 
             baseScore =
                     borrower.getCreditScore();
@@ -837,12 +1081,19 @@ public class CreditBureauService {
         } else {
 
             baseScore =
-                    550 +
-                            random.nextInt(200);
+                    550
+                            +
+                    random.nextInt(
+                            200
+                    );
         }
 
         int jitter =
-                random.nextInt(41) - 20;
+                random.nextInt(
+                        41
+                )
+                        -
+                20;
 
         int score =
                 Math.max(
@@ -881,12 +1132,18 @@ public class CreditBureauService {
         if (score < 550) {
 
             delinquent =
-                    random.nextInt(3) + 1;
+                    random.nextInt(
+                            3
+                    )
+                            +
+                    1;
 
         } else if (score < 650) {
 
             delinquent =
-                    random.nextInt(2);
+                    random.nextInt(
+                            2
+                    );
 
         } else {
 
@@ -896,10 +1153,14 @@ public class CreditBureauService {
         boolean defaulted =
                 score < 480
                         &&
-                random.nextInt(3) == 0;
+                random.nextInt(
+                        3
+                ) == 0;
 
         int facilities =
-                random.nextInt(4);
+                random.nextInt(
+                        4
+                );
 
         double income =
                 toDouble(
@@ -933,7 +1194,9 @@ public class CreditBureauService {
                         (
                                 50_000
                                         +
-                                random.nextInt(500_000)
+                                random.nextInt(
+                                        500_000
+                                )
                         );
             }
 
@@ -950,7 +1213,9 @@ public class CreditBureauService {
                 (
                         12
                                 +
-                        random.nextInt(24)
+                        random.nextInt(
+                                24
+                        )
                 )
                         :
                 0.0;
@@ -971,6 +1236,11 @@ public class CreditBureauService {
         snapshot.put(
                 "provider",
                 "INTERNAL_SIMULATED"
+        );
+
+        snapshot.put(
+                "environment",
+                applicationEnvironment
         );
 
         snapshot.put(
@@ -1002,12 +1272,16 @@ public class CreditBureauService {
 
         snapshot.put(
                 "totalOutstandingDebt",
-                roundMoney(outstanding)
+                roundMoney(
+                        outstanding
+                )
         );
 
         snapshot.put(
                 "totalMonthlyObligations",
-                roundMoney(monthlyObligations)
+                roundMoney(
+                        monthlyObligations
+                )
         );
 
         snapshot.put(
@@ -1038,16 +1312,26 @@ public class CreditBureauService {
                         CreditBureauCheck.CheckStatus.COMPLETED
                 )
 
-                .creditScore(score)
+                .creditScore(
+                        score
+                )
 
-                .riskGrade(grade)
+                .riskGrade(
+                        grade
+                )
 
-                .activeFacilities(facilities)
+                .activeFacilities(
+                        facilities
+                )
 
-                .delinquentAccounts(delinquent)
+                .delinquentAccounts(
+                        delinquent
+                )
 
                 .totalOutstandingDebt(
-                        roundMoney(outstanding)
+                        roundMoney(
+                                outstanding
+                        )
                 )
 
                 .totalMonthlyObligations(
@@ -1056,9 +1340,13 @@ public class CreditBureauService {
                         )
                 )
 
-                .hasDefaultHistory(defaulted)
+                .hasDefaultHistory(
+                        defaulted
+                )
 
-                .hasActiveListing(activeListing)
+                .hasActiveListing(
+                        activeListing
+                )
 
                 .listingReason(
                         activeListing
@@ -1069,7 +1357,9 @@ public class CreditBureauService {
                 )
 
                 .rawResponse(
-                        toJson(snapshot)
+                        toJson(
+                                snapshot
+                        )
                 )
 
                 .build();
@@ -1100,12 +1390,6 @@ public class CreditBureauService {
     // OFFICER HISTORY
     // ============================================================
 
-    /**
-     * Returns sanitized DTOs.
-     *
-     * Do not expose CreditBureauCheck entities directly
-     * through controller endpoints.
-     */
     @Transactional(readOnly = true)
     public List<CreditBureauCheckResponse> getOfficerHistory(
             Long borrowerId,
@@ -1118,12 +1402,15 @@ public class CreditBureauService {
         );
 
         List<CreditBureauCheck> checks =
-                checkRepo.findByBorrower_IdOrderByCreatedAtDesc(
-                        borrowerId
-                );
+                checkRepo
+                        .findByBorrower_IdOrderByCreatedAtDesc(
+                                borrowerId
+                        );
 
         return checks.stream()
-                .map(this::toOfficerResponse)
+                .map(
+                        this::toOfficerResponse
+                )
                 .toList();
     }
 
@@ -1146,7 +1433,9 @@ public class CreditBureauService {
                 .findFirstByBorrower_IdOrderByCreatedAtDesc(
                         borrowerId
                 )
-                .map(this::toOfficerResponse);
+                .map(
+                        this::toOfficerResponse
+                );
     }
 
     // ============================================================
@@ -1259,20 +1548,26 @@ public class CreditBureauService {
                 orgId
         );
 
-        LocalDateTime fromDateTime =
-                from != null
-                        ? from.atStartOfDay()
-                        : null;
-
-        LocalDateTime toDateTime =
-                to != null
-                        ? to.plusDays(1).atStartOfDay()
-                        : null;
-
         validateDateRange(
                 from,
                 to
         );
+
+        LocalDateTime fromDateTime =
+                from != null
+                        ?
+                from.atStartOfDay()
+                        :
+                null;
+
+        LocalDateTime toDateTime =
+                to != null
+                        ?
+                to.plusDays(
+                        1
+                ).atStartOfDay()
+                        :
+                null;
 
         if (
                 fromDateTime == null
@@ -1343,13 +1638,19 @@ public class CreditBureauService {
 
         LocalDateTime fromDateTime =
                 from != null
-                        ? from.atStartOfDay()
-                        : null;
+                        ?
+                from.atStartOfDay()
+                        :
+                null;
 
         LocalDateTime toDateTime =
                 to != null
-                        ? to.plusDays(1).atStartOfDay()
-                        : null;
+                        ?
+                to.plusDays(
+                        1
+                ).atStartOfDay()
+                        :
+                null;
 
         if (
                 fromDateTime == null
@@ -1405,6 +1706,13 @@ public class CreditBureauService {
             Borrower borrower
     ) {
 
+        if (borrower == null) {
+
+            throw new IllegalArgumentException(
+                    "Borrower is required"
+            );
+        }
+
         if (borrower.getOrganization() == null) {
 
             throw new SecurityException(
@@ -1418,20 +1726,113 @@ public class CreditBureauService {
                 !borrower.getNationalId().isBlank();
 
         boolean hasName =
-                buildBorrowerName(borrower)
-                        .length() >= 2;
+                buildBorrowerName(
+                        borrower
+                ).length() >= 2;
 
         if (!hasNationalId) {
 
             throw new IllegalArgumentException(
-                    "Borrower national ID is required for credit bureau screening"
+                    "Borrower national ID is required "
+                            + "for credit bureau screening"
             );
         }
 
         if (!hasName) {
 
             throw new IllegalArgumentException(
-                    "Borrower name is required for credit bureau screening"
+                    "Borrower name is required "
+                            + "for credit bureau screening"
+            );
+        }
+    }
+
+    // ============================================================
+    // LOAN VALIDATION
+    // ============================================================
+
+    private void validateLoanForReporting(
+            Loan loan
+    ) {
+
+        if (loan == null) {
+
+            throw new IllegalArgumentException(
+                    "Loan is required"
+            );
+        }
+
+        if (loan.getId() == null) {
+
+            throw new IllegalArgumentException(
+                    "Loan ID is required"
+            );
+        }
+
+        Borrower borrower =
+                loan.getBorrower();
+
+        if (borrower == null) {
+
+            throw new IllegalArgumentException(
+                    "Borrower not found for loan"
+            );
+        }
+
+        if (loan.getOrganization() == null) {
+
+            throw new IllegalArgumentException(
+                    "Loan organization is required"
+            );
+        }
+
+        if (borrower.getOrganization() == null) {
+
+            throw new IllegalArgumentException(
+                    "Borrower organization is required"
+            );
+        }
+
+        if (
+                loan.getOrganization().getId() == null
+                        ||
+                borrower.getOrganization().getId() == null
+                        ||
+                !loan.getOrganization()
+                        .getId()
+                        .equals(
+                                borrower
+                                        .getOrganization()
+                                        .getId()
+                        )
+        ) {
+
+            throw new SecurityException(
+                    "Loan and borrower belong to different organizations"
+            );
+        }
+
+        if (
+                borrower.getNationalId() == null
+                        ||
+                borrower.getNationalId().isBlank()
+        ) {
+
+            throw new IllegalArgumentException(
+                    "Borrower national ID is required "
+                            + "for Credit Bureau reporting"
+            );
+        }
+
+        if (
+                buildBorrowerName(
+                        borrower
+                ).length() < 2
+        ) {
+
+            throw new IllegalArgumentException(
+                    "Borrower name is required "
+                            + "for Credit Bureau reporting"
             );
         }
     }
@@ -1459,11 +1860,12 @@ public class CreditBureauService {
                 borrowerRepo.findById(
                         borrowerId
                 )
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Borrower not found: "
-                                                + borrowerId
-                                )
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "Borrower not found: "
+                                                        + borrowerId
+                                        )
                         );
 
         assertBorrowerBelongsToOrganization(
@@ -1498,7 +1900,9 @@ public class CreditBureauService {
                 !borrower
                         .getOrganization()
                         .getId()
-                        .equals(orgId)
+                        .equals(
+                                orgId
+                        )
         ) {
 
             throw new SecurityException(
@@ -1514,16 +1918,150 @@ public class CreditBureauService {
 
     private boolean isLiveProviderConfigured() {
 
-        return bureauEnabled
-                &&
-                apiKey != null
-                &&
-                !apiKey.isBlank()
-                &&
-                baseUrl != null
-                &&
-                !baseUrl.isBlank();
+        if (!bureauEnabled) {
+            return false;
+        }
+
+        if (
+                apiKey == null
+                        ||
+                apiKey.isBlank()
+        ) {
+            return false;
+        }
+
+        if (
+                baseUrl == null
+                        ||
+                baseUrl.isBlank()
+        ) {
+            return false;
+        }
+
+        if (
+                providerName == null
+                        ||
+                providerName.isBlank()
+        ) {
+            return false;
+        }
+
+        if (
+                "INTERNAL_SIMULATED"
+                        .equalsIgnoreCase(
+                                providerName.trim()
+                        )
+        ) {
+            return false;
+        }
+
+        return true;
     }
+
+    private boolean isSimulationAllowed() {
+
+        return simulationEnabled
+                &&
+                !isProductionEnvironment();
+    }
+
+    // ============================================================
+    // PRODUCTION DETECTION
+    // ============================================================
+
+    private boolean isProductionEnvironment() {
+
+        if (
+                applicationEnvironment != null
+                        &&
+                (
+                        "production"
+                                .equalsIgnoreCase(
+                                        applicationEnvironment.trim()
+                                )
+                                ||
+                        "prod"
+                                .equalsIgnoreCase(
+                                        applicationEnvironment.trim()
+                                )
+                )
+        ) {
+
+            return true;
+        }
+
+        try {
+
+            return environment.acceptsProfiles(
+                    Profiles.of(
+                            "production",
+                            "prod"
+                    )
+            );
+
+        } catch (Exception ex) {
+
+            log.warn(
+                    "Unable to inspect active Spring profiles. "
+                            + "Falling back to app.environment={}.",
+                    applicationEnvironment
+            );
+
+            return false;
+        }
+    }
+
+    // ============================================================
+    // PRODUCTION URL VALIDATION
+    // ============================================================
+
+    private void validateProductionBaseUrl() {
+
+        try {
+
+            URI uri =
+                    URI.create(
+                            normalizeBaseUrl(
+                                    baseUrl
+                            )
+                    );
+
+            if (
+                    uri.getScheme() == null
+                            ||
+                    !"https".equalsIgnoreCase(
+                            uri.getScheme()
+                    )
+            ) {
+
+                throw new IllegalStateException(
+                        "Production Credit Bureau base URL must use HTTPS."
+                );
+            }
+
+            if (
+                    uri.getHost() == null
+                            ||
+                    uri.getHost().isBlank()
+            ) {
+
+                throw new IllegalStateException(
+                        "Production Credit Bureau base URL has no valid host."
+                );
+            }
+
+        } catch (IllegalArgumentException ex) {
+
+            throw new IllegalStateException(
+                    "Invalid Credit Bureau base URL.",
+                    ex
+            );
+        }
+    }
+
+    // ============================================================
+    // AUTHENTICATED HEADERS
+    // ============================================================
 
     private HttpHeaders buildAuthenticatedHeaders() {
 
@@ -1534,7 +2072,7 @@ public class CreditBureauService {
         ) {
 
             throw new IllegalStateException(
-                    "Credit Bureau API key is not configured"
+                    "Credit Bureau API key is not configured."
             );
         }
 
@@ -1542,7 +2080,7 @@ public class CreditBureauService {
                 new HttpHeaders();
 
         headers.setBearerAuth(
-                apiKey
+                apiKey.trim()
         );
 
         headers.setContentType(
@@ -1574,7 +2112,7 @@ public class CreditBureauService {
         if (normalized.isBlank()) {
 
             throw new IllegalStateException(
-                    "Credit Bureau base URL is not configured"
+                    "Credit Bureau base URL is not configured."
             );
         }
 
@@ -1585,31 +2123,100 @@ public class CreditBureauService {
         ) {
 
             throw new IllegalArgumentException(
-                    "Credit Bureau endpoint path is required"
+                    "Credit Bureau endpoint path is required."
             );
         }
 
         String normalizedPath =
                 path.startsWith("/")
-                        ? path
-                        : "/" + path;
+                        ?
+                path
+                        :
+                "/" + path;
 
-        return normalized + normalizedPath;
+        return normalized
+                +
+                normalizedPath;
+    }
+
+    // ============================================================
+    // AUDIT
+    // ============================================================
+
+    private void auditCreditBureauCheck(
+            Borrower borrower,
+            Long borrowerId,
+            CreditBureauCheck check
+    ) {
+
+        String provider =
+                clean(
+                        check.getProvider()
+                );
+
+        if (provider == null) {
+            provider = "UNKNOWN_PROVIDER";
+        }
+
+        StringBuilder description =
+                new StringBuilder(
+                        "Credit bureau check completed via "
+                );
+
+        description.append(
+                provider
+        );
+
+        description.append(
+                " -> "
+        );
+
+        description.append(
+                check.getStatus()
+        );
+
+        if (
+                check.getCreditScore() != null
+        ) {
+
+            description.append(
+                    " (score "
+            );
+
+            description.append(
+                    check.getCreditScore()
+            );
+
+            description.append(
+                    ")"
+            );
+        }
+
+        auditService.log(
+                borrower.getOrganization(),
+                null,
+                "CREDIT_BUREAU_CHECK",
+                "BORROWER",
+                String.valueOf(
+                        borrowerId
+                ),
+                description.toString(),
+                null,
+                null,
+                "Credit Bureau"
+        );
     }
 
     // ============================================================
     // REFERENCE GENERATOR
     // ============================================================
 
-    /**
-     * Uses UUID instead of timestamp-only generation to avoid
-     * collisions during concurrent requests.
-     */
     private String generateReference(
             Long organizationId
     ) {
 
-        String country = "RW";
+        String country =
+                "RW";
 
         String uuid =
                 UUID.randomUUID()
@@ -1622,14 +2229,21 @@ public class CreditBureauService {
                                 0,
                                 12
                         )
-                        .toUpperCase();
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
 
         return "CRB-"
-                + country
-                + "-"
-                + organizationId
-                + "-"
-                + uuid;
+                +
+                country
+                +
+                "-"
+                +
+                organizationId
+                +
+                "-"
+                +
+                uuid;
     }
 
     // ============================================================
@@ -1646,19 +2260,45 @@ public class CreditBureauService {
 
         String first =
                 borrower.getFirstName() != null
-                        ? borrower.getFirstName().trim()
-                        : "";
+                        ?
+                borrower.getFirstName().trim()
+                        :
+                "";
 
         String last =
                 borrower.getLastName() != null
-                        ? borrower.getLastName().trim()
-                        : "";
+                        ?
+                borrower.getLastName().trim()
+                        :
+                "";
 
         return (
                 first
-                        + " "
-                        + last
+                        +
+                " "
+                        +
+                last
         ).trim();
+    }
+
+    // ============================================================
+    // ACTOR NORMALIZATION
+    // ============================================================
+
+    private String normalizeActor(
+            String value
+    ) {
+
+        String cleaned =
+                clean(
+                        value
+                );
+
+        return cleaned != null
+                ?
+                cleaned
+                :
+                "SYSTEM";
     }
 
     // ============================================================
@@ -1684,7 +2324,7 @@ public class CreditBureauService {
                     value.toString().trim()
             );
 
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException ex) {
 
             return null;
         }
@@ -1700,16 +2340,34 @@ public class CreditBureauService {
 
         if (value instanceof Number number) {
 
-            return number.doubleValue();
+            double result =
+                    number.doubleValue();
+
+            return Double.isFinite(
+                    result
+            )
+                    ?
+                    result
+                    :
+                    null;
         }
 
         try {
 
-            return Double.parseDouble(
-                    value.toString().trim()
-            );
+            double result =
+                    Double.parseDouble(
+                            value.toString().trim()
+                    );
 
-        } catch (NumberFormatException e) {
+            return Double.isFinite(
+                    result
+            )
+                    ?
+                    result
+                    :
+                    null;
+
+        } catch (NumberFormatException ex) {
 
             return null;
         }
@@ -1731,7 +2389,9 @@ public class CreditBureauService {
         String normalized =
                 value.toString()
                         .trim()
-                        .toLowerCase();
+                        .toLowerCase(
+                                Locale.ROOT
+                        );
 
         if ("true".equals(normalized)) {
             return true;
@@ -1762,11 +2422,11 @@ public class CreditBureauService {
     // ============================================================
 
     /**
-     * Kept for compatibility with the existing entity fields,
-     * which appear to use Double.
+     * Kept compatible with the existing entity fields using Double.
      *
-     * Financial fields should ideally be migrated to BigDecimal
-     * throughout the accounting/loan domain.
+     * IMPORTANT:
+     * Financial/accounting fields should eventually be migrated
+     * to BigDecimal throughout the loan domain.
      */
     private double roundMoney(
             double value
@@ -1797,8 +2457,10 @@ public class CreditBureauService {
                 value.trim();
 
         return cleaned.isEmpty()
-                ? null
-                : cleaned;
+                ?
+                null
+                :
+                cleaned;
     }
 
     // ============================================================
@@ -1831,6 +2493,54 @@ public class CreditBureauService {
     }
 
     // ============================================================
+    // URL LOG SANITIZATION
+    // ============================================================
+
+    private String sanitizeUrlForLog(
+            String url
+    ) {
+
+        if (url == null) {
+            return "";
+        }
+
+        try {
+
+            URI uri =
+                    URI.create(
+                            url
+                    );
+
+            if (
+                    uri.getScheme() == null
+                            ||
+                    uri.getHost() == null
+            ) {
+
+                return "[INVALID_URL]";
+            }
+
+            return uri.getScheme()
+                    +
+                    "://"
+                    +
+                    uri.getHost()
+                    +
+                    (
+                            uri.getPort() > 0
+                                    ?
+                                    ":" + uri.getPort()
+                                    :
+                                    ""
+                    );
+
+        } catch (Exception ex) {
+
+            return "[INVALID_URL]";
+        }
+    }
+
+    // ============================================================
     // DATE VALIDATION
     // ============================================================
 
@@ -1844,7 +2554,9 @@ public class CreditBureauService {
                         &&
                 to != null
                         &&
-                from.isAfter(to)
+                from.isAfter(
+                                to
+                        )
         ) {
 
             throw new IllegalArgumentException(
@@ -1869,7 +2581,9 @@ public class CreditBureauService {
         ) {
 
             throw new IllegalArgumentException(
-                    field + " is required"
+                    field
+                            +
+                    " is required"
             );
         }
     }
@@ -1888,11 +2602,11 @@ public class CreditBureauService {
                     object
             );
 
-        } catch (Exception e) {
+        } catch (Exception ex) {
 
             log.warn(
                     "Unable to serialize Credit Bureau response.",
-                    e
+                    ex
             );
 
             return "{}";
