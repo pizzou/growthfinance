@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.config;
 
 import java.time.Duration;
@@ -22,7 +21,6 @@ public class RestTemplateConfig {
     public RestTemplate restTemplate(
             RestTemplateBuilder builder
     ) {
-
         return builder
                 .setConnectTimeout(
                         Duration.ofMillis(connectTimeoutMs)
