@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.dto.PaymentGatewayRequest;
@@ -54,6 +53,9 @@ public class FlutterwaveService {
 
     @Value("${app.frontend.url:http://localhost:3000}")
     private String frontendUrl;
+
+    @Value("${app.environment:development}")
+    private String applicationEnvironment;
 
     private final WebClient webClient;
 
@@ -130,6 +132,12 @@ public class FlutterwaveService {
          */
         if (!isConfigured()) {
 
+            if (isProductionEnvironment()) {
+                throw new IllegalStateException(
+                        "Flutterwave is not configured for production."
+                );
+            }
+
             log.warn(
                     "[FLW SIMULATION] {} {} via {}",
                     currency,
@@ -202,6 +210,14 @@ public class FlutterwaveService {
         }
 
         if (!isConfigured()) {
+
+            if (isProductionEnvironment()) {
+                log.error(
+                        "[FLW] Cannot verify transaction in production because Flutterwave is not configured. transactionId={}",
+                        transactionId
+                );
+                return false;
+            }
 
             log.warn(
                     "[FLW SIMULATION] Transaction {} treated as verified",
@@ -863,4 +879,10 @@ public class FlutterwaveService {
                 ? String.valueOf(currency)
                 : null;
     }
+
+    private boolean isProductionEnvironment() {
+        return "production".equalsIgnoreCase(applicationEnvironment)
+                || "prod".equalsIgnoreCase(applicationEnvironment);
+    }
+
 }

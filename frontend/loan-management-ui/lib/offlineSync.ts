@@ -1,18 +1,3 @@
-
-// lib/offlineSync.ts
-//
-// Durable offline mutation replay.
-//
-// Responsibilities:
-// - Read pending mutations from IndexedDB
-// - Replay them when the network is available
-// - Preserve action order
-// - Remove successful actions
-// - Increment attempts for failed actions
-// - Avoid retrying authentication/authorization failures
-// - Support both relative and absolute action URLs
-// - Never silently lose an offline action
-
 import {
     getPendingActions,
     removePendingAction,
@@ -239,6 +224,7 @@ export async function drainOfflineQueue(
                 const headers: Record<string, string> = {
                     Accept: "application/json",
                     ...authHeader(),
+                    ...(action.headers || {}),
                 };
 
                 /*

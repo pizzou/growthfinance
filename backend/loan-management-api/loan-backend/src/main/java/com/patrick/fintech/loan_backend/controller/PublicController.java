@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -1705,7 +1704,13 @@ public class PublicController {
         mobileMoney.put("shortName", "Mobile Money");
         mobileMoney.put("type", "MOBILE_MONEY");
         mobileMoney.put("provider", "MTN_AIRTEL");
-        mobileMoney.put("available", true);
+        boolean mtnAvailable = mtnMobileMoneyService.isAvailable();
+        boolean airtelAvailable = airtelMobileMoneyService.isConfigured();
+
+        mobileMoney.put(
+                "available",
+                mtnAvailable || airtelAvailable
+        );
 
         mobileMoney.put(
                 "networks",
@@ -1713,12 +1718,12 @@ public class PublicController {
                         Map.of(
                                 "id", "MTN",
                                 "name", "MTN Mobile Money",
-                                "available", true
+                                "available", mtnAvailable
                         ),
                         Map.of(
                                 "id", "AIRTEL",
                                 "name", "Airtel Money",
-                                "available", true
+                                "available", airtelAvailable
                         )
                 )
         );
@@ -1733,7 +1738,7 @@ public class PublicController {
         mtn.put("shortName", "MTN MoMo");
         mtn.put("type", "MOBILE_MONEY");
         mtn.put("provider", "MTN");
-        mtn.put("available", true);
+        mtn.put("available", mtnAvailable);
 
         methods.add(mtn);
 
@@ -1745,7 +1750,7 @@ public class PublicController {
         airtel.put("shortName", "Airtel Money");
         airtel.put("type", "MOBILE_MONEY");
         airtel.put("provider", "AIRTEL");
-        airtel.put("available", true);
+        airtel.put("available", airtelAvailable);
 
         methods.add(airtel);
 
@@ -1784,6 +1789,12 @@ public class PublicController {
 
         String slug =
                 str(body.get("tenantSlug"));
+
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Idempotency-Key header is required for public loan applications"
+            );
+        }
 
         Organization org =
                 resolveOrg(slug);
@@ -2265,7 +2276,7 @@ public class PublicController {
                         " website"
         );
 
-        return ResponseEntity.ok(
+        ApiResponse<Map<String, Object>> response =
                 ApiResponse.ok(
                         "Application received",
                         Map.of(
@@ -2281,8 +2292,22 @@ public class PublicController {
                                 "status",
                                 "RECEIVED"
                         )
-                )
+                );
+
+        /*
+         * Persist the successful response against the idempotency key so
+         * browser retries return the original application result instead
+         * of creating another loan. The surrounding transaction commits
+         * this record together with the loan application.
+         */
+        idempotencyService.recordSuccess(
+                idempotencyKey,
+                org,
+                response,
+                200
         );
+
+        return ResponseEntity.ok(response);
     }
 
     // ============================================================

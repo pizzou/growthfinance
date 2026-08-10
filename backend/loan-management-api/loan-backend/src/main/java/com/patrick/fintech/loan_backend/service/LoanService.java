@@ -377,19 +377,6 @@ public class LoanService {
                                 )
                         );
 
-        /*
-         * IMPORTANT:
-         *
-         * createdBy is OPTIONAL here.
-         *
-         * Public website:
-         *     createdBy == null
-         *
-         * Authenticated organization user:
-         *     createdBy != null
-         *
-         * Therefore we intentionally DO NOT reject null here.
-         */
 
         if (createdBy != null) {
 
@@ -814,18 +801,9 @@ public class LoanService {
                         )
                         .organization(org)
                         .borrower(borrower)
+                        .createdBy(createdBy)
 
-                        /*
-                         * IMPORTANT:
-                         *
-                         * Public application:
-                         *     createdBy == null
-                         *     loanOfficer will therefore be null.
-                         *
-                         * Organization-created application:
-                         *     createdBy != null
-                         *     loanOfficer is set to that user.
-                         */
+                       
                         .loanOfficer(createdBy)
 
                         .loanType(requestedType)
@@ -1522,8 +1500,15 @@ public class LoanService {
         saved =
                 loanRepo.save(saved);
 
-        try {
+        if (creditBureauService.isReportingRequiredForDisbursement()) {
 
+            /*
+             * Production safety: when Credit Bureau reporting is required,
+             * a failed or unconfigured real provider MUST abort disbursement.
+             * The surrounding @Transactional method then rolls the loan
+             * status back to APPROVED instead of creating an ACTIVE loan
+             * that was never reported.
+             */
             creditBureauService.reportDisbursedLoan(
                     saved,
                     officer.getName()
@@ -1534,12 +1519,12 @@ public class LoanService {
                     saved.getReferenceNumber()
             );
 
-        } catch (Exception ex) {
+        } else {
 
-            log.error(
-                    "Unable to report loan {} to Credit Bureau.",
-                    saved.getReferenceNumber(),
-                    ex
+            log.warn(
+                    "Credit Bureau reporting is explicitly disabled for disbursement. "
+                            + "loan={}",
+                    saved.getReferenceNumber()
             );
         }
 

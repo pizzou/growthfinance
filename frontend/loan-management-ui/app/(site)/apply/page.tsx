@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTenant } from '../layout';
 import { useOnlineStatus } from '../../../hooks/useOnlineStatus';
@@ -20,6 +20,7 @@ export default function ApplyPage() {
   const [queuedOffline, setQueuedOffline] = useState(false);
   const [error, setError]     = useState('');
   const [docsComplete, setDocsComplete] = useState(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   const [form, setForm] = useState({
     // Personal
@@ -39,6 +40,8 @@ export default function ApplyPage() {
     // Declaration
     acceptedTerms: false,
   });
+
+  const online = useOnlineStatus();
 
   if (!tenant) return null;
   const primary = tenant.primaryColor;
@@ -63,10 +66,17 @@ export default function ApplyPage() {
     setForm(f => ({ ...f, [k]: v }));
   };
 
-  const online = useOnlineStatus();
-
   const handleSubmit = async () => {
     setSaving(true);
+
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    const idempotencyKey = idempotencyKeyRef.current!;
     setError('');
 
     // Offline (or can't reach the server) — save locally and submit automatically later,
@@ -77,6 +87,10 @@ export default function ApplyPage() {
           url: '/public/loan-application',
           method: 'POST',
           body: { ...form, tenantSlug: slug },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey,
+          },
           label: `Loan application — ${form.firstName} ${form.lastName} (${form.amount} ${tenant.currency})`,
         });
         setReference('Will be assigned once submitted');
@@ -94,7 +108,10 @@ export default function ApplyPage() {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
       const res = await fetch(`${API_BASE}/public/loan-application`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify({ ...form, tenantSlug: slug }),
       });
       const json = await res.json();
@@ -103,6 +120,7 @@ export default function ApplyPage() {
       }
       setReference(json.data?.reference || '');
       setSubmitted(true);
+      idempotencyKeyRef.current = null;
     } catch (e: any) {
       // A network failure here (not a validation error from the server) almost always means
       // connectivity dropped mid-submit — queue it instead of making the applicant redo everything.
@@ -112,6 +130,10 @@ export default function ApplyPage() {
             url: '/public/loan-application',
             method: 'POST',
             body: { ...form, tenantSlug: slug },
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': idempotencyKey,
+            },
             label: `Loan application — ${form.firstName} ${form.lastName} (${form.amount} ${tenant.currency})`,
           });
           setReference('Will be assigned once submitted');

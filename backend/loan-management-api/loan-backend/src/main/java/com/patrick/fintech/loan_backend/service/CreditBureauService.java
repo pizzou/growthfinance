@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -84,6 +83,9 @@ public class CreditBureauService {
 
     @Value("${app.credit-bureau.db-transaction-timeout-seconds:30}")
     private int dbTransactionTimeoutSeconds;
+
+    @Value("${app.credit-bureau.required-for-disbursement:true}")
+    private boolean requiredForDisbursement;
 
     @Value("${app.environment:staging}")
     private String applicationEnvironment;
@@ -1486,6 +1488,15 @@ public class CreditBureauService {
         return baseUrl != null
                 &&
                 !baseUrl.isBlank();
+    }
+
+    /**
+     * Returns whether a successful real Credit Bureau report is required
+     * before a loan may be disbursed. Production defaults to required;
+     * development can explicitly disable the requirement.
+     */
+    public boolean isReportingRequiredForDisbursement() {
+        return requiredForDisbursement;
     }
 
     // ============================================================

@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.config;
 
 import com.patrick.fintech.loan_backend.security.JwtAuthFilter;
@@ -46,6 +45,12 @@ public class SecurityConfig {
 
     @Value("${app.cors.allowed-origins:https://growthfinance-six.vercel.app}")
     private String allowedOrigins;
+
+    @Value("${app.security.allow-h2-console:false}")
+    private boolean allowH2Console;
+
+    @Value("${app.security.allow-openapi:false}")
+    private boolean allowOpenApi;
 
 
     // ============================================================
@@ -125,17 +130,7 @@ public class SecurityConfig {
                     // PUBLIC ENDPOINTS
                     // --------------------------------------------
 
-                    .requestMatchers(
-                        "/api/auth/**",
-                        "/h2-console/**",
-                        "/swagger-ui/**",
-                        "/swagger-ui.html",
-                        "/api-docs/**",
-                        "/v3/api-docs/**",
-                        "/actuator/health",
-                        "/api/public/**",
-                        "/public/**"
-                    )
+                    .requestMatchers(publicMatchers())
                     .permitAll()
 
                     // --------------------------------------------
@@ -160,13 +155,18 @@ public class SecurityConfig {
             )
 
             // ====================================================
-            // H2 CONSOLE
+            // SECURITY HEADERS
             // ====================================================
 
             .headers(headers ->
-                headers.frameOptions(
-                    frame -> frame.sameOrigin()
-                )
+                headers
+                    .frameOptions(frame -> {
+                        if (allowH2Console) {
+                            frame.sameOrigin();
+                        } else {
+                            frame.deny();
+                        }
+                    })
             )
 
             // ====================================================
@@ -199,6 +199,29 @@ public class SecurityConfig {
         return http.build();
     }
 
+
+    private String[] publicMatchers() {
+
+        List<String> matchers = new java.util.ArrayList<>(List.of(
+                "/api/auth/**",
+                "/actuator/health",
+                "/api/public/**",
+                "/public/**"
+        ));
+
+        if (allowH2Console) {
+            matchers.add("/h2-console/**");
+        }
+
+        if (allowOpenApi) {
+            matchers.add("/swagger-ui/**");
+            matchers.add("/swagger-ui.html");
+            matchers.add("/api-docs/**");
+            matchers.add("/v3/api-docs/**");
+        }
+
+        return matchers.toArray(String[]::new);
+    }
 
     // ============================================================
     // 401 AUTHENTICATION ENTRY POINT

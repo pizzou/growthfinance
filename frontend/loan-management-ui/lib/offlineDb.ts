@@ -1,4 +1,3 @@
-
 const DB_NAME = "loansaas-offline";
 const DB_VERSION = 2;
 
@@ -16,6 +15,12 @@ export interface PendingAction {
         | "DELETE";
 
     body?: unknown;
+
+    /**
+     * Additional HTTP headers that must survive offline replay.
+     * Used for idempotency keys on financial mutations.
+     */
+    headers?: Record<string, string>;
 
     /**
      * Human-readable description.

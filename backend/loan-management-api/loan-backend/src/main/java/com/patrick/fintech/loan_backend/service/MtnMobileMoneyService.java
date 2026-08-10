@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import jakarta.annotation.PostConstruct;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -58,6 +59,34 @@ public class MtnMobileMoneyService {
 
     @Value("${mtn.momo.currency:RWF}")
     private String configuredCurrency;
+
+    @Value("${app.environment:development}")
+    private String applicationEnvironment;
+
+    @PostConstruct
+    private void validateProductionMode() {
+        if (isProductionEnvironment() && sandbox) {
+            throw new IllegalStateException(
+                    "MTN Mobile Money sandbox mode cannot be enabled in production."
+            );
+        }
+    }
+
+    /**
+     * Returns whether MTN Mobile Money can be presented as an available
+     * payment option. Local sandbox mode is allowed only outside production.
+     */
+    public boolean isAvailable() {
+        if (!enabled) {
+            return false;
+        }
+
+        if (sandbox) {
+            return true;
+        }
+
+        return isConfigured();
+    }
 
     // ============================================================
     // INITIATE PAYMENT
@@ -930,4 +959,10 @@ public class MtnMobileMoneyService {
             String partyIdType
     ) {
     }
+
+    private boolean isProductionEnvironment() {
+        return "production".equalsIgnoreCase(applicationEnvironment)
+                || "prod".equalsIgnoreCase(applicationEnvironment);
+    }
+
 }

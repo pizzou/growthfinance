@@ -38,9 +38,22 @@ public class DataSeeder implements CommandLineRunner {
         Role managerRole = ensureRole("MANAGER",      "Branch/portfolio management");
 
        
+        String bootstrapOrgName = envOrDefault(
+            "BOOTSTRAP_ORG_NAME",
+            "Growth Finance Services Ltd"
+        );
+        String bootstrapOrgCountry = envOrDefault(
+            "BOOTSTRAP_ORG_COUNTRY",
+            "RW"
+        );
+        String bootstrapOrgCurrency = envOrDefault(
+            "BOOTSTRAP_ORG_CURRENCY",
+            "RWF"
+        );
+
         Organization growth = orgRepo.save(Organization.builder()
-            .name("Growth Finance Services Ltd").industry("Microfinance").country("RW")
-            .defaultCurrency("RWF").timezone("Africa/Kigali").locale("en-RW")
+            .name(bootstrapOrgName).industry("Microfinance").country(bootstrapOrgCountry)
+            .defaultCurrency(bootstrapOrgCurrency).timezone("Africa/Kigali").locale("en-RW")
             .primaryColor("#0D6B3E").accentColor("#F5A623")
             .website("https://growthfinance.rw")
             .contactEmail("info@growthfinance.rw").contactPhone("+250 788 000 000")
@@ -80,7 +93,7 @@ public class DataSeeder implements CommandLineRunner {
         // once the app is running.
         seedProduct(growth, "Personal Loan", "👤", Loan.LoanType.PERSONAL, 10.0, "MONTHLY", 50_000.0, 5_000_000.0, 1, 12,
             "Fast personal financing for any purpose — school fees, medical bills, home improvement.", 1);
-        seedProduct(growth, "Business Loan", "🏢", Loan.LoanType.BUSINESS, 12.0, "A", 500_000.0, 30_000_000.0, 1, 12,
+        seedProduct(growth, "Business Loan", "🏢", Loan.LoanType.BUSINESS, 12.0, "ANNUAL", 500_000.0, 30_000_000.0, 1, 12,
             "Working capital and expansion financing for registered Rwandan businesses.", 2);
         seedProduct(growth, "Microfinance Loan", "💡", Loan.LoanType.MICROFINANCE, 18.0, "ANNUAL", 50_000.0, 1_000_000.0, 3, 12,
             "Small loans for micro-entrepreneurs and informal sector workers.", 3);
@@ -92,6 +105,13 @@ public class DataSeeder implements CommandLineRunner {
         log.info("║  {} — admin login: {}", growth.getName(), bootstrapAdminEmail);
         log.info("╚══════════════════════════════════════════════════════════════╝");
         log.info("");
+    }
+
+    private String envOrDefault(String name, String fallback) {
+        String value = System.getenv(name);
+        return value == null || value.isBlank()
+                ? fallback
+                : value.trim();
     }
 
     private Role ensureRole(String name, String desc) {
