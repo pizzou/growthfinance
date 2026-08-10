@@ -601,12 +601,7 @@ public class AccountingService {
             );
         }
 
-        /*
-         * REVERSAL entries are intentionally allowed to have the
-         * same source type/source ID as the original transaction.
-         *
-         * All normal accounting events remain idempotent.
-         */
+       
         if (!"REVERSAL".equals(sourceType)) {
 
             JournalEntry existing =
@@ -1056,42 +1051,7 @@ public class AccountingService {
         );
     }
 
-    /*
-     * ============================================================
-     * PAYMENT RECEIVED
-     *
-     * IMPORTANT:
-     *
-     * This method now accepts SIX transaction values:
-     *
-     * payment
-     * paymentAmount
-     * principalAmount
-     * interestAmount
-     * penaltyAmount
-     * overpaymentAmount
-     *
-     * PaymentService should call:
-     *
-     * accountingService.postPaymentReceived(
-     *     installment,
-     *     amount.doubleValue(),
-     *     principalPaid.doubleValue(),
-     *     interestPaid.doubleValue(),
-     *     newPenalty.doubleValue(),
-     *     overpayment.doubleValue()
-     * );
-     *
-     * Accounting:
-     *
-     * DR Cash
-     * CR Loans Receivable
-     * CR Interest Receivable / Interest Income
-     * CR Fee/Penalty Income
-     * CR Borrower Refunds Payable
-     * ============================================================
-     */
-
+    
     @Transactional
     public JournalEntry postPaymentReceived(
             Payment payment,
@@ -1208,22 +1168,7 @@ public class AccountingService {
         BigDecimal overpayment =
                 maxZero(overpaymentAmount);
 
-        /*
-         * ========================================================
-         * VALIDATE ALLOCATION
-         * ========================================================
-         *
-         * The five components must exactly explain the payment.
-         *
-         * principal
-         * + interest
-         * + penalty
-         * + overpayment
-         * = payment
-         *
-         * We allow a very small rounding tolerance because all
-         * amounts are normalized to MONEY_SCALE.
-         */
+        
 
         BigDecimal allocated =
                 principal
@@ -1264,12 +1209,7 @@ public class AccountingService {
         List<JournalLine> lines =
                 new ArrayList<>();
 
-        /*
-         * ========================================================
-         * LOAN REFERENCE
-         * ========================================================
-         */
-
+     
         String loanReference =
                 loan.getReferenceNumber() != null
                         && !loan.getReferenceNumber().isBlank()
@@ -1325,16 +1265,7 @@ public class AccountingService {
             );
         }
 
-        /*
-         * ========================================================
-         * INTEREST
-         *
-         * First clear Interest Receivable.
-         *
-         * Any amount above the accrued receivable is posted
-         * directly to Interest Income.
-         * ========================================================
-         */
+       
 
         if (interest.compareTo(ZERO) > 0) {
 
@@ -1431,20 +1362,7 @@ public class AccountingService {
             );
         }
 
-        /*
-         * ========================================================
-         * OVERPAYMENT
-         *
-         * This is NOT income.
-         *
-         * It is a LIABILITY because the money belongs to the
-         * borrower until it is refunded or otherwise lawfully
-         * applied to a future obligation.
-         *
-         * DR Cash
-         * CR Borrower Refunds Payable
-         * ========================================================
-         */
+        
 
         if (overpayment.compareTo(ZERO) > 0) {
 
@@ -1553,17 +1471,7 @@ public class AccountingService {
         );
     }
 
-    /*
-     * ============================================================
-     * PAYMENT RECEIVED FROM PAYMENT ENTITY
-     *
-     * Compatibility method.
-     *
-     * If Payment contains an explicit overpayment field, this
-     * method should use it. Otherwise it derives overpayment from
-     * payment minus principal/interest/penalty.
-     * ============================================================
-     */
+    
 
     @Transactional
     public JournalEntry postPaymentReceived(
@@ -1608,13 +1516,7 @@ public class AccountingService {
                         )
                         : ZERO;
 
-        /*
-         * Derive overpayment only for this compatibility method.
-         *
-         * PaymentService should preferably call the six-argument
-         * method directly because it already knows the exact
-         * transaction-level overpayment.
-         */
+       
 
         BigDecimal derivedOverpayment =
                 amount
@@ -1635,20 +1537,7 @@ public class AccountingService {
         );
     }
 
-    /*
-     * ============================================================
-     * OVERPAYMENT REFUND PAYABLE
-     *
-     * This method remains available when overpayment is recorded
-     * separately from the payment journal.
-     *
-     * NOTE:
-     * PaymentService should NOT call this method for the same
-     * overpayment if the six-argument postPaymentReceived() already
-     * posted the overpayment to account 2100. Otherwise the liability
-     * would be duplicated.
-     * ============================================================
-     */
+  
 
     @Transactional
     public JournalEntry postOverpaymentRefundPayable(
@@ -1761,12 +1650,7 @@ public class AccountingService {
         );
     }
 
-    /*
-     * ============================================================
-     * REFUND PAYMENT
-     * ============================================================
-     */
-
+  
     @Transactional
     public JournalEntry postRefundPaid(
             Organization org,
@@ -3254,11 +3138,6 @@ public class AccountingService {
         return result;
     }
 
-    /*
-     * ============================================================
-     * PROFIT AND LOSS
-     * ============================================================
-     */
 
     @Transactional(readOnly = true)
     public Map<String, Object> getProfitAndLoss(
