@@ -1,4 +1,3 @@
-
 package com.patrick.fintech.loan_backend.service;
 
 import com.patrick.fintech.loan_backend.dto.LoanRequest;
@@ -378,9 +377,39 @@ public class LoanService {
                                 )
                         );
 
-        if (createdBy == null) {
+        /*
+         * IMPORTANT:
+         *
+         * createdBy is OPTIONAL here.
+         *
+         * Public website:
+         *     createdBy == null
+         *
+         * Authenticated organization user:
+         *     createdBy != null
+         *
+         * Therefore we intentionally DO NOT reject null here.
+         */
+
+        if (createdBy != null) {
+
+            if (
+                    createdBy.getOrganization() == null
+                            || createdBy.getOrganization().getId() == null
+                            || !createdBy.getOrganization()
+                            .getId()
+                            .equals(organizationId)
+            ) {
+
+                throw new RuntimeException(
+                        "Creating user does not belong to this organization"
+                );
+            }
+        }
+
+        if (req.getBorrowerId() == null) {
             throw new IllegalArgumentException(
-                    "Creating user cannot be null"
+                    "Borrower ID is required"
             );
         }
 
@@ -785,7 +814,20 @@ public class LoanService {
                         )
                         .organization(org)
                         .borrower(borrower)
+
+                        /*
+                         * IMPORTANT:
+                         *
+                         * Public application:
+                         *     createdBy == null
+                         *     loanOfficer will therefore be null.
+                         *
+                         * Organization-created application:
+                         *     createdBy != null
+                         *     loanOfficer is set to that user.
+                         */
                         .loanOfficer(createdBy)
+
                         .loanType(requestedType)
                         .repaymentFrequency(
                                 req.getRepaymentFrequency() != null
@@ -869,18 +911,38 @@ public class LoanService {
         // AUDIT
         // ============================================================
 
+        String creatorDescription;
+
+        if (createdBy != null) {
+
+            creatorDescription =
+                    "Loan "
+                            + saved.getReferenceNumber()
+                            + " created by "
+                            + createdBy.getName()
+                            + " for "
+                            + borrower.getFullName()
+                            + " — principal "
+                            + principal;
+
+        } else {
+
+            creatorDescription =
+                    "Public borrower loan application "
+                            + saved.getReferenceNumber()
+                            + " created for "
+                            + borrower.getFullName()
+                            + " — principal "
+                            + principal;
+        }
+
         audit(
                 org,
                 createdBy,
                 "LOAN_CREATED",
                 "LOAN",
                 saved.getId().toString(),
-                "Loan "
-                        + saved.getReferenceNumber()
-                        + " created for "
-                        + borrower.getFullName()
-                        + " — principal "
-                        + principal
+                creatorDescription
         );
 
         return saved;
@@ -1030,10 +1092,6 @@ public class LoanService {
             }
         }
 
-        // ============================================================
-        // PRESERVE EXACT PRINCIPAL
-        // ============================================================
-
         BigDecimal exactPrincipal =
                 normalizePrincipal(
                         moneyValue(
@@ -1068,10 +1126,6 @@ public class LoanService {
         Loan saved =
                 loanRepo.save(loan);
 
-        // ============================================================
-        // REPAYMENT SCHEDULE
-        // ============================================================
-
         if (
                 paymentRepo
                         .findByLoanId(
@@ -1091,10 +1145,6 @@ public class LoanService {
                     saved.getId()
             );
         }
-
-        // ============================================================
-        // AUDIT
-        // ============================================================
 
         audit(
                 saved.getOrganization(),
@@ -1116,10 +1166,6 @@ public class LoanService {
                 )
         );
 
-        // ============================================================
-        // EMAIL
-        // ============================================================
-
         try {
 
             mailService.sendLoanApproved(
@@ -1133,10 +1179,6 @@ public class LoanService {
                     e
             );
         }
-
-        // ============================================================
-        // SMS
-        // ============================================================
 
         try {
 
@@ -1152,10 +1194,6 @@ public class LoanService {
             );
         }
 
-        // ============================================================
-        // NOTIFICATION
-        // ============================================================
-
         notifyOfficer(
                 saved,
                 approvedBy,
@@ -1167,10 +1205,6 @@ public class LoanService {
                         + ".",
                 "success"
         );
-
-        // ============================================================
-        // WEBHOOK
-        // ============================================================
 
         webhookService.dispatch(
                 saved.getOrganization(),
@@ -1420,18 +1454,6 @@ public class LoanService {
                 LoanStatus.ACTIVE
         );
 
-        /*
-         * IMPORTANT:
-         *
-         * This is the exact interest-clock timestamp.
-         *
-         * Example:
-         *
-         * 2026-08-09 10:00:00
-         *
-         * PaymentService uses loan.getDisbursedAt() as the
-         * starting point for daily interest.
-         */
         LocalDateTime exactDisbursementTimestamp =
                 LocalDateTime.now();
 
@@ -1467,19 +1489,11 @@ public class LoanService {
         Loan saved =
                 loanRepo.save(loan);
 
-        /*
-         * The exact disbursement timestamp has now been persisted.
-         * Do not replace it with LocalDate or startDate.
-         */
         log.info(
                 "Loan {} disbursed at exact timestamp {}",
                 saved.getReferenceNumber(),
                 saved.getDisbursedAt()
         );
-
-        // ============================================================
-        // GENERATE REPAYMENT SCHEDULE
-        // ============================================================
 
         paymentScheduleService.generateSchedule(
                 saved
@@ -1508,10 +1522,6 @@ public class LoanService {
         saved =
                 loanRepo.save(saved);
 
-        // ============================================================
-        // CREDIT BUREAU
-        // ============================================================
-
         try {
 
             creditBureauService.reportDisbursedLoan(
@@ -1533,10 +1543,6 @@ public class LoanService {
             );
         }
 
-        // ============================================================
-        // AUDIT
-        // ============================================================
-
         audit(
                 saved.getOrganization(),
                 officer,
@@ -1551,17 +1557,9 @@ public class LoanService {
                 )
         );
 
-        // ============================================================
-        // ACCOUNTING
-        // ============================================================
-
         accountingService.postDisbursement(
                 saved
         );
-
-        // ============================================================
-        // EMAIL
-        // ============================================================
 
         try {
 
@@ -1578,10 +1576,6 @@ public class LoanService {
             );
         }
 
-        // ============================================================
-        // SMS
-        // ============================================================
-
         try {
 
             smsService.sendLoanDisbursed(
@@ -1596,10 +1590,6 @@ public class LoanService {
                     e
             );
         }
-
-        // ============================================================
-        // NOTIFICATION
-        // ============================================================
 
         notifyOfficer(
                 saved,
@@ -1616,10 +1606,6 @@ public class LoanService {
                         + ".",
                 "success"
         );
-
-        // ============================================================
-        // WEBHOOK
-        // ============================================================
 
         webhookService.dispatch(
                 saved.getOrganization(),
@@ -2985,6 +2971,18 @@ public class LoanService {
             String desc
     ) {
 
+        /*
+         * user is intentionally allowed to be null.
+         *
+         * Public website:
+         *     user == null
+         *
+         * Organization dashboard:
+         *     user != null
+         *
+         * AuditService is responsible for safely recording
+         * the public/unauthenticated action.
+         */
         auditService.log(
                 org,
                 user,
