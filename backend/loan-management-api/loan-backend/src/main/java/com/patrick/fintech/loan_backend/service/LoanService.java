@@ -1502,13 +1502,7 @@ public class LoanService {
 
         if (creditBureauService.isReportingRequiredForDisbursement()) {
 
-            /*
-             * Production safety: when Credit Bureau reporting is required,
-             * a failed or unconfigured real provider MUST abort disbursement.
-             * The surrounding @Transactional method then rolls the loan
-             * status back to APPROVED instead of creating an ACTIVE loan
-             * that was never reported.
-             */
+           
             creditBureauService.reportDisbursedLoan(
                     saved,
                     officer.getName()
