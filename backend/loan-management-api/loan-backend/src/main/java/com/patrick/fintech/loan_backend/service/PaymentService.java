@@ -507,6 +507,10 @@ public class PaymentService {
         // INTEREST DAYS
         // ============================================================
 
+                // ============================================================
+        // INTEREST DAYS
+        // ============================================================
+
         long elapsedDays =
                 calculateActualInterestDays(
                         interestStartDateTime,
@@ -515,6 +519,16 @@ public class PaymentService {
                         loan,
                         firstInterestCalculation
                 );
+
+       
+        if (elapsedDays == 0) {
+            elapsedDays = 1;
+        }
+
+        // ============================================================
+        // DAILY INTEREST RATE
+        // ============================================================
+
 
         // ============================================================
         // DAILY INTEREST RATE
@@ -895,30 +909,7 @@ public class PaymentService {
                 today
         );
 
-        // ============================================================
-        // CRITICAL INTEREST TIMESTAMP
-        // ============================================================
-        //
-        // The timestamp is advanced ONLY after the interest for the
-        // current interval has been calculated.
-        //
-        // Therefore:
-        //
-        // Disbursement 10:00
-        // Payment       10:01
-        // Interest      1 day
-        //
-        // Second payment same date:
-        //
-        // Payment       10:05
-        // Interest      0 additional days
-        //
-        // Next calendar day:
-        //
-        // Payment       11:00
-        // Interest      1 additional day
-        //
-        // ============================================================
+        
 
         installment.setInterestCalculationDate(
                 now
