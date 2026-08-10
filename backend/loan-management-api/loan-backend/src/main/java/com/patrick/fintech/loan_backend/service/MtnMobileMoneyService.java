@@ -525,9 +525,9 @@ public class MtnMobileMoneyService {
         // ========================================================
 
         BigDecimal outstandingBalance =
-                payment.getOutstandingAfter() != null
-                        ? payment.getOutstandingAfter()
-                        : loan.getOutstandingBalanceDecimal();
+        payment.getOutstandingAfterDecimal() != null
+                ? payment.getOutstandingAfterDecimal()
+                : loan.getOutstandingBalanceDecimal();
 
         BigDecimal interestPaid =
                 payment.getInterestComponentDecimal();
