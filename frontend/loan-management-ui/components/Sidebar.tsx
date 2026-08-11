@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -485,6 +486,8 @@ export default function Sidebar() {
         "
       >
 
+        
+
         <div
           className="
             flex
@@ -502,7 +505,18 @@ export default function Sidebar() {
               '#0D6B3E',
           }}
         >
-          G
+          <Image
+            src="/logo-mark.png"
+            alt="Noble Loan Solutions"
+            width={40}
+            height={40}
+            priority
+            className="
+              h-full
+              w-full
+              object-contain
+            "
+          />
         </div>
 
 
