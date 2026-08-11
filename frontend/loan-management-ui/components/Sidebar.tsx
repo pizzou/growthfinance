@@ -502,12 +502,12 @@ export default function Sidebar() {
           "
           style={{
             backgroundColor:
-              '#0D6B3E',
+              '#FFFFFF',
           }}
         >
           <Image
             src="/logo-mark.png"
-            alt="Noble Loan Solutions"
+            alt="Growth Finance Services"
             width={40}
             height={40}
             priority
